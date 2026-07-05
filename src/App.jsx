@@ -266,7 +266,7 @@ export default function App() {
             <div className="flex-1 w-full space-y-10 min-w-0">
               
               <div>
-                <h1 className="text-4xl md:text-5xl font-title text-[#991b1b] mb-4">My Introduction</h1>
+                <h1 className="text-6xl md:text-7xl font-title text-[#991b1b] mb-4 tracking-wide">My Introduction</h1>
                 <div className="flex flex-col md:flex-row gap-4">
                   <div className="whitespace-pre-wrap font-body text-base text-gray-800 leading-snug flex-1">{aboutData.introText}</div>
                   {aboutData.introImage && (
@@ -342,7 +342,7 @@ export default function App() {
       case 'portfolio':
         return (
           <div className="min-h-full pb-16">
-            <h1 className="text-4xl font-title text-[#991b1b] mb-6">All Projects</h1>
+            <h1 className="text-6xl md:text-7xl font-title text-[#991b1b] mb-8 tracking-wide">All Projects</h1>
             {projects.length === 0 ? (
               <p className="text-xl font-handwriting text-gray-600 text-center mt-20">In the future, there will be something here...</p>
             ) : (
@@ -364,7 +364,7 @@ export default function App() {
       case 'blog':
         return (
           <div className="min-h-full pb-16 max-w-4xl mx-auto">
-            <h1 className="text-4xl font-title text-[#991b1b] mb-6 text-center">My Thoughts</h1>
+            <h1 className="text-6xl md:text-7xl font-title text-[#991b1b] mb-8 text-center tracking-wide">My Thoughts</h1>
             {blogs.length === 0 ? (
               <p className="text-xl font-handwriting text-gray-600 text-center mt-20">In the future, there will be something here...</p>
             ) : (
@@ -400,7 +400,7 @@ export default function App() {
       case 'blank':
         return (
           <div className="min-h-full pb-16 flex flex-col items-center justify-center relative">
-            <h1 className="text-4xl font-title text-[#991b1b] mb-2 text-center">Anonymous Notes</h1>
+            <h1 className="text-6xl md:text-7xl font-title text-[#991b1b] mb-4 text-center tracking-wide">Anonymous Notes</h1>
             <p className="text-gray-700 mb-6 font-body text-sm text-center max-w-md">Leave a message, a drawing, or whatever is on your mind. It's completely anonymous.</p>
             
             <div className="w-full max-w-xl bg-white/40 p-5 rounded-2xl shadow-sm border border-yellow-600/30 backdrop-blur-sm relative z-10">
@@ -457,7 +457,7 @@ export default function App() {
       case 'socials':
         return (
           <div className="min-h-full pb-16 flex flex-col items-center justify-center">
-            <h1 className="text-4xl font-title text-[#991b1b] mb-10">Where to Find Me</h1>
+            <h1 className="text-6xl md:text-7xl font-title text-[#991b1b] mb-12 tracking-wide">Where to Find Me</h1>
             {socials.length === 0 ? (
               <p className="text-xl font-handwriting text-gray-600 text-center">Links coming soon...</p>
             ) : (
@@ -605,7 +605,7 @@ export default function App() {
         return (
           <div className="min-h-full pb-32 font-body relative">
             <div className="flex justify-between items-center mb-6">
-              <h1 className="text-3xl font-title text-[#991b1b]">Admin Dashboard</h1>
+              <h1 className="text-5xl md:text-6xl font-title text-[#991b1b] tracking-wide">Admin Dashboard</h1>
               <button onClick={handleLogout} className="flex items-center gap-2 text-red-700 bg-red-100 px-3 py-1.5 rounded-lg font-bold hover:bg-red-200 text-sm"><LogOut size={16}/> Logout</button>
             </div>
             
@@ -851,7 +851,7 @@ export default function App() {
                 <div>
                   {selectedItem.image && <img src={selectedItem.image} alt={selectedItem.title} className="w-full h-48 md:h-80 object-cover" />}
                   <div className="p-6 md:p-10">
-                    <h2 className="text-3xl font-title font-bold text-red-900 mb-1">{selectedItem.title}</h2>
+                    <h2 className="text-5xl md:text-6xl font-title font-bold text-red-900 mb-2 tracking-wide">{selectedItem.title}</h2>
                     <p className="font-mono text-gray-500 mb-6 border-b border-gray-200 pb-3 text-sm">{selectedItem.author} • {selectedItem.year}</p>
                     <p className="font-body text-base text-gray-800 leading-snug whitespace-pre-wrap">{selectedItem.content}</p>
                   </div>
@@ -865,7 +865,7 @@ export default function App() {
                     <div className="flex justify-between items-end mb-2 border-b border-gray-200 pb-4">
                       <div>
                         <p className="font-handwriting text-xl text-red-700 mb-1">{selectedItem.date}</p>
-                        <h2 className="text-3xl md:text-4xl font-title font-bold text-gray-900">{selectedItem.title}</h2>
+                        <h2 className="text-5xl md:text-6xl font-title font-bold text-gray-900 tracking-wide">{selectedItem.title}</h2>
                       </div>
                       {selectedItem.rating && (
                         <div className="flex text-yellow-500 mb-1">
@@ -909,7 +909,7 @@ export default function App() {
               <button onClick={() => setShowLogin(false)} className="absolute top-3 right-3 text-gray-500 hover:text-red-700"><X size={18}/></button>
               <div className="flex flex-col items-center text-center mb-5">
                 <div className="w-10 h-10 bg-red-100 text-red-800 rounded-full flex items-center justify-center mb-2"><Lock size={20} /></div>
-                <h2 className="text-xl font-title font-bold text-gray-800">Admin Login</h2>
+                <h2 className="text-3xl font-title font-bold text-gray-800 tracking-wide">Admin Login</h2>
               </div>
               <form onSubmit={handleLogin} className="space-y-2">
                 <input type="email" required placeholder="Admin Email" value={emailInput} onChange={(e) => setEmailInput(e.target.value)} className="w-full p-2.5 rounded border border-gray-300 bg-white font-body text-sm outline-none" />
