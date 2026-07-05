@@ -784,14 +784,19 @@ export default function App() {
         /* Generic Font Imports & Custom Font Rules */
         @import url('https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&display=swap');
         
-        /* 
-          IMPORTANT: Because CC-Abrasion, zai crumpled paper, and bantayog light are 
-          custom installed fonts, they are set up below. They will work perfectly 
-          if the computer viewing the site has them installed!
-        */
-        @font-face { font-family: 'CC-Abrasion'; src: local('CC-Abrasion'); }
-        @font-face { font-family: 'zai crumpled paper'; src: local('zai crumpled paper'); }
-        @font-face { font-family: 'bantayog light'; src: local('bantayog light'); }
+        /* HOSTED CUSTOM FONTS */
+        @font-face { 
+          font-family: 'CC-Abrasion'; 
+          src: url('/fonts/CC-Abrasion.ttf') format('truetype'); 
+        }
+        @font-face { 
+          font-family: 'zai crumpled paper'; 
+          src: url('/fonts/zai-crumpled-paper.ttf') format('truetype'); 
+        }
+        @font-face { 
+          font-family: 'bantayog light'; 
+          src: url('/fonts/bantayog-light.ttf') format('truetype'); 
+        }
         
         .font-title { font-family: 'CC-Abrasion', serif; }
         .font-subtitle { font-family: 'zai crumpled paper', sans-serif; }
