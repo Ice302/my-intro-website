@@ -1,59 +1,35 @@
 import React, { useState, useEffect } from 'react';
-import { Pin, X, Lock, Plus, Edit2, Trash2, Save, Image as ImageIcon, Type, ArrowLeft } from 'lucide-react';
+import { Pin, X, Lock, Plus, Edit2, Trash2, Save, Image as ImageIcon, Type, ArrowLeft, LogOut, Cloud } from 'lucide-react';
+import { createClient } from '@supabase/supabase-js';
 
-// --- DEFAULT DATA (Fallback if localStorage is empty) ---
+// --- INITIALIZE SUPABASE ---
+// It securely pulls your keys from the .env file we created!
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const supabase = createClient(supabaseUrl, supabaseKey);
 
+// --- FALLBACK DEFAULT DATA ---
 const defaultProjects = [
-  { id: 1, title: "E-Commerce App", year: "(2024)", author: "React & Node", image: "https://images.unsplash.com/photo-1555066931-4365d14bab8c?w=400&q=80", content: "A full-stack e-commerce platform built from scratch..." },
-  { id: 2, title: "Task Manager", year: "(2023)", author: "TypeScript", image: "https://images.unsplash.com/photo-1484480974693-6ca0a78fb36b?w=400&q=80", content: "A productivity app designed for small teams..." },
+  { id: 1, title: "E-Commerce App", year: "(2024)", author: "React & Node", image: "https://images.unsplash.com/photo-1555066931-4365d14bab8c?w=400&q=80", content: "A full-stack platform..." }
 ];
-
 const defaultBlogs = [
-  { 
-    id: 1, 
-    date: "Oct 12, 2025", 
-    title: "Finding peace in slower development cycles", 
-    excerpt: "Sometimes the best code is the code you write after stepping away...",
-    blocks: [
-      { type: 'text', content: "Sometimes the best code is the code you write after stepping away from the screen for a while. In a world obsessed with shipping fast, I took a month to just plan my next architecture." },
-      { type: 'image', content: "https://images.unsplash.com/photo-1499750310107-5fef28a66643?w=800&q=80" },
-      { type: 'text', content: "The result? Zero bugs in production and a much happier developer. Here is what I learned during that month of quiet." }
-    ]
-  },
+  { id: 1, date: "Oct 12, 2025", title: "Welcome to my new site", excerpt: "My first cloud database post...", blocks: [{ type: 'text', content: "Hello world!" }] }
 ];
-
 const defaultAbout = {
-  introText: "Hellooo, the name is Vinz!\n\nYou can call me Ice^^\n\nI am 16 years of age, born on April 16, 2008\n\nI am an Aries, and Intp-t (I don't believe fully in these)\n\nMy sexuality is AroAce (Not interested romantically or sexually)\n\n3 words about me?: Chaotic, Needy, Nerdy",
+  introText: "Hellooo, the name is Vinz!\nYou can call me Ice^^",
   introImage: "https://images.unsplash.com/photo-1614850523459-c2f4c699c52e?w=400&q=80",
-  myspace: [
-    { id: 1, name: "Dirk", image: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&q=80" },
-    { id: 2, name: "Renz", image: "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=200&q=80" },
-    { id: 3, name: "Danes", image: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=200&q=80" },
-    { id: 4, name: "Chariz", image: "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=200&q=80" },
-  ],
-  interests: [
-    { id: 1, title: "Anime", desc: "Anime has been a very integral bonding thing...", image: "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=300&q=80" },
-    { id: 2, title: "Music", desc: "This is one of my worse obsessions...", image: "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=300&q=80" },
-    { id: 3, title: "Gaming", desc: "2020 me became a degen for this...", image: "https://images.unsplash.com/photo-1542751371-adc38448a05e?w=300&q=80" },
-    { id: 4, title: "Aviation", desc: "Aviation has always had a place in my heart...", image: "https://images.unsplash.com/photo-1436491865332-7a61a109cc05?w=300&q=80" },
-    { id: 5, title: "Cars", desc: "Exotic cars and even the largest and fastest...", image: "https://images.unsplash.com/photo-1503376760302-3c2a537f00f0?w=300&q=80" },
-  ],
-  obsessions: [
-    { id: 1, category: "Top 10 Anime", items: ["Frieren", "Tanya", "Dangers in my heart", "Slime tensura", "Soukoku", "Bocchi the rock", "Aono Orchestra", "Apothecary Diaries", "Solo leveling", "Ranking of kings"] },
-    { id: 2, category: "Top 10 Movies", items: ["Everything Everywhere all at once", "Mr. Fantastic Fox", "Dead Man's Chest", "Now you see me two", "Oblivion", "Pacific rim", "The kingdom of god", "Ford vs Ferrari", "Ready player one", "The intern"] },
-    { id: 3, category: "Top 10 Songs", items: ["Godspeed / White Ferrari", "Sing about me, im dying of thirst", "Wilshire / Are we still friends?", "Sedated / Jackie and Wilson", "Love is just a feeling"] },
-    { id: 4, category: "Top 10 Reads", items: ["Cherry Crush", "The guy she was interested in", "Cherry blossoms after winter", "Boyfriends", "One room TA"] },
-  ]
+  myspace: [{ id: 1, name: "Dirk", image: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&q=80" }],
+  interests: [{ id: 1, title: "Anime", desc: "Anime is great...", image: "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=300&q=80" }],
+  obsessions: [{ id: 1, category: "Top 10 Anime", items: ["Frieren", "Tanya"] }]
 };
-
 const defaultPlayground = {
-  title: "Blank Canvas",
-  content: "This space is intentionally left blank. You can add anything you want here later!",
-  image: ""
+  title: "Blank Canvas", content: "This space is intentionally left blank.", image: ""
 };
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('intro');
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
   
   // App Data States
   const [projects, setProjects] = useState(defaultProjects);
@@ -65,35 +41,120 @@ export default function App() {
   const [selectedItem, setSelectedItem] = useState(null); 
   const [itemType, setItemType] = useState(null); 
   
-  // Admin States
+  // Admin & Auth States
   const [isAdmin, setIsAdmin] = useState(false);
   const [showLogin, setShowLogin] = useState(false);
+  const [emailInput, setEmailInput] = useState("");
   const [passwordInput, setPasswordInput] = useState("");
   
-  // Admin Dash States
   const [adminTab, setAdminTab] = useState('about'); 
   const [editingItem, setEditingItem] = useState(null); 
 
-  // Load from LocalStorage
+  // --- 1. FETCH DATA FROM CLOUD ON LOAD ---
   useEffect(() => {
-    const savedProjects = localStorage.getItem('v_projects');
-    const savedBlogs = localStorage.getItem('v_blogs');
-    const savedAbout = localStorage.getItem('v_about');
-    const savedPlayground = localStorage.getItem('v_playground');
-    
-    if (savedProjects) setProjects(JSON.parse(savedProjects));
-    if (savedBlogs) setBlogs(JSON.parse(savedBlogs));
-    if (savedAbout) setAboutData(JSON.parse(savedAbout));
-    if (savedPlayground) setPlaygroundData(JSON.parse(savedPlayground));
+    async function loadDataAndAuth() {
+      // Get current user (if you refresh the page while logged in)
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) setIsAdmin(true);
+
+      // Fetch all data from Supabase Database
+      const { data, error } = await supabase.from('site_data').select('*');
+      
+      if (data && data.length > 0) {
+        const p = data.find(d => d.section === 'projects');
+        const b = data.find(d => d.section === 'blogs');
+        const a = data.find(d => d.section === 'about');
+        const pg = data.find(d => d.section === 'playground');
+        
+        if (p) setProjects(p.data);
+        if (b) setBlogs(b.data);
+        if (a) setAboutData(a.data);
+        if (pg) setPlaygroundData(pg.data);
+      }
+      setIsLoading(false);
+    }
+    loadDataAndAuth();
   }, []);
 
-  // Save to LocalStorage
-  useEffect(() => {
-    localStorage.setItem('v_projects', JSON.stringify(projects));
-    localStorage.setItem('v_blogs', JSON.stringify(blogs));
-    localStorage.setItem('v_about', JSON.stringify(aboutData));
-    localStorage.setItem('v_playground', JSON.stringify(playgroundData));
-  }, [projects, blogs, aboutData, playgroundData]);
+  // --- AUTHENTICATION ---
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setIsLoading(true);
+    // Real secure login using Supabase Auth!
+    const { error } = await supabase.auth.signInWithPassword({
+      email: emailInput,
+      password: passwordInput,
+    });
+    
+    setIsLoading(false);
+    
+    if (error) {
+      alert("Login Failed: " + error.message);
+    } else {
+      setIsAdmin(true);
+      setShowLogin(false);
+      setActiveTab('admin');
+      setPasswordInput("");
+      setEmailInput("");
+    }
+  };
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setIsAdmin(false);
+    setActiveTab('intro');
+  };
+
+  const openModal = (item, type) => {
+    setSelectedItem(item);
+    setItemType(type);
+  };
+
+  // --- SAVE TO CLOUD FUNCTIONS ---
+  
+  // Generic save function for simple tabs (About & Playground)
+  const saveSectionToCloud = async (sectionName, dataToSave) => {
+    setIsSaving(true);
+    const { error } = await supabase.from('site_data').upsert({ section: sectionName, data: dataToSave });
+    setIsSaving(false);
+    if (error) alert("Error saving: " + error.message);
+    else alert(`Successfully saved ${sectionName} to the cloud!`);
+  };
+
+  // Save for complex lists (Projects & Blogs)
+  const saveProjectOrBlog = async (e) => {
+    e.preventDefault();
+    setIsSaving(true);
+    
+    let newList;
+    if (adminTab === 'projects') {
+      newList = editingItem.id ? projects.map(p => p.id === editingItem.id ? editingItem : p) : [...projects, { ...editingItem, id: Date.now() }];
+      setProjects(newList);
+      await supabase.from('site_data').upsert({ section: 'projects', data: newList });
+    } else {
+      newList = editingItem.id ? blogs.map(b => b.id === editingItem.id ? editingItem : b) : [...blogs, { ...editingItem, id: Date.now() }];
+      setBlogs(newList);
+      await supabase.from('site_data').upsert({ section: 'blogs', data: newList });
+    }
+    
+    setIsSaving(false);
+    setEditingItem(null);
+  };
+
+  const deleteItem = async (id, type) => {
+    if (window.confirm("Are you sure? This will be deleted from the cloud.")) {
+      if (type === 'project') {
+        const newList = projects.filter(p => p.id !== id);
+        setProjects(newList);
+        await supabase.from('site_data').upsert({ section: 'projects', data: newList });
+      }
+      if (type === 'blog') {
+        const newList = blogs.filter(b => b.id !== id);
+        setBlogs(newList);
+        await supabase.from('site_data').upsert({ section: 'blogs', data: newList });
+      }
+    }
+  };
 
   const tabs = [
     { id: 'intro', label: 'Intro' },
@@ -104,64 +165,24 @@ export default function App() {
   ];
   if (isAdmin) tabs.push({ id: 'admin', label: 'Admin Panel' });
 
-  const handleLogin = (e) => {
-    e.preventDefault();
-    if (passwordInput === "admin123") {
-      setIsAdmin(true);
-      setShowLogin(false);
-      setActiveTab('admin');
-      setPasswordInput("");
-    } else {
-      alert("Incorrect Password");
-    }
-  };
-
-  const openModal = (item, type) => {
-    setSelectedItem(item);
-    setItemType(type);
-  };
-
-  // --- ADMIN HANDLERS ---
-  const saveProjectOrBlog = (e) => {
-    e.preventDefault();
-    if (adminTab === 'projects') {
-      if (editingItem.id) setProjects(projects.map(p => p.id === editingItem.id ? editingItem : p));
-      else setProjects([...projects, { ...editingItem, id: Date.now() }]);
-    } else {
-      if (editingItem.id) setBlogs(blogs.map(b => b.id === editingItem.id ? editingItem : b));
-      else setBlogs([...blogs, { ...editingItem, id: Date.now() }]);
-    }
-    setEditingItem(null);
-  };
-
-  const deleteItem = (id, type) => {
-    if (window.confirm("Are you sure?")) {
-      if (type === 'project') setProjects(projects.filter(p => p.id !== id));
-      if (type === 'blog') setBlogs(blogs.filter(b => b.id !== id));
-    }
-  };
 
   // --- RENDER CONTENT VIEWS ---
   const renderContent = () => {
+    if (isLoading && activeTab !== 'admin') {
+      return <div className="h-full flex items-center justify-center text-red-900 font-bold font-mono">Loading data from cloud...</div>;
+    }
+
     switch (activeTab) {
-      
       // 1. THE CASCADING INTRO PAGE
       case 'intro':
         return (
           <div className="flex flex-col lg:flex-row gap-8 items-start min-h-full pb-16 relative">
-            
-            {/* Left Side: Cascading About Content */}
             <div className="flex-1 w-full space-y-16">
               
-              {/* 1. Introduction Section */}
               <div>
-                <h1 className="text-4xl md:text-5xl font-elegant text-[#991b1b] mb-6">
-                  <span className="italic font-light">My</span> Introduction
-                </h1>
+                <h1 className="text-4xl md:text-5xl font-elegant text-[#991b1b] mb-6"><span className="italic font-light">My</span> Introduction</h1>
                 <div className="flex flex-col md:flex-row gap-6">
-                  <div className="whitespace-pre-wrap font-sans text-lg text-gray-800 leading-relaxed flex-1">
-                    {aboutData.introText}
-                  </div>
+                  <div className="whitespace-pre-wrap font-sans text-lg text-gray-800 leading-relaxed flex-1">{aboutData.introText}</div>
                   {aboutData.introImage && (
                     <div className="w-full md:w-64 shrink-0 rotate-1 hover:rotate-0 transition-transform">
                       <img src={aboutData.introImage} alt="Intro" className="w-full rounded shadow-md border border-yellow-600/30" />
@@ -170,7 +191,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* 2. Myspace Ref Section */}
               <div>
                 <h2 className="text-3xl font-elegant text-[#991b1b] mb-6 border-b border-red-900/20 pb-2">Myspace ref.</h2>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6">
@@ -183,7 +203,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* 3. Interests Section */}
               <div>
                 <h2 className="text-3xl font-elegant text-[#991b1b] mb-6 border-b border-red-900/20 pb-2">Interests</h2>
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
@@ -197,7 +216,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* 4. Obsessions Section */}
               <div>
                 <h2 className="text-3xl font-elegant text-[#991b1b] mb-6 border-b border-red-900/20 pb-2">
                   Obsessions <span className="text-lg font-handwriting text-red-800/60 font-normal ml-2">(Top 10s)</span>
@@ -218,27 +236,16 @@ export default function App() {
               
             </div>
 
-            {/* Right Side: Sticky Note (It uses position: sticky to scroll down with you!) */}
             <div className="w-full lg:w-72 shrink-0 mt-8 lg:mt-0 sticky top-8 z-20">
-              {/* Push Pin */}
               <div className="absolute -top-4 left-1/2 -translate-x-1/2 z-10 text-red-700">
                 <Pin size={32} fill="#b91c1c" className="drop-shadow-md rotate-12" />
               </div>
-              
-              {/* Note Paper */}
               <div className="bg-[#fefce8] p-6 pt-10 rounded shadow-md rotate-2 transition-transform hover:rotate-0 duration-300 relative overflow-hidden h-64 border border-yellow-200">
-                {/* Lined paper effect */}
-                <div className="absolute inset-0 pointer-events-none" 
-                     style={{ backgroundImage: 'linear-gradient(transparent 95%, #fca5a5 95%)', backgroundSize: '100% 1.8rem' }}>
-                </div>
-                
-                {/* Handwritten text */}
+                <div className="absolute inset-0 pointer-events-none" style={{ backgroundImage: 'linear-gradient(transparent 95%, #fca5a5 95%)', backgroundSize: '100% 1.8rem' }}></div>
                 <p className="font-handwriting text-xl text-red-800/90 leading-[1.8rem] relative z-10">
                   This year, I decided to focus on building things I love. I wasn't able to launch many projects, but I did build a few amazing ones. I took my time with them, and I'm glad I did.
                 </p>
-                <div className="text-right text-red-800/60 mt-2 font-handwriting text-lg relative z-10">
-                  ✧.*
-                </div>
+                <div className="text-right text-red-800/60 mt-2 font-handwriting text-lg relative z-10">✧.*</div>
               </div>
             </div>
           </div>
@@ -248,9 +255,7 @@ export default function App() {
       case 'portfolio':
         return (
           <div className="min-h-full pb-16">
-            <h1 className="text-4xl font-elegant text-[#991b1b] mb-8">
-               <span className="italic font-light">All</span> Projects
-            </h1>
+            <h1 className="text-4xl font-elegant text-[#991b1b] mb-8"><span className="italic font-light">All</span> Projects</h1>
             <div className="grid grid-cols-2 md:grid-cols-5 gap-6">
               {projects.map((item) => (
                 <div key={item.id} onClick={() => openModal(item, 'project')} className="group cursor-pointer">
@@ -268,9 +273,7 @@ export default function App() {
       case 'blog':
         return (
           <div className="min-h-full pb-16 max-w-2xl mx-auto">
-            <h1 className="text-4xl font-elegant text-[#991b1b] mb-8 text-center">
-               <span className="italic font-light">My</span> Thoughts
-            </h1>
+            <h1 className="text-4xl font-elegant text-[#991b1b] mb-8 text-center"><span className="italic font-light">My</span> Thoughts</h1>
             <div className="space-y-6">
               {blogs.map((post) => (
                 <div key={post.id} onClick={() => openModal(post, 'blog')} className="bg-white/40 p-6 rounded-lg border border-yellow-600/20 shadow-sm hover:bg-white/60 transition-colors cursor-pointer group">
@@ -287,13 +290,12 @@ export default function App() {
       case 'admin':
         if (!isAdmin) return null;
         
+        // --- EDITOR MODAL ---
         if (editingItem) {
           return (
             <div className="max-w-4xl mx-auto bg-white/50 p-6 rounded-xl border border-yellow-600/30 shadow-lg mb-16">
               <div className="flex justify-between items-center mb-6">
-                <button onClick={() => setEditingItem(null)} className="flex items-center gap-2 text-gray-600 hover:text-red-800 font-bold">
-                  <ArrowLeft size={20} /> Back to List
-                </button>
+                <button onClick={() => setEditingItem(null)} className="flex items-center gap-2 text-gray-600 hover:text-red-800 font-bold"><ArrowLeft size={20} /> Back to List</button>
               </div>
 
               <form onSubmit={saveProjectOrBlog} className="space-y-4 font-sans">
@@ -317,7 +319,6 @@ export default function App() {
                     
                     <div className="p-4 bg-gray-100/50 rounded-lg border border-gray-300">
                       <h3 className="font-bold text-gray-800 mb-4">Blog Content Builder</h3>
-                      
                       <div className="space-y-4 mb-4">
                         {(editingItem.blocks || []).map((block, idx) => (
                           <div key={idx} className="flex gap-2 items-start bg-white p-3 rounded shadow-sm border border-gray-200">
@@ -329,8 +330,7 @@ export default function App() {
                                   newBlocks[idx].content = e.target.value;
                                   setEditingItem({...editingItem, blocks: newBlocks});
                                 }}
-                                className="w-full p-2 border border-gray-200 rounded min-h-[100px]" 
-                                placeholder="Write your paragraph here..." 
+                                className="w-full p-2 border border-gray-200 rounded min-h-[100px]" placeholder="Write your paragraph here..." 
                               />
                             ) : (
                               <div className="w-full">
@@ -341,8 +341,7 @@ export default function App() {
                                     newBlocks[idx].content = e.target.value;
                                     setEditingItem({...editingItem, blocks: newBlocks});
                                   }}
-                                  className="w-full p-2 border border-gray-200 rounded mb-2" 
-                                  placeholder="Paste Image URL here..." 
+                                  className="w-full p-2 border border-gray-200 rounded mb-2" placeholder="Paste Image URL here..." 
                                 />
                                 {block.content && <img src={block.content} alt="Preview" className="h-32 object-cover rounded" />}
                               </div>
@@ -351,9 +350,7 @@ export default function App() {
                               const newBlocks = [...editingItem.blocks];
                               newBlocks.splice(idx, 1);
                               setEditingItem({...editingItem, blocks: newBlocks});
-                            }} className="p-2 text-red-500 hover:bg-red-50 rounded">
-                              <Trash2 size={20} />
-                            </button>
+                            }} className="p-2 text-red-500 hover:bg-red-50 rounded"><Trash2 size={20} /></button>
                           </div>
                         ))}
                       </div>
@@ -370,17 +367,21 @@ export default function App() {
                   </>
                 )}
                 
-                <button type="submit" className="w-full bg-red-800 text-white p-4 rounded font-bold hover:bg-red-900 transition-colors flex items-center justify-center gap-2 text-lg">
-                  <Save size={20} /> Save Changes
+                <button disabled={isSaving} type="submit" className="w-full bg-red-800 text-white p-4 rounded font-bold hover:bg-red-900 transition-colors flex items-center justify-center gap-2 text-lg disabled:opacity-50">
+                  {isSaving ? 'Saving...' : <><Save size={20} /> Save to Cloud</>}
                 </button>
               </form>
             </div>
           );
         }
 
+        // --- DASHBOARD MAIN VIEW ---
         return (
           <div className="min-h-full pb-24 font-sans">
-            <h1 className="text-4xl font-elegant text-[#991b1b] mb-8">Admin Dashboard</h1>
+            <div className="flex justify-between items-center mb-8">
+              <h1 className="text-4xl font-elegant text-[#991b1b]">Admin Dashboard</h1>
+              <button onClick={handleLogout} className="flex items-center gap-2 text-red-700 bg-red-100 px-4 py-2 rounded-lg font-bold hover:bg-red-200"><LogOut size={18}/> Logout</button>
+            </div>
             
             <div className="flex gap-2 overflow-x-auto mb-8 border-b border-gray-300 pb-2">
               {['about', 'projects', 'blogs', 'playground'].map(tab => (
@@ -397,26 +398,32 @@ export default function App() {
             {/* MANAGE ABOUT PAGE */}
             {adminTab === 'about' && (
               <div className="bg-white/50 p-6 rounded-xl border border-yellow-600/30 space-y-10">
+                <div className="flex justify-between items-center border-b border-gray-300 pb-2 mb-4">
+                  <h3 className="font-bold text-xl text-gray-800">About Page Data</h3>
+                  <button disabled={isSaving} onClick={() => saveSectionToCloud('about', aboutData)} className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 flex items-center gap-2 font-bold disabled:opacity-50">
+                    <Cloud size={18}/> {isSaving ? 'Saving...' : 'Sync to Cloud'}
+                  </button>
+                </div>
                 
                 {/* 1. Intro */}
                 <div>
-                  <h3 className="font-bold text-xl mb-4 text-gray-800 border-b border-gray-300 pb-2">1. Introduction</h3>
+                  <h3 className="font-bold text-lg mb-2 text-gray-800">1. Introduction Text</h3>
                   <textarea 
                     value={aboutData.introText} 
                     onChange={e => setAboutData({...aboutData, introText: e.target.value})}
-                    className="w-full p-3 border border-gray-300 rounded h-40 mb-2"
+                    className="w-full p-3 border border-gray-300 rounded h-40 mb-2 bg-white"
                   />
                   <input 
                     placeholder="Intro Image URL" 
                     value={aboutData.introImage} 
                     onChange={e => setAboutData({...aboutData, introImage: e.target.value})}
-                    className="w-full p-2 border border-gray-300 rounded"
+                    className="w-full p-2 border border-gray-300 rounded bg-white"
                   />
                 </div>
 
                 {/* 2. Myspace */}
                 <div>
-                  <h3 className="font-bold text-xl mb-4 text-gray-800 border-b border-gray-300 pb-2">2. Myspace Ref</h3>
+                  <h3 className="font-bold text-lg mb-2 text-gray-800">2. Myspace Ref</h3>
                   <div className="grid md:grid-cols-2 gap-4 mb-4">
                     {aboutData.myspace.map((friend, idx) => (
                       <div key={friend.id} className="bg-white p-3 border border-gray-200 rounded flex gap-2 items-center">
@@ -457,7 +464,7 @@ export default function App() {
 
                 {/* 3. Interests */}
                 <div>
-                  <h3 className="font-bold text-xl mb-4 text-gray-800 border-b border-gray-300 pb-2">3. Interests</h3>
+                  <h3 className="font-bold text-lg mb-2 text-gray-800">3. Interests</h3>
                   <div className="space-y-4 mb-4">
                     {aboutData.interests.map((interest, idx) => (
                       <div key={interest.id} className="bg-white p-4 border border-gray-200 rounded flex flex-col md:flex-row gap-4">
@@ -509,7 +516,7 @@ export default function App() {
 
                 {/* 4. Obsessions */}
                 <div>
-                  <h3 className="font-bold text-xl mb-4 text-gray-800 border-b border-gray-300 pb-2">4. Obsessions (Top Lists)</h3>
+                  <h3 className="font-bold text-lg mb-2 text-gray-800">4. Obsessions (Top Lists)</h3>
                   <div className="grid md:grid-cols-2 gap-4 mb-4">
                     {aboutData.obsessions.map((obs, idx) => (
                       <div key={obs.id} className="bg-white p-4 border border-gray-200 rounded shadow-sm relative group">
@@ -546,15 +553,18 @@ export default function App() {
                     <Plus size={16}/> Add New List
                   </button>
                 </div>
-
-                <p className="text-sm text-gray-500 italic mt-4">* Note: Changes to the About page save automatically.</p>
               </div>
             )}
 
             {/* MANAGE PLAYGROUND */}
             {adminTab === 'playground' && (
               <div className="bg-white/50 p-6 rounded-xl border border-yellow-600/30 space-y-6">
-                <h3 className="font-bold text-xl mb-4 text-gray-800 border-b border-gray-300 pb-2">Playground Customization</h3>
+                <div className="flex justify-between items-center border-b border-gray-300 pb-2 mb-4">
+                  <h3 className="font-bold text-xl text-gray-800">Playground Customization</h3>
+                  <button disabled={isSaving} onClick={() => saveSectionToCloud('playground', playgroundData)} className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 flex items-center gap-2 font-bold disabled:opacity-50">
+                    <Cloud size={18}/> {isSaving ? 'Saving...' : 'Sync to Cloud'}
+                  </button>
+                </div>
                 
                 <div>
                   <label className="block text-sm font-bold text-gray-700 mb-1">Title</label>
@@ -585,8 +595,6 @@ export default function App() {
                     placeholder="https://..."
                   />
                 </div>
-
-                <p className="text-sm text-gray-500 italic mt-4">* Note: Changes to the Playground save automatically.</p>
               </div>
             )}
 
@@ -745,18 +753,21 @@ export default function App() {
           </div>
         )}
 
-        {/* LOGIN MODAL */}
+        {/* LOGIN MODAL (NOW SECURED BY CLOUD) */}
         {showLogin && !isAdmin && (
           <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
             <div className="bg-[#fefce8] p-8 rounded-xl shadow-2xl w-full max-w-sm border border-yellow-200 relative">
               <button onClick={() => setShowLogin(false)} className="absolute top-4 right-4 text-gray-500 hover:text-red-700"><X size={20}/></button>
               <div className="flex flex-col items-center text-center mb-6">
                 <div className="w-12 h-12 bg-red-100 text-red-800 rounded-full flex items-center justify-center mb-3"><Lock size={24} /></div>
-                <h2 className="text-2xl font-elegant font-bold text-gray-800">Admin Access</h2>
+                <h2 className="text-2xl font-elegant font-bold text-gray-800">Admin Login</h2>
               </div>
-              <form onSubmit={handleLogin}>
-                <input type="password" autoFocus placeholder="Password..." value={passwordInput} onChange={(e) => setPasswordInput(e.target.value)} className="w-full p-3 rounded-lg border border-gray-300 mb-4 bg-white font-sans text-center tracking-widest outline-none" />
-                <button type="submit" className="w-full bg-red-800 text-white font-bold p-3 rounded-lg hover:bg-red-900 transition-colors">Unlock</button>
+              <form onSubmit={handleLogin} className="space-y-3">
+                <input type="email" required placeholder="Admin Email" value={emailInput} onChange={(e) => setEmailInput(e.target.value)} className="w-full p-3 rounded-lg border border-gray-300 bg-white font-sans outline-none" />
+                <input type="password" required placeholder="Password" value={passwordInput} onChange={(e) => setPasswordInput(e.target.value)} className="w-full p-3 rounded-lg border border-gray-300 bg-white font-sans outline-none" />
+                <button disabled={isLoading} type="submit" className="w-full bg-red-800 text-white font-bold p-3 rounded-lg hover:bg-red-900 transition-colors disabled:opacity-50">
+                  {isLoading ? 'Authenticating...' : 'Unlock Dashboard'}
+                </button>
               </form>
             </div>
           </div>
