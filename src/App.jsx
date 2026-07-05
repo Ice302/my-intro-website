@@ -791,11 +791,11 @@ export default function App() {
         }
         @font-face { 
           font-family: 'zai crumpled paper'; 
-          src: url('/fonts/zai-crumpled-paper.ttf') format('truetype'); 
+          src: url('/fonts/zai_CrumpledPaper.ttf') format('truetype'); 
         }
         @font-face { 
           font-family: 'bantayog light'; 
-          src: url('/fonts/bantayog-light.ttf') format('truetype'); 
+          src: url('/fonts/Bantayog-Light.otf') format('opentype'); 
         }
         
         .font-title { font-family: 'Headliner No 45', sans-serif; }
