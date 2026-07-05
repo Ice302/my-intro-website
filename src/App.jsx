@@ -786,8 +786,8 @@ export default function App() {
         
         /* HOSTED CUSTOM FONTS */
         @font-face { 
-          font-family: 'CC-Abrasion'; 
-          src: url('/fonts/CC-Abrasion.ttf') format('truetype'); 
+          font-family: 'Headliner No 45'; 
+          src: url('/fonts/HeadlinerNo.45%20DEMO.ttf') format('truetype'); 
         }
         @font-face { 
           font-family: 'zai crumpled paper'; 
@@ -798,7 +798,7 @@ export default function App() {
           src: url('/fonts/bantayog-light.ttf') format('truetype'); 
         }
         
-        .font-title { font-family: 'CC-Abrasion', serif; }
+        .font-title { font-family: 'Headliner No 45', sans-serif; }
         .font-subtitle { font-family: 'zai crumpled paper', sans-serif; }
         .font-body { font-family: 'bantayog light', sans-serif; }
         .font-handwriting { font-family: 'Caveat', cursive; }
