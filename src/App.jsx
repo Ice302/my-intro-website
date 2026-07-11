@@ -484,14 +484,14 @@ export default function App() {
 
     // --- ALL OTHER MODALS (Beige box: Regular Blogs, Standard Projects, Gallery, Code, etc) ---
     return (
-      <div className="bg-[#fefce8] rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto relative border border-yellow-200">
+      <div className="bg-[#fefce8] rounded-xl shadow-2xl w-300 max-w-4xl max-h-[90vh] overflow-y-auto relative border border-yellow-200">
         <button onClick={() => setSelectedItem(null)} className="absolute top-4 right-4 z-50 bg-white/80 p-2 rounded-full hover:bg-red-100 text-gray-800 transition-colors shadow-md"><X size={20} /></button>
         
         {itemType === 'project' && (
           <div className="relative">
             
             {selectedItem.type === 'gallery' ? (
-              <div className="w-full bg-[#f4f4f4] rounded-t-xl min-h-[70vh] relative overflow-hidden p-8 border-b border-gray-300">
+              <div className="w-300 bg-[#f4f4f4] rounded-t-xl min-h-[70vh] relative overflow-hidden p-8 border-b border-gray-300">
                  {isAdmin && (
                    <div className="absolute top-4 left-4 z-50 flex gap-2">
                       <span className="bg-yellow-200 text-yellow-900 font-bold px-3 py-1.5 rounded shadow text-sm">Admin: Drag to move</span>
