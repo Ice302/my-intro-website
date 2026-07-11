@@ -732,7 +732,7 @@ export default function App() {
 
               <div className="w-[100%] h-14 bg-[#d4d4d4] border-2 border-[#1a1a1a] border-b-[16px] rounded-sm z-50 flex items-center justify-center relative mt-[-2px]">
                  <div className="absolute bottom-[-16px] right-8 md:right-16 bg-[#fbf065] px-4 py-1.5 border-2 border-[#1a1a1a] shadow-[2px_2px_0px_#1a1a1a] rotate-[-4deg] font-mono font-bold text-[10px] md:text-xs hover:rotate-0 transition-transform cursor-pointer z-50">
-                   sam's secret files
+                   Iceyyy's projects
                  </div>
               </div>
 
