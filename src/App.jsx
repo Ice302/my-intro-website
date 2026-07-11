@@ -1,13 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Pin, X, Lock, Plus, Edit2, Trash2, Save, Image as ImageIcon, Type, ArrowLeft, LogOut, Upload, ChevronUp, ChevronDown, MessageSquare, Star, Send, Pencil, Activity, Heart, Thermometer, Droplets, Video, LayoutGrid, FileText, Search, Calendar, Cpu, Database, Network, Settings, GitBranch, Terminal, GripVertical } from 'lucide-react';
+import { Pin, X, Lock, Plus, Edit2, Trash2, Save, Image as ImageIcon, Type, ArrowLeft, LogOut, Upload, ChevronUp, ChevronDown, MessageSquare, Star, Send, Pencil, Activity, Heart, Thermometer, Droplets, Video, LayoutGrid, FileText, Search, Calendar, Cpu, Database, Network, Settings, GitBranch, Terminal, GripVertical, Quote, AlignLeft } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
-// --- INITIALIZE SUPABASE ---
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supabase = (supabaseUrl && supabaseKey) ? createClient(supabaseUrl, supabaseKey) : null;
 
-// --- DRAGGABLE GALLERY IMAGE COMPONENT ---
 const DraggableImage = ({ item, updateImage, bringToFront, isAdmin }) => {
   const [pos, setPos] = useState({ x: item.x || 0, y: item.y || 0 });
   const [isDragging, setIsDragging] = useState(false);
@@ -57,7 +55,6 @@ const DraggableImage = ({ item, updateImage, bringToFront, isAdmin }) => {
   );
 };
 
-// --- DEFAULT DATA ---
 const defaultProjects = [
   { id: 1, tabId: "94", title: "oil lamp", tabAlign: "center", type: "project", image: "https://images.unsplash.com/photo-1555066931-4365d14bab8c?w=400&q=80", content: "Main system architecture." },
   { id: 2, tabId: "95", title: "oats", tabAlign: "right", type: "gallery", galleryBlocks: [{id:1, w: 300, x: 50, y: 50, z: 1, image: 'https://images.unsplash.com/photo-1484480974693-6ca0a78fb36b?w=400&q=80'}], content: "A collection of renders." },
@@ -67,8 +64,25 @@ const defaultProjects = [
 ];
 
 const defaultBlogs = [
-  { id: 1, type: "regular", date: "Oct 12, 2026", title: "Finding peace in slower development cycles", excerpt: "Sometimes the best code is the code you write after stepping away from the screen for a while. In a world obsessed with shipping fast, I took a month to just plan my next architecture.", rating: 5, coverImage: "https://images.unsplash.com/photo-1499750310107-5fef28a66643?w=800&q=80", category: "Life" },
-  { id: 2, type: "album", date: "Nov 01, 2026", title: "Blonde - Frank Ocean", excerpt: "A masterpiece of modern R&B that explores the duality of youth, nostalgia, and heartbreak. The minimalist production leaves so much room for emotional resonance.\n\nFavorite tracks: \n- Nikes\n- Ivy\n- White Ferrari", rating: 5, coverImage: "https://images.unsplash.com/photo-1614850523459-c2f4c699c52e?w=400&q=80", category: "Music" }
+  { 
+    id: 1, type: "regular", date: "Oct 12, 2026", title: "Finding peace in slower development cycles", 
+    excerpt: "Sometimes the best code is the code you write after stepping away from the screen for a while.", 
+    category: "Life", tags: "thoughts, dev", rating: 5, coverImage: "https://images.unsplash.com/photo-1499750310107-5fef28a66643?w=800&q=80",
+    blocks: [
+      { type: 'text', content: 'In a world obsessed with shipping fast, I took a month to just plan my next architecture.' },
+      { type: 'pullquote', content: 'Slow down to speed up.' }
+    ]
+  },
+  { 
+    id: 2, type: "album", date: "Nov 01, 2026", title: "Blonde - Frank Ocean", 
+    excerpt: "A masterpiece of modern R&B that explores the duality of youth, nostalgia, and heartbreak.", 
+    category: "Music", tags: "rnb, classics", rating: 5, coverImage: "https://images.unsplash.com/photo-1614850523459-c2f4c699c52e?w=400&q=80",
+    bgColor: "#eb5e28", bgImage: "",
+    blocks: [
+      { type: 'text', content: "The minimalist production leaves so much room for emotional resonance.\n\nFavorite tracks:\n- Nikes\n- Ivy\n- White Ferrari" },
+      { type: 'quote', content: "I'd rather live outside, I'd rather chip my pride than lose my mind out here." }
+    ]
+  }
 ];
 
 const defaultAbout = {
@@ -122,6 +136,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('intro');
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [toastMessage, setToastMessage] = useState(null); 
   
   const [projects, setProjects] = useState(defaultProjects);
   const [blogs, setBlogs] = useState(defaultBlogs);
@@ -149,9 +164,13 @@ export default function App() {
   const [adminTab, setAdminTab] = useState('about'); 
   const [editingItem, setEditingItem] = useState(null); 
 
-  // Drag and Drop Ref States for Admin Panel
   const dragItem = useRef(null);
   const dragOverItem = useRef(null);
+
+  const showToast = (msg) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3000);
+  };
 
   const handleSortAboutList = (listName) => {
     if (dragItem.current === null || dragOverItem.current === null) return;
@@ -242,11 +261,11 @@ export default function App() {
 
   const handleLogin = async (e) => {
     e.preventDefault();
-    if (!supabase) return alert("Database not connected.");
+    if (!supabase) return showToast("Database not connected.");
     setIsLoading(true);
     const { error } = await supabase.auth.signInWithPassword({ email: emailInput, password: passwordInput });
     setIsLoading(false);
-    if (error) alert("Login Failed: " + error.message);
+    if (error) showToast("Login Failed: " + error.message);
     else { setIsAdmin(true); setShowLogin(false); setActiveTab('admin'); setPasswordInput(""); setEmailInput(""); }
   };
 
@@ -268,14 +287,14 @@ export default function App() {
   const handleImageUpload = (e, callback) => {
     const file = e.target.files[0];
     if (!file) return;
-    if (file.size > 1024 * 1024 * 2) { alert("Please choose an image smaller than 2MB."); return; }
+    if (file.size > 1024 * 1024 * 2) { showToast("Please choose an image smaller than 2MB."); return; }
     const reader = new FileReader();
     reader.onloadend = () => callback(reader.result);
     reader.readAsDataURL(file);
   };
 
   const saveAllToCloud = async (overrideProjects = null) => {
-    if (!supabase) return alert("Database not connected.");
+    if (!supabase) return showToast("Database not connected.");
     setIsSaving(true);
     const updates = [
       { section: 'about', data: aboutData },
@@ -287,8 +306,8 @@ export default function App() {
     ];
     const { error } = await supabase.from('site_data').upsert(updates);
     setIsSaving(false);
-    if (error) alert("Error saving: " + error.message);
-    else alert("Successfully deployed all changes to the cloud!");
+    if (error) showToast("Error saving: " + error.message);
+    else showToast("Successfully deployed all changes to the cloud!");
   };
 
   const handleListSave = (e, listType) => {
@@ -306,6 +325,13 @@ export default function App() {
     setEditingItem(null);
   };
 
+  const handleDeleteItem = (listType, id) => {
+    setEditingItem(null);
+    if (listType === 'projects') setProjects(projects.filter(p => p.id !== id));
+    if (listType === 'blogs') setBlogs(blogs.filter(b => b.id !== id));
+    if (listType === 'socials') setSocials(socials.filter(s => s.id !== id));
+  }
+
   const updateModalGalleryImage = (id, newPos) => {
     setModalGalleryBlocks(prev => prev.map(img => img.id === id ? { ...img, ...newPos } : img));
   };
@@ -321,12 +347,12 @@ export default function App() {
     const updatedProjects = projects.map(p => p.id === selectedItem.id ? { ...p, galleryBlocks: modalGalleryBlocks } : p);
     setProjects(updatedProjects);
     await saveAllToCloud(updatedProjects);
-    alert("Gallery layout saved successfully!");
+    showToast("Gallery layout saved successfully!");
   };
 
   const sendAnonymousMessage = async (e) => {
     e.preventDefault();
-    if (!supabase) return alert("Database not connected.");
+    if (!supabase) return showToast("Database not connected.");
     let payload = newGuestMessage;
     if (playgroundMode === 'draw' && canvasRef.current) payload = canvasRef.current.toDataURL(); 
     if (!payload.trim() || payload === 'data:,') return;
@@ -341,9 +367,9 @@ export default function App() {
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(0, 0, canvasRef.current.width, canvasRef.current.height);
       }
-      alert("Note sent anonymously!");
+      showToast("Note sent anonymously!");
     } else {
-      alert("Error sending note: " + (error?.message || "Unknown error"));
+      showToast("Error sending note.");
     }
     setIsSendingMessage(false);
   };
@@ -358,12 +384,183 @@ export default function App() {
   ];
   if (isAdmin) tabs.push({ id: 'admin', label: 'Admin Panel' });
 
+  const renderModalContent = () => {
+    if (!selectedItem) return null;
+    
+    // --- VINYL ALBUM REVIEW MODAL ---
+    if (itemType === 'blog' && selectedItem.type === 'album') {
+      return (
+         <div className="w-200 max-w-12xl h-[75vh] min-h-[400px] rounded-xl shadow-2xl relative flex flex-col items-center justify-center overflow-hidden border-4 border-white/20"
+              style={{ backgroundColor: selectedItem.bgColor || '#eb5e28', backgroundImage: selectedItem.bgImage ? `url(${selectedItem.bgImage})` : 'none', backgroundSize: 'cover', backgroundPosition: 'center' }}>
+            <button onClick={() => setSelectedItem(null)} className="absolute top-6 right-6 z-50 text-white/90 hover:text-white bg-black/30 p-2 rounded-full backdrop-blur transition-colors"><X size={24} /></button>
+            
+            {/* Centering Wrapper: Offset by -12 to center the total mass when the vinyl slides out */}
+            <div className="relative flex items-center justify-center scale-[0.65] sm:scale-75 md:scale-100 md:-translate-x-12">
+                
+                {/* Black Spinning Record */}
+                <div className="absolute w-[300px] h-[300px] md:w-[450px] md:h-[450px] z-10 animate-slide-vinyl">
+                    <div className="w-full h-full rounded-full bg-[#111] animate-[spin_4s_linear_infinite] shadow-2xl border border-[#222]" style={{ backgroundImage: 'repeating-radial-gradient(circle at 50% 50%, #111, #111 2px, #1a1a1a 3px, #1a1a1a 4px)' }}>
+                         <div className="absolute inset-0 m-auto w-1/3 h-1/3 rounded-full bg-white shadow-[inset_0_2px_4px_rgba(0,0,0,0.2)] flex items-center justify-center">
+                             <div className="w-2 h-2 rounded-full bg-black shadow-inner"></div>
+                         </div>
+                    </div>
+                </div>
+
+                {/* White Cover Sleeve */}
+                <div className="w-[300px] h-[300px] md:w-[450px] md:h-[450px] bg-[#fefce8] shadow-[15px_0_35px_rgba(0,0,0,0.6)] z-20 relative p-6 md:p-10 flex flex-col border border-gray-200 rounded-sm">
+                    <h2 className="text-3xl md:text-5xl font-title text-gray-900 mb-2 leading-none">{selectedItem.title}</h2>
+                    
+                    <div className="flex text-yellow-600 mb-4 drop-shadow-sm border-b border-gray-300/50 pb-4">
+                        {[...Array(Number(selectedItem.rating || 5))].map((_, i) => <Star key={i} size={16} fill="currentColor" />)}
+                    </div>
+                    
+                    {/* SCROLLABLE REVIEW CONTENT using WP Blocks */}
+                    <div className="flex-1 overflow-y-auto font-body text-sm md:text-base text-gray-800 whitespace-pre-wrap hide-scrollbar pr-2 space-y-4">
+                        {selectedItem.excerpt && <p className="font-bold mb-4">{selectedItem.excerpt}</p>}
+                        {(selectedItem.blocks || []).map((block, idx) => {
+                          if (block.type === 'text') return <p key={idx} className="leading-relaxed">{block.content}</p>;
+                          if (block.type === 'quote') return <blockquote key={idx} className="border-l-4 border-red-700 pl-4 py-1 my-4 text-red-900 italic font-medium">{block.content}</blockquote>;
+                          if (block.type === 'pullquote') return <div key={idx} className="text-xl md:text-2xl font-title text-center text-red-800 my-6 leading-tight">"{block.content}"</div>;
+                          if (block.type === 'image') return <img key={idx} src={block.content} alt="review visual" className="w-full rounded shadow-sm my-4" />;
+                          return null;
+                        })}
+                    </div>
+
+                    {/* Sticky Note Album Art */}
+                    <div className="absolute -bottom-6 -right-6 md:-bottom-8 md:-right-8 w-28 h-28 md:w-40 md:h-40 bg-[#fbf065] shadow-xl rotate-[-6deg] p-1.5 md:p-2 border border-yellow-400 flex flex-col transition-transform hover:rotate-0 hover:scale-105 duration-300 z-30">
+                       <Pin size={24} fill="#b91c1c" className="absolute -top-3 left-1/2 -translate-x-1/2 text-red-700 z-10 drop-shadow-md" />
+                       {selectedItem.coverImage ? (
+                          <img src={selectedItem.coverImage} className="w-full h-full object-cover shadow-inner" alt="Album Art" />
+                       ) : (
+                          <div className="w-full h-full border border-yellow-500/50 flex items-center justify-center text-xs text-yellow-700 font-bold text-center p-2">No Art Uploaded</div>
+                       )}
+                    </div>
+                </div>
+            </div>
+         </div>
+      );
+    }
+
+    // --- VIDEO PLAYER ONLY (iOS Grey Player) ---
+    if (selectedItem.type === 'video') {
+      return (
+         <div className="bg-[#888888] rounded-[36px] p-6 md:p-10 w-full max-w-2xl mx-auto flex flex-col md:flex-row gap-6 md:gap-10 text-white font-sans select-none shadow-2xl relative">
+           <button onClick={() => setSelectedItem(null)} className="absolute top-6 right-6 z-50 text-white/70 hover:text-white transition-colors"><X size={24} /></button>
+           
+           <div className="w-full md:w-72 aspect-square bg-black rounded-[24px] overflow-hidden shrink-0 shadow-inner flex items-center justify-center relative">
+             <video src={selectedItem.image} controls autoPlay loop className="absolute inset-0 w-full h-full object-cover" />
+           </div>
+           
+           <div className="flex-1 flex flex-col justify-center py-2">
+              <div className="flex justify-between items-center mb-2">
+                 <span className="text-sm font-semibold tracking-wide">iPhone</span>
+                 <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                   <path d="M12 22L1 12H7V2H17V12H23L12 22Z" fill="currentColor" opacity="0.3"/>
+                   <path d="M12 18L5 12H9V4H15V12H19L12 18Z" fill="currentColor"/>
+                 </svg>
+              </div>
+              <h2 className="text-3xl font-bold leading-tight mb-1 tracking-tight truncate">{selectedItem.title}</h2>
+              <p className="text-lg font-medium opacity-80 mb-8 truncate">{selectedItem.author || 'Unknown Artist'} — {selectedItem.tabId || 'Album'}</p>
+              
+              <div className="flex items-center gap-3 text-xs mb-8 font-bold opacity-80">
+                 <span>0:00</span>
+                 <div className="flex-1 h-1.5 bg-white/30 rounded-full relative">
+                    <div className="absolute left-0 top-0 h-full w-1/3 bg-white rounded-full">
+                       <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full shadow-sm"></div>
+                    </div>
+                 </div>
+                 <span>3:14</span>
+              </div>
+              
+              <div className="flex justify-center gap-12 items-center px-4 mb-4">
+                 <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><polygon points="11 19 2 12 11 5 11 19"/><polygon points="22 19 13 12 22 5 22 19"/></svg>
+                 <svg width="40" height="40" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+                 <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><polygon points="13 19 22 12 13 5 13 19"/><polygon points="2 19 11 12 2 5 2 19"/></svg>
+              </div>
+           </div>
+         </div>
+      );
+    }
+
+    // --- ALL OTHER MODALS (Beige box: Regular Blogs, Standard Projects, Gallery, Code, etc) ---
+    return (
+      <div className="bg-[#fefce8] rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto relative border border-yellow-200">
+        <button onClick={() => setSelectedItem(null)} className="absolute top-4 right-4 z-50 bg-white/80 p-2 rounded-full hover:bg-red-100 text-gray-800 transition-colors shadow-md"><X size={20} /></button>
+        
+        {itemType === 'project' && (
+          <div className="relative">
+            
+            {selectedItem.type === 'gallery' ? (
+              <div className="w-full bg-[#f4f4f4] rounded-t-xl min-h-[70vh] relative overflow-hidden p-8 border-b border-gray-300">
+                 {isAdmin && (
+                   <div className="absolute top-4 left-4 z-50 flex gap-2">
+                      <span className="bg-yellow-200 text-yellow-900 font-bold px-3 py-1.5 rounded shadow text-sm">Admin: Drag to move</span>
+                      <button onClick={saveGalleryLayout} className="bg-green-600 text-white font-bold px-4 py-1.5 rounded shadow hover:bg-green-700 transition-colors text-sm">Save Layout</button>
+                   </div>
+                 )}
+                 {modalGalleryBlocks.map((img) => (
+                   <DraggableImage key={img.id} item={img} updateImage={updateModalGalleryImage} bringToFront={bringToFrontModalGallery} isAdmin={isAdmin} />
+                 ))}
+                 <div className="absolute bottom-8 left-8 z-40 pointer-events-none">
+                    <h2 className="text-6xl md:text-8xl font-title font-bold text-gray-900 drop-shadow-lg">{selectedItem.title}</h2>
+                    <p className="font-mono text-gray-800 bg-white/70 px-3 py-1 rounded inline-block backdrop-blur-sm mt-2 font-bold shadow-sm">{selectedItem.tabId}</p>
+                    {selectedItem.content && <p className="font-body text-gray-800 mt-2 max-w-sm bg-white/70 p-3 rounded backdrop-blur-sm shadow-sm">{selectedItem.content}</p>}
+                 </div>
+              </div>
+
+            ) : selectedItem.type === 'custom' ? (
+              <div className="w-full bg-white rounded-t-xl overflow-hidden p-8" dangerouslySetInnerHTML={{ __html: selectedItem.content }} />
+            
+            ) : selectedItem.type === 'iframe' ? (
+              <iframe src={selectedItem.content} className="w-full h-[60vh] bg-white rounded-t-xl border-0" title={selectedItem.title} />
+            
+            ) : (
+              selectedItem.image && <img src={selectedItem.image} className="w-full h-80 object-cover rounded-t-xl" alt="cover" />
+            )}
+            
+            {/* Default Footer for non-fullscreen types */}
+            {selectedItem.type !== 'custom' && selectedItem.type !== 'iframe' && selectedItem.type !== 'gallery' && (
+              <div className="p-10 bg-[#fefce8] rounded-b-xl">
+                <h2 className="text-7xl font-title font-bold text-red-900 mb-1 tracking-wide">{selectedItem.title}</h2>
+                <p className="font-mono text-gray-500 mb-6 pb-6 border-b border-red-900/10">{selectedItem.tabId}</p>
+                <p className="font-body text-lg text-gray-800 leading-relaxed whitespace-pre-wrap">{selectedItem.content}</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* REGULAR BLOG MODAL */}
+        {itemType === 'blog' && (
+          <div className="p-10 md:p-14 bg-[#fefce8] rounded-xl">
+              <p className="font-mono text-red-700 mb-2 font-bold tracking-widest text-sm uppercase">{selectedItem.category}</p>
+              <h2 className="text-5xl md:text-6xl font-title font-bold text-gray-900 mb-2 tracking-wide leading-tight">{selectedItem.title}</h2>
+              <div className="flex items-center gap-4 text-gray-500 mb-8 border-b border-gray-300/50 pb-6">
+                 <p className="font-mono text-sm">{selectedItem.date}</p>
+                 {selectedItem.tags && <span className="bg-gray-200/50 px-2 py-0.5 rounded text-xs font-mono">{selectedItem.tags}</span>}
+              </div>
+              
+              <div className="space-y-6 font-body text-lg text-gray-800 leading-relaxed">
+                 {selectedItem.excerpt && <p className="font-bold text-xl mb-4 italic text-gray-600">{selectedItem.excerpt}</p>}
+                 
+                 {(selectedItem.blocks || []).map((block, idx) => {
+                    if (block.type === 'text') return <p key={idx}>{block.content}</p>;
+                    if (block.type === 'quote') return <blockquote key={idx} className="border-l-4 border-red-700 pl-6 py-2 my-6 text-2xl font-title text-gray-900 italic tracking-wide">{block.content}</blockquote>;
+                    if (block.type === 'pullquote') return <div key={idx} className="text-xl md:text-3xl font-title text-center text-red-800 my-10 px-8 leading-tight">"{block.content}"</div>;
+                    if (block.type === 'image') return <img key={idx} src={block.content} alt="blog content" className="w-full rounded-lg shadow-md my-8 object-cover" />;
+                    return null;
+                 })}
+              </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const renderContent = () => {
     if (isLoading && activeTab !== 'admin') {
       return <div className="h-full flex items-center justify-center text-red-900 font-bold font-mono">Loading...</div>;
     }
 
-    // WORK IN PROGRESS (WIP) OVERRIDE
     if (siteSettings?.wip?.[activeTab] && activeTab !== 'admin') {
       if (!isAdmin) {
         return (
@@ -469,13 +666,11 @@ export default function App() {
                 className="w-[96%] relative overflow-hidden flex justify-center"
                 style={{ height: `${containerHeightRem}rem`, minHeight: '14rem' }}
               >
-                {/* 1. The Slanted Grey Background (Pure Trapezoid) */}
                 <div 
                   className="absolute inset-0 bg-[#e8e8e8] z-0"
                   style={{ clipPath: 'polygon(10% 2.5rem, 90% 2.5rem, 98% 100%, 2% 100%)' }}
                 ></div>
 
-                {/* 2. The Perspective Lines (Tracing the Trapezoid exactly) */}
                 <svg className="absolute inset-0 w-full h-full z-10 pointer-events-none" style={{ overflow: 'visible' }}>
                    <line x1="10%" y1="2.5rem" x2="90%" y2="2.5rem" stroke="#1a1a1a" strokeWidth="2" />
                    <line x1="10%" y1="2.5rem" x2="2%" y2="100%" stroke="#1a1a1a" strokeWidth="2" />
@@ -574,8 +769,8 @@ export default function App() {
         const albumBlogs = blogs.filter(b => b.type === 'album');
 
         return (
-          <div className="min-h-full pb-16 max-w-6xl mx-auto flex flex-col lg:flex-row gap-8">
-            <div className="flex-1">
+          <div className="min-h-full pb-16 max-w-6xl mx-auto flex flex-col lg:flex-row gap-8 relative items-start">
+            <div className="flex-1 w-full min-w-0">
               <h1 className="text-6xl md:text-7xl font-title text-[#991b1b] mb-8 tracking-wide">My Thoughts</h1>
               {regularBlogs.length === 0 ? (
                 <p className="text-xl font-subtitle text-gray-600 mt-10">No regular posts right now...</p>
@@ -589,16 +784,16 @@ export default function App() {
                           <div className="absolute inset-0 bg-black/10 group-hover:bg-transparent transition-colors"></div>
                         </div>
                       )}
-                      <div className="p-6 md:p-8 flex-1 flex flex-col justify-center">
+                      <div className="p-6 md:p-8 flex-1 flex flex-col justify-center min-w-0">
                         <div className="flex justify-between items-start mb-3">
-                          <p className="font-handwriting text-red-700 text-2xl">{post.date}</p>
+                          <p className="font-handwriting text-red-700 text-2xl whitespace-nowrap">{post.date}</p>
                           {post.rating && (
-                            <div className="flex text-yellow-500">
+                            <div className="flex text-yellow-500 shrink-0">
                               {[...Array(Number(post.rating))].map((_, i) => <Star key={i} size={16} fill="currentColor" />)}
                             </div>
                           )}
                         </div>
-                        <h2 className="font-title text-4xl mb-2 text-gray-900 group-hover:text-red-700 transition-colors tracking-wide">{post.title}</h2>
+                        <h2 className="font-title text-4xl mb-2 text-gray-900 group-hover:text-red-700 transition-colors tracking-wide break-words">{post.title}</h2>
                         {post.category && <span className="text-[10px] font-bold uppercase tracking-widest text-red-800 bg-red-100 px-2 py-1 rounded w-fit mb-3">{post.category}</span>}
                         <p className="font-body text-gray-700 text-base line-clamp-3 leading-relaxed">{post.excerpt}</p>
                       </div>
@@ -608,9 +803,10 @@ export default function App() {
               )}
             </div>
 
-            <div className="w-full lg:w-72 shrink-0 lg:mt-24">
+            {/* Right Column: Vinyl Shelf */}
+            <div className="w-full lg:w-80 shrink-0 lg:mt-24 sticky top-8 z-10 self-start">
               <h2 className="text-4xl font-title text-[#991b1b] mb-4 tracking-wide border-b border-red-900/20 pb-2">Vinyl Reviews</h2>
-              <div className="bg-[#4a3629] p-4 rounded-xl shadow-[inset_0_10px_20px_rgba(0,0,0,0.5)] flex flex-col-reverse gap-0.5 min-h-[300px] border-[6px] border-[#312219]">
+              <div className="w-80 bg-[#4a3629] p-4 rounded-xl shadow-[inset_0_10px_20px_rgba(0,0,0,0.5)] flex flex-col-reverse gap-0.5 min-h-[300px] border-[6px] border-[#312219]">
                   {albumBlogs.length === 0 ? (
                     <p className="text-gray-400 font-body text-center text-sm py-10">Shelf is empty</p>
                   ) : albumBlogs.map(album => (
@@ -618,7 +814,7 @@ export default function App() {
                          <div className="w-full h-[1px] bg-black/10 absolute top-1 left-0"></div>
                          <div className="w-full h-[1px] bg-black/10 absolute bottom-1 left-0"></div>
                          <span className="font-title text-sm tracking-widest text-black/80 truncate w-full group-hover:text-red-800 transition-colors">{album.title}</span>
-                         <div className="absolute right-0 top-0 h-full w-4 bg-[#111] opacity-0 group-hover:opacity-100 transition-opacity" style={{ backgroundImage: 'repeating-linear-gradient(90deg, transparent, transparent 1px, #222 1px, #222 2px)' }}></div>
+                         <div className="absolute right-0 top-0 h-full w-6 bg-[#111] opacity-0 group-hover:opacity-100 transition-opacity" style={{ backgroundImage: 'repeating-linear-gradient(90deg, transparent, transparent 1px, #222 1px, #222 2px)' }}></div>
                       </div>
                   ))}
               </div>
@@ -769,28 +965,56 @@ export default function App() {
 
                 {adminTab === 'blogs' && (
                   <>
-                    <div className="mb-4">
-                       <label className="block text-[10px] font-bold text-gray-500 uppercase">Review Type</label>
-                       <select value={editingItem.type || 'regular'} onChange={e => setEditingItem({...editingItem, type: e.target.value})} className="w-full p-2 rounded border bg-white text-sm font-bold text-red-900">
-                           <option value="regular">Regular Blog Post</option>
-                           <option value="album">Vinyl Album Review</option>
-                       </select>
+                    <div className="flex gap-4 mb-4">
+                       <div className="flex-1">
+                          <label className="block text-[10px] font-bold text-gray-500 uppercase">Review Type</label>
+                          <select value={editingItem.type || 'regular'} onChange={e => setEditingItem({...editingItem, type: e.target.value})} className="w-full p-2 rounded border bg-white text-sm font-bold text-red-900">
+                              <option value="regular">Regular Blog Post</option>
+                              <option value="album">Vinyl Album Review</option>
+                          </select>
+                       </div>
+                       <div className="flex-1">
+                          <label className="block text-[10px] font-bold text-gray-500 uppercase">Blog Title</label>
+                          <input required value={editingItem.title || ''} onChange={e => setEditingItem({...editingItem, title: e.target.value})} className="w-full p-2 rounded border bg-white text-sm font-bold" />
+                       </div>
                     </div>
 
-                    <div className="flex gap-4 mb-4">
-                      <div className="w-1/3">
+                    <div className="grid grid-cols-4 gap-4 mb-4">
+                      <div>
                         <label className="block text-[10px] font-bold text-gray-500 uppercase">Date</label>
                         <input required value={editingItem.date || ''} onChange={e => setEditingItem({...editingItem, date: e.target.value})} className="w-full p-2 rounded border bg-white text-sm" />
                       </div>
-                      <div className="w-1/3">
+                      <div>
                         <label className="block text-[10px] font-bold text-gray-500 uppercase">Category</label>
                         <input value={editingItem.category || ''} onChange={e => setEditingItem({...editingItem, category: e.target.value})} className="w-full p-2 rounded border bg-white text-sm" />
                       </div>
-                      <div className="w-1/3">
-                        <label className="block text-[10px] font-bold text-gray-500 uppercase">Star Rating (1-5)</label>
+                      <div>
+                        <label className="block text-[10px] font-bold text-gray-500 uppercase">Tags</label>
+                        <input value={editingItem.tags || ''} onChange={e => setEditingItem({...editingItem, tags: e.target.value})} className="w-full p-2 rounded border bg-white text-sm" placeholder="tag1, tag2" />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-gray-500 uppercase">Rating (1-5)</label>
                         <input type="number" min="1" max="5" value={editingItem.rating || ''} onChange={e => setEditingItem({...editingItem, rating: e.target.value})} className="w-full p-2 rounded border bg-white text-sm" />
                       </div>
                     </div>
+
+                    {editingItem.type === 'album' && (
+                       <div className="flex gap-4 mb-4 bg-orange-50 p-3 rounded-lg border border-orange-200">
+                          <div>
+                             <label className="block text-[10px] font-bold text-orange-700 uppercase">Pop-Out BG Color</label>
+                             <input type="color" value={editingItem.bgColor || '#eb5e28'} onChange={e => setEditingItem({...editingItem, bgColor: e.target.value})} className="w-16 h-10 p-1 cursor-pointer rounded bg-white border border-orange-300" />
+                          </div>
+                          <div className="flex-1">
+                             <label className="block text-[10px] font-bold text-orange-700 uppercase">Pop-Out BG Image URL (Optional)</label>
+                             <div className="flex gap-2">
+                                <input value={editingItem.bgImage || ''} onChange={e => setEditingItem({...editingItem, bgImage: e.target.value})} className="flex-1 p-2 rounded border bg-white text-sm" placeholder="https://" />
+                                <label className="cursor-pointer bg-orange-200 px-3 py-2 rounded font-bold hover:bg-orange-300 flex items-center gap-2 text-sm text-orange-900">
+                                   <Upload size={14}/> Upload <input type="file" className="hidden" accept="image/*" onChange={(e) => handleImageUpload(e, (base64) => setEditingItem({...editingItem, bgImage: base64}))} />
+                                </label>
+                             </div>
+                          </div>
+                       </div>
+                    )}
                     
                     <div className="mb-4">
                       <label className="block text-[10px] font-bold text-gray-500 uppercase">
@@ -805,8 +1029,55 @@ export default function App() {
                     </div>
 
                     <div className="mb-4">
-                       <label className="block text-[10px] font-bold text-gray-500 uppercase">Review Body</label>
-                       <textarea value={editingItem.excerpt || ''} onChange={e => setEditingItem({...editingItem, excerpt: e.target.value})} className="w-full p-2 rounded border bg-white min-h-[10rem] whitespace-pre-wrap text-sm" />
+                       <label className="block text-[10px] font-bold text-gray-500 uppercase">Short Excerpt (Shown on main list)</label>
+                       <textarea value={editingItem.excerpt || ''} onChange={e => setEditingItem({...editingItem, excerpt: e.target.value})} className="w-full p-2 rounded border bg-white min-h-[4rem] text-sm" />
+                    </div>
+
+                    {/* WP BLOCK BUILDER FOR WRITING */}
+                    <div className="p-4 bg-gray-100/70 rounded-lg border border-gray-300 mt-4">
+                        <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2"><FileText size={16}/> WordPress-Style Block Builder</h3>
+                        
+                        <div className="space-y-4 mb-4">
+                          {(editingItem.blocks || []).map((block, idx) => (
+                            <div key={idx} className="flex gap-2 items-start bg-white p-3 rounded shadow-sm border border-gray-200 relative group">
+                              <div className="mt-2 text-gray-400">
+                                 {block.type === 'text' && <AlignLeft size={16}/>}
+                                 {block.type === 'quote' && <Quote size={16}/>}
+                                 {block.type === 'pullquote' && <span className="font-bold font-serif text-sm">""</span>}
+                                 {block.type === 'image' && <ImageIcon size={16}/>}
+                              </div>
+                              {block.type === 'image' ? (
+                                <div className="w-full flex gap-2">
+                                  <input 
+                                    value={block.content} 
+                                    onChange={(e) => { const n = [...editingItem.blocks]; n[idx].content = e.target.value; setEditingItem({...editingItem, blocks: n}); }}
+                                    className="flex-1 p-2 border border-gray-200 rounded text-sm" placeholder="Paste Image URL here..." 
+                                  />
+                                  <label className="cursor-pointer bg-gray-200 px-3 py-2 rounded font-bold hover:bg-gray-300 flex items-center gap-2 text-sm">
+                                    <Upload size={14}/> Upload <input type="file" className="hidden" accept="image/*" onChange={(e) => handleImageUpload(e, (base64) => { const n = [...editingItem.blocks]; n[idx].content = base64; setEditingItem({...editingItem, blocks: n}); })} />
+                                  </label>
+                                </div>
+                              ) : (
+                                <textarea 
+                                  value={block.content} 
+                                  onChange={(e) => { const n = [...editingItem.blocks]; n[idx].content = e.target.value; setEditingItem({...editingItem, blocks: n}); }}
+                                  className={`w-full p-2 border border-gray-200 rounded min-h-[80px] text-sm ${block.type === 'quote' ? 'italic bg-gray-50' : block.type === 'pullquote' ? 'font-title text-center text-xl bg-red-50' : ''}`} 
+                                  placeholder={`Write your ${block.type} here...`} 
+                                />
+                              )}
+                              <button type="button" onClick={() => { const n = [...editingItem.blocks]; n.splice(idx, 1); setEditingItem({...editingItem, blocks: n}); }} className="p-2 text-red-500 hover:bg-red-50 rounded">
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+
+                        <div className="flex flex-wrap gap-2">
+                          <button type="button" onClick={() => setEditingItem({...editingItem, blocks: [...(editingItem.blocks || []), {type: 'text', content: ''}]})} className="flex items-center gap-1 bg-white border border-gray-300 px-3 py-2 rounded text-sm hover:bg-gray-50 font-bold"><AlignLeft size={16}/> Text Paragraph</button>
+                          <button type="button" onClick={() => setEditingItem({...editingItem, blocks: [...(editingItem.blocks || []), {type: 'quote', content: ''}]})} className="flex items-center gap-1 bg-white border border-gray-300 px-3 py-2 rounded text-sm hover:bg-gray-50 font-bold"><Quote size={16}/> Blockquote</button>
+                          <button type="button" onClick={() => setEditingItem({...editingItem, blocks: [...(editingItem.blocks || []), {type: 'pullquote', content: ''}]})} className="flex items-center gap-1 bg-white border border-gray-300 px-3 py-2 rounded text-sm hover:bg-gray-50 font-bold"><span className="font-serif">""</span> Pull Quote</button>
+                          <button type="button" onClick={() => setEditingItem({...editingItem, blocks: [...(editingItem.blocks || []), {type: 'image', content: ''}]})} className="flex items-center gap-1 bg-white border border-gray-300 px-3 py-2 rounded text-sm hover:bg-gray-50 font-bold"><ImageIcon size={16}/> Image</button>
+                        </div>
                     </div>
                   </>
                 )}
@@ -835,7 +1106,7 @@ export default function App() {
                   </>
                 )}
                 
-                <button type="submit" className="w-full bg-red-800 text-white p-3 rounded font-bold hover:bg-red-900 text-sm mt-4">Done Editing</button>
+                <button type="submit" className="w-full bg-red-800 text-white p-4 rounded font-bold hover:bg-red-900 text-base mt-4 shadow-md flex justify-center items-center gap-2"><Save size={18}/> Done Editing</button>
               </form>
             </div>
           );
@@ -929,11 +1200,16 @@ export default function App() {
                             onChange={(e) => { const n = [...aboutData.myspace]; n[idx].name = e.target.value; setAboutData({...aboutData, myspace: n}); }}
                             className="w-full p-1 border-b border-gray-200 text-sm outline-none font-bold" placeholder="Friend Name"
                           />
-                          <input 
-                            value={friend.image} 
-                            onChange={(e) => { const n = [...aboutData.myspace]; n[idx].image = e.target.value; setAboutData({...aboutData, myspace: n}); }}
-                            className="w-full p-1 border-b border-gray-200 text-xs outline-none text-gray-500" placeholder="Image URL"
-                          />
+                          <div className="flex items-center gap-1">
+                             <input 
+                               value={friend.image} 
+                               onChange={(e) => { const n = [...aboutData.myspace]; n[idx].image = e.target.value; setAboutData({...aboutData, myspace: n}); }}
+                               className="w-full p-1 border-b border-gray-200 text-xs outline-none text-gray-500" placeholder="Image URL"
+                             />
+                             <label className="cursor-pointer bg-gray-200 p-1 rounded hover:bg-gray-300 flex items-center text-xs">
+                               <Upload size={12}/> <input type="file" className="hidden" accept="image/*" onChange={(e) => handleImageUpload(e, (base64) => { const n = [...aboutData.myspace]; n[idx].image = base64; setAboutData({...aboutData, myspace: n}); })} />
+                             </label>
+                          </div>
                         </div>
                         <button type="button" onClick={() => setAboutData({...aboutData, myspace: aboutData.myspace.filter((_, i) => i !== idx)})} className="text-red-500 hover:bg-red-50 p-2 rounded"><Trash2 size={16}/></button>
                       </div>
@@ -965,11 +1241,16 @@ export default function App() {
                             onChange={(e) => { const n = [...aboutData.interests]; n[idx].title = e.target.value; setAboutData({...aboutData, interests: n}); }}
                             className="w-full p-2 border border-gray-200 rounded font-bold outline-none" placeholder="Interest Title"
                           />
-                          <input 
-                            value={interest.image} 
-                            onChange={(e) => { const n = [...aboutData.interests]; n[idx].image = e.target.value; setAboutData({...aboutData, interests: n}); }}
-                            className="w-full p-2 border border-gray-200 rounded text-sm outline-none" placeholder="Image URL"
-                          />
+                          <div className="flex gap-2">
+                            <input 
+                              value={interest.image} 
+                              onChange={(e) => { const n = [...aboutData.interests]; n[idx].image = e.target.value; setAboutData({...aboutData, interests: n}); }}
+                              className="w-full p-2 border border-gray-200 rounded text-sm outline-none" placeholder="Image URL"
+                            />
+                            <label className="cursor-pointer bg-gray-200 px-3 py-2 rounded hover:bg-gray-300 flex items-center text-xs">
+                               <Upload size={14}/> <input type="file" className="hidden" accept="image/*" onChange={(e) => handleImageUpload(e, (base64) => { const n = [...aboutData.interests]; n[idx].image = base64; setAboutData({...aboutData, interests: n}); })} />
+                            </label>
+                          </div>
                           <textarea 
                             value={interest.desc} 
                             onChange={(e) => { const n = [...aboutData.interests]; n[idx].desc = e.target.value; setAboutData({...aboutData, interests: n}); }}
@@ -1022,7 +1303,7 @@ export default function App() {
               <div className="bg-white/50 p-5 rounded-xl border border-yellow-600/30">
                 <div className="flex justify-between items-end mb-4 border-b border-gray-300 pb-2">
                   <h2 className="text-xl font-bold text-gray-800 capitalize">Manage {adminTab}</h2>
-                  <button onClick={() => setEditingItem({})} className="bg-green-700 text-white px-3 py-1.5 rounded text-sm font-bold flex items-center gap-1 hover:bg-green-800"><Plus size={16} /> Add New</button>
+                  <button onClick={() => setEditingItem(adminTab === 'blogs' ? {blocks: [], type: 'regular'} : {})} className="bg-green-700 text-white px-3 py-1.5 rounded text-sm font-bold flex items-center gap-1 hover:bg-green-800"><Plus size={16} /> Add New</button>
                 </div>
                 <div className="space-y-2">
                   {(adminTab === 'projects' ? projects : adminTab === 'blogs' ? blogs : socials).map(item => (
@@ -1030,11 +1311,7 @@ export default function App() {
                       <span className="font-bold text-sm">{item.title || item.name || 'Untitled'}</span>
                       <div className="flex gap-2">
                         <button onClick={() => setEditingItem({ ...item, type: item.type || (adminTab === 'blogs' ? 'regular' : 'project') })} className="p-1 text-blue-600 hover:bg-blue-50 rounded"><Edit2 size={16} /></button>
-                        <button onClick={() => {
-                          if (adminTab === 'projects') setProjects(projects.filter(p => p.id !== item.id));
-                          if (adminTab === 'blogs') setBlogs(blogs.filter(b => b.id !== item.id));
-                          if (adminTab === 'socials') setSocials(socials.filter(s => s.id !== item.id));
-                        }} className="p-1 text-red-600 hover:bg-red-50 rounded"><Trash2 size={16} /></button>
+                        <button onClick={() => handleDeleteItem(adminTab, item.id)} className="p-1 text-red-600 hover:bg-red-50 rounded"><Trash2 size={16} /></button>
                       </div>
                     </div>
                   ))}
@@ -1086,8 +1363,8 @@ export default function App() {
         .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
         @keyframes slideOutVinyl {
-            0% { transform: translateX(0) rotate(0deg); }
-            100% { transform: translateX(45%) rotate(0deg); }
+            0% { transform: translateX(0); }
+            100% { transform: translateX(45%); }
         }
         .animate-slide-vinyl {
             animation: slideOutVinyl 1.2s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
@@ -1097,6 +1374,14 @@ export default function App() {
       <div className="min-h-screen bg-cover bg-center bg-fixed p-4 md:p-8 flex items-center justify-center relative transition-all duration-1000"
         style={{ backgroundImage: `url(${aboutData.appBackground || 'https://images.unsplash.com/photo-1473448912268-2022ce9509d8?q=80&w=2041'})`, backgroundColor: '#2a4b3c' }}
       >
+        {/* GLOBAL TOAST NOTIFICATION */}
+        {toastMessage && (
+          <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[100] bg-gray-900 text-white px-6 py-3 rounded-full shadow-2xl font-bold flex items-center gap-2 animate-bounce">
+            <span className="w-2 h-2 rounded-full bg-green-400"></span>
+            {toastMessage}
+          </div>
+        )}
+
         <div className="w-full max-w-6xl relative z-10 flex flex-col h-[90vh] mt-4 md:mt-0">
           
           <div className="flex px-4 md:px-8 gap-1 md:gap-2 overflow-x-auto hide-scrollbar shrink-0">
@@ -1115,6 +1400,7 @@ export default function App() {
           <div className="flex-1 bg-[#EEDF7A] rounded-b-3xl rounded-tr-3xl shadow-2xl relative z-10 flex flex-col overflow-hidden p-3 md:p-5">
             <div className="flex-1 bg-[#e4d467] rounded-2xl shadow-[inset_0_4px_20px_rgba(0,0,0,0.2)] border border-yellow-800/10 flex flex-col relative overflow-hidden">
               
+              {/* ADMIN WIP REMINDER BANNER */}
               {isAdmin && siteSettings?.wip?.[activeTab] && activeTab !== 'admin' && (
                 <div className="absolute top-0 left-0 w-full bg-red-600 text-white text-center py-1 font-bold text-[10px] uppercase tracking-widest z-50">
                   Visible to Admin Only (WIP Mode is Active)
@@ -1134,154 +1420,14 @@ export default function App() {
           </div>
         </div>
 
-        {}
-        {selectedItem && (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 md:p-8">
-            {(() => {
-              
-              // 1. VINYL ALBUM MODAL
-              if (itemType === 'blog' && selectedItem.type === 'album') {
-                return (
-                   <div className="w-full max-w-5xl h-[75vh] min-h-[500px] bg-[#eb5e28] rounded-xl shadow-2xl relative flex flex-col items-center justify-center overflow-hidden border-4 border-[#c74b1e]">
-                      <button onClick={() => setSelectedItem(null)} className="absolute top-4 right-4 z-50 text-white/70 hover:text-white transition-colors"><X size={24} /></button>
-                      
-                      <div className="relative flex items-center justify-center w-full max-w-2xl scale-[0.65] sm:scale-75 md:scale-100">
-                          <div className="absolute w-[300px] h-[300px] md:w-[400px] md:h-[400px] z-10 animate-slide-vinyl">
-                              <div className="w-full h-full rounded-full bg-[#111] animate-[spin_4s_linear_infinite] shadow-2xl border border-[#222]" style={{ backgroundImage: 'repeating-radial-gradient(circle at 50% 50%, #111, #111 2px, #1a1a1a 3px, #1a1a1a 4px)' }}>
-                                   <div className="absolute inset-0 m-auto w-1/3 h-1/3 rounded-full bg-white shadow-[inset_0_2px_4px_rgba(0,0,0,0.2)] flex items-center justify-center">
-                                       <div className="w-2 h-2 rounded-full bg-black shadow-inner"></div>
-                                   </div>
-                              </div>
-                          </div>
+        {/* MODALS TRIGGER */}
+        <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center">
+           <div className="pointer-events-auto">
+             {renderModalContent()}
+           </div>
+        </div>
 
-                          <div className="w-[300px] h-[300px] md:w-[400px] md:h-[400px] bg-[#f4f1e1] shadow-[10px_0_25px_rgba(0,0,0,0.5)] z-20 relative p-6 md:p-8 flex flex-col border border-gray-200">
-                              <h2 className="text-3xl md:text-5xl font-title text-gray-900 mb-2 leading-none">{selectedItem.title}</h2>
-                              
-                              <div className="flex text-yellow-600 mb-4 drop-shadow-sm">
-                                  {[...Array(Number(selectedItem.rating || 5))].map((_, i) => <Star key={i} size={16} fill="currentColor" />)}
-                              </div>
-                              
-                              <div className="flex-1 overflow-y-auto font-body text-sm md:text-base text-gray-800 whitespace-pre-wrap hide-scrollbar">
-                                  {selectedItem.excerpt}
-                              </div>
-
-                              <div className="absolute -bottom-6 -right-6 md:-bottom-8 md:-right-8 w-28 h-28 md:w-36 md:h-36 bg-[#fbf065] shadow-xl rotate-[-6deg] p-1.5 md:p-2 border border-yellow-400 flex flex-col transition-transform hover:rotate-0 hover:scale-105 duration-300">
-                                 <Pin size={20} fill="#b91c1c" className="absolute -top-3 left-1/2 -translate-x-1/2 text-red-700 z-10 drop-shadow-md" />
-                                 {selectedItem.coverImage ? (
-                                    <img src={selectedItem.coverImage} className="w-full h-full object-cover shadow-inner" alt="Album Art" />
-                                 ) : (
-                                    <div className="w-full h-full border border-yellow-500/50 flex items-center justify-center text-xs text-yellow-700 font-bold text-center p-2">No Art</div>
-                                 )}
-                              </div>
-                          </div>
-                      </div>
-                   </div>
-                );
-              }
-
-              // 2. iOS VIDEO PLAYER MODAL
-              if (selectedItem.type === 'video') {
-                return (
-                   <div className="bg-[#888888] rounded-[36px] p-6 md:p-10 w-full max-w-2xl mx-auto flex flex-col md:flex-row gap-6 md:gap-10 text-white font-sans select-none shadow-2xl relative">
-                     <button onClick={() => setSelectedItem(null)} className="absolute top-6 right-6 z-50 text-white/70 hover:text-white transition-colors"><X size={24} /></button>
-                     
-                     <div className="w-full md:w-72 aspect-square bg-black rounded-[24px] overflow-hidden shrink-0 shadow-inner flex items-center justify-center relative">
-                       <video src={selectedItem.image} controls autoPlay loop className="absolute inset-0 w-full h-full object-cover" />
-                     </div>
-                     
-                     <div className="flex-1 flex flex-col justify-center py-2">
-                        <div className="flex justify-between items-center mb-2">
-                           <span className="text-sm font-semibold tracking-wide">iPhone</span>
-                           <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                             <path d="M12 22L1 12H7V2H17V12H23L12 22Z" fill="currentColor" opacity="0.3"/>
-                             <path d="M12 18L5 12H9V4H15V12H19L12 18Z" fill="currentColor"/>
-                           </svg>
-                        </div>
-                        <h2 className="text-3xl font-bold leading-tight mb-1 tracking-tight truncate">{selectedItem.title}</h2>
-                        <p className="text-lg font-medium opacity-80 mb-8 truncate">{selectedItem.author || 'Unknown Artist'} — {selectedItem.tabId || 'Album'}</p>
-                        
-                        <div className="flex items-center gap-3 text-xs mb-8 font-bold opacity-80">
-                           <span>0:00</span>
-                           <div className="flex-1 h-1.5 bg-white/30 rounded-full relative">
-                              <div className="absolute left-0 top-0 h-full w-1/3 bg-white rounded-full">
-                                 <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full shadow-sm"></div>
-                              </div>
-                           </div>
-                           <span>3:14</span>
-                        </div>
-                        
-                        <div className="flex justify-center gap-12 items-center px-4 mb-4">
-                           <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><polygon points="11 19 2 12 11 5 11 19"/><polygon points="22 19 13 12 22 5 22 19"/></svg>
-                           <svg width="40" height="40" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
-                           <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><polygon points="13 19 22 12 13 5 13 19"/><polygon points="2 19 11 12 2 5 2 19"/></svg>
-                        </div>
-                     </div>
-                   </div>
-                );
-              }
-
-              // 3. ALL OTHER STANDARD MODALS (Beige box)
-              return (
-                <div className="bg-[#fefce8] rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto relative border border-yellow-200">
-                  <button onClick={() => setSelectedItem(null)} className="absolute top-4 right-4 z-50 bg-white/80 p-2 rounded-full hover:bg-red-100 text-gray-800 transition-colors shadow-md"><X size={20} /></button>
-                  
-                  {itemType === 'project' && (
-                    <div className="relative">
-                      {selectedItem.type === 'gallery' ? (
-                        <div className="w-full bg-[#f4f4f4] rounded-t-xl min-h-[70vh] relative overflow-hidden p-8 border-b border-gray-300">
-                           {isAdmin && (
-                             <div className="absolute top-4 left-4 z-50 flex gap-2">
-                                <span className="bg-yellow-200 text-yellow-900 font-bold px-3 py-1.5 rounded shadow text-sm">Admin: Drag to move</span>
-                                <button onClick={saveGalleryLayout} className="bg-green-600 text-white font-bold px-4 py-1.5 rounded shadow hover:bg-green-700 transition-colors text-sm">Save Layout</button>
-                             </div>
-                           )}
-                           {modalGalleryBlocks.map((img) => (
-                             <DraggableImage 
-                               key={img.id} 
-                               item={img} 
-                               updateImage={updateModalGalleryImage} 
-                               bringToFront={bringToFrontModalGallery} 
-                               isAdmin={isAdmin}
-                             />
-                           ))}
-                           <div className="absolute bottom-8 left-8 z-40 pointer-events-none">
-                              <h2 className="text-6xl md:text-8xl font-title font-bold text-gray-900 drop-shadow-lg">{selectedItem.title}</h2>
-                              <p className="font-mono text-gray-800 bg-white/70 px-3 py-1 rounded inline-block backdrop-blur-sm mt-2 font-bold shadow-sm">{selectedItem.tabId}</p>
-                              {selectedItem.content && <p className="font-body text-gray-800 mt-2 max-w-sm bg-white/70 p-3 rounded backdrop-blur-sm shadow-sm">{selectedItem.content}</p>}
-                           </div>
-                        </div>
-                      ) : selectedItem.type === 'custom' ? (
-                        <div className="w-full bg-white rounded-t-xl overflow-hidden p-8" dangerouslySetInnerHTML={{ __html: selectedItem.content }} />
-                      ) : selectedItem.type === 'iframe' ? (
-                        <iframe src={selectedItem.content} className="w-full h-[60vh] bg-white rounded-t-xl border-0" title={selectedItem.title} />
-                      ) : (
-                        selectedItem.image && <img src={selectedItem.image} className="w-full h-80 object-cover rounded-t-xl" alt="cover" />
-                      )}
-                      
-                      {selectedItem.type !== 'custom' && selectedItem.type !== 'iframe' && selectedItem.type !== 'gallery' && (
-                        <div className="p-10 bg-[#fefce8] rounded-b-xl">
-                          <h2 className="text-7xl font-title font-bold text-red-900 mb-1 tracking-wide">{selectedItem.title}</h2>
-                          <p className="font-mono text-gray-500 mb-6 pb-6 border-b border-red-900/10">{selectedItem.tabId}</p>
-                          <p className="font-body text-lg text-gray-800 leading-relaxed whitespace-pre-wrap">{selectedItem.content}</p>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {itemType === 'blog' && (
-                    <div className="p-10 bg-[#fefce8] rounded-xl">
-                        <h2 className="text-5xl font-title font-bold text-red-900 mb-1 tracking-wide">{selectedItem.title}</h2>
-                        <p className="font-mono text-gray-500 mb-6 pb-6 border-b border-red-900/10">{selectedItem.date}</p>
-                        <p className="font-body text-lg text-gray-800 leading-relaxed whitespace-pre-wrap">{selectedItem.excerpt}</p>
-                    </div>
-                  )}
-                </div>
-              );
-
-            })()}
-          </div>
-        )}
-
+        {/* LOGIN MODAL */}
         {showLogin && !isAdmin && (
           <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
             <div className="bg-[#fefce8] p-6 rounded-xl shadow-2xl w-full max-w-sm border border-yellow-200 relative">
