@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Pin, X, Lock, Plus, Edit2, Trash2, Save, Image as ImageIcon, Type, ArrowLeft, LogOut, Upload, ChevronUp, ChevronDown, MessageSquare, Star, Send, Pencil, Activity, Heart, Thermometer, Droplets, Video, LayoutGrid, FileText, Search, Calendar, Cpu, Database, Network, Settings, GitBranch, Terminal, GripVertical, Quote, AlignLeft } from 'lucide-react';
+import { Pin, X, Lock, Plus, Edit2, Trash2, Save, Image as ImageIcon, Type, ArrowLeft, LogOut, Upload, ChevronUp, ChevronDown, MessageSquare, Star, Send, Pencil, Activity, Heart, Thermometer, Droplets, Video, LayoutGrid, FileText, Search, Calendar, Cpu, Database, Network, Settings, GitBranch, Terminal, GripVertical, Quote, AlignLeft, Layers } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
+// --- INITIALIZE SUPABASE ---
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supabase = (supabaseUrl && supabaseKey) ? createClient(supabaseUrl, supabaseKey) : null;
 
+// --- DRAGGABLE GALLERY IMAGE COMPONENT ---
 const DraggableImage = ({ item, updateImage, bringToFront, isAdmin }) => {
   const [pos, setPos] = useState({ x: item.x || 0, y: item.y || 0 });
   const [isDragging, setIsDragging] = useState(false);
@@ -41,7 +43,7 @@ const DraggableImage = ({ item, updateImage, bringToFront, isAdmin }) => {
     <img
       src={item.image}
       alt="Gallery item"
-      className={`absolute shadow-xl border-4 border-white select-none transition-transform duration-200 ${isAdmin ? 'cursor-move hover:scale-[1.02] touch-none' : ''}`}
+      className={`absolute border-[3px] border-[#111] shadow-[4px_4px_0px_#111] select-none transition-transform duration-200 ${isAdmin ? 'cursor-move hover:scale-[1.02] touch-none' : ''}`}
       style={{
         transform: `translate(${pos.x}px, ${pos.y}px)`,
         zIndex: item.z || 1,
@@ -55,6 +57,7 @@ const DraggableImage = ({ item, updateImage, bringToFront, isAdmin }) => {
   );
 };
 
+// --- DEFAULT DATA ---
 const defaultProjects = [
   { id: 1, tabId: "94", title: "oil lamp", tabAlign: "center", type: "project", image: "https://images.unsplash.com/photo-1555066931-4365d14bab8c?w=400&q=80", content: "Main system architecture." },
   { id: 2, tabId: "95", title: "oats", tabAlign: "right", type: "gallery", galleryBlocks: [{id:1, w: 300, x: 50, y: 50, z: 1, image: 'https://images.unsplash.com/photo-1484480974693-6ca0a78fb36b?w=400&q=80'}], content: "A collection of renders." },
@@ -87,12 +90,28 @@ const defaultBlogs = [
 
 const defaultAbout = {
   appBackground: "https://images.unsplash.com/photo-1473448912268-2022ce9509d8?q=80&w=2041&auto=format&fit=crop",
-  introText: "Hellooo, the name is Vinz!\nYou can call me Ice^^",
+  introText: "Hellooo, the name is Vinz!\n\nYou can call me Ice^^\n\nI am 16 years of age, born on April 16, 2008\n\nI am an Aries, and Intp-t (I don't believe fully in these)\n\nMy sexuality is AroAce (Not interested romantically or sexually)\n\n3 words about me?: Chaotic, Needy, Nerdy",
   introImage: "https://images.unsplash.com/photo-1614850523459-c2f4c699c52e?w=400&q=80",
-  notepadText: "This year, I decided to focus on building things I love. I wasn't able to launch many projects, but I did build a few amazing ones.",
-  myspace: [{ id: 1, name: "Dirk", image: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&q=80" }],
-  interests: [{ id: 1, title: "Anime", desc: "Anime is great...", image: "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=300&q=80" }],
-  obsessions: [{ id: 1, category: "Top 10 Anime", items: ["Frieren", "Tanya"] }]
+  notepadText: "This year, I decided to focus on building things I love. I wasn't able to launch many projects, but I did build a few amazing ones. I took my time with them, and I'm glad I did.",
+  myspace: [
+    { id: 1, name: "Dirk", image: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&q=80" },
+    { id: 2, name: "Renz", image: "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=200&q=80" },
+    { id: 3, name: "Danes", image: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=200&q=80" },
+    { id: 4, name: "Chariz", image: "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=200&q=80" }
+  ],
+  interests: [
+    { id: 1, title: "Anime", desc: "Anime has been a very integral bonding thing...", image: "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=300&q=80" },
+    { id: 2, title: "Music", desc: "This is one of my worse obsessions...", image: "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=300&q=80" },
+    { id: 3, title: "Gaming", desc: "2020 me became a degen for this...", image: "https://images.unsplash.com/photo-1542751371-adc38448a05e?w=300&q=80" },
+    { id: 4, title: "Aviation", desc: "Aviation has always had a place in my heart...", image: "https://images.unsplash.com/photo-1436491865332-7a61a109cc05?w=300&q=80" },
+    { id: 5, title: "Cars", desc: "Exotic cars and even the largest and fastest...", image: "https://images.unsplash.com/photo-1503376760302-3c2a537f00f0?w=300&q=80" }
+  ],
+  obsessions: [
+    { id: 1, category: "Top 10 Anime", items: ["Frieren", "Tanya", "Dangers in my heart", "Slime tensura", "Soukoku", "Bocchi the rock", "Aono Orchestra", "Apothecary Diaries", "Solo leveling", "Ranking of kings"] },
+    { id: 2, category: "Top 10 Movies", items: ["Everything Everywhere all at once", "Mr. Fantastic Fox", "Dead Man's Chest", "Now you see me two", "Oblivion", "Pacific rim", "The kingdom of god", "Ford vs Ferrari", "Ready player one", "The intern"] },
+    { id: 3, category: "Top 10 Songs", items: ["Godspeed / White Ferrari", "Sing about me, im dying of thirst", "Wilshire / Are we still friends?", "Sedated / Jackie and Wilson", "Love is just a feeling"] },
+    { id: 4, category: "Top 10 Reads", items: ["Cherry Crush", "The guy she was interested in", "Cherry blossoms after winter", "Boyfriends", "One room TA"] }
+  ]
 };
 
 const defaultSystem = {
@@ -128,8 +147,61 @@ const defaultSocials = [
   { id: 1, name: 'GitHub', url: 'https://github.com', image: 'https://placehold.co/400x400/991b1b/fff?text=G' }
 ];
 
+// The first item explicitly gets the journal attached by default.
+const defaultGalleria = [
+  "1486406146926-c627a92ad1ab", "1497366216548-37526070297c", "1513694203232-719a280e022f", 
+  "1600585154340-be6161a56a0c", "1486406146926-c627a92ad1ab", "1497366216548-37526070297c",
+  "1513694203232-719a280e022f", "1600585154340-be6161a56a0c"
+].map((id, idx) => ({ 
+  id: idx, 
+  image: `https://images.unsplash.com/photo-${id}?w=600&q=80`, 
+  date: "Oct 2026",
+  hasJournal: idx === 0 
+}));
+
+const defaultJournals = [
+  {
+    id: 1, date: "Jul 15", year: "2026", shortDate: "WED . 15", timeSpan: "7 15 - 8 15", ticketClass: "COACH", 
+    image: "https://images.unsplash.com/photo-1497366216548-37526070297c?w=800&q=80", 
+    logs: ["System boot."], historyYear: "1799", historyText: "Rosetta Stone found."
+  },
+  {
+    id: 2, date: "Jul 16", year: "2026", shortDate: "THU . 16", timeSpan: "7 16 - 8 16", ticketClass: "OMNI", 
+    image: "https://images.unsplash.com/photo-1555066931-4365d14bab8c?w=800&q=80", 
+    logs: ["Diagnostics clear."], historyYear: "1945", historyText: "Trinity test."
+  },
+  {
+    id: 3, date: "Jul 17", year: "2026", shortDate: "FRI . 17", timeSpan: "7 17 - 8 17", ticketClass: "FIRST", 
+    image: "https://images.unsplash.com/photo-1513694203232-719a280e022f?w=800&q=80", 
+    logs: ["Awaiting input."], historyYear: "1955", historyText: "Disneyland opens."
+  },
+  {
+    id: 4, date: "Jul 18", year: "2026", shortDate: "SAT . 18", timeSpan: "7 18 - 8 18", ticketClass: "OMNI", 
+    image: "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=800&q=80", 
+    logs: ["Memory hash recorded.", "Visual extraction successful.", "The architecture here defies standard Euclidean geometry, folding in on itself when unobserved."], 
+    historyYear: "1968", historyText: "Intel Corporation is founded in Santa Clara, California."
+  },
+  {
+    id: 5, date: "Jul 19", year: "2026", shortDate: "SUN . 19", timeSpan: "7 19 - 8 19", ticketClass: "FIRST", 
+    image: "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=800&q=80", 
+    logs: ["Secondary systems offline.", "Re-routing power to main thrusters.", "Starlight looks different today."], 
+    historyYear: "1848", historyText: "Women's Rights Convention opens in Seneca Falls, NY."
+  },
+  {
+    id: 6, date: "Jul 20", year: "2026", shortDate: "MON . 20", timeSpan: "7 20 - 8 20", ticketClass: "COACH", 
+    image: "https://images.unsplash.com/photo-1497493213477-0c0e5f410d32?w=800&q=80", 
+    logs: ["A quiet day in the sector.", "Coffee machine is broken again."], 
+    historyYear: "1969", historyText: "Apollo 11 makes the first manned landing on the Moon."
+  },
+  {
+    id: 7, date: "Jul 21", year: "2026", shortDate: "TUE . 21", timeSpan: "7 21 - 8 21", ticketClass: "OMNI", 
+    image: "https://images.unsplash.com/photo-1473448912268-2022ce9509d8?w=800&q=80", 
+    logs: ["Signal intercepted."], historyYear: "1861", historyText: "First Battle of Bull Run."
+  }
+];
+
 const defaultSettings = {
-  wip: { intro: false, portfolio: false, system: false, blog: false, socials: false, blank: false }
+  wip: { intro: false, portfolio: false, galleria: false, system: false, blog: false, socials: false, blank: false }
 };
 
 export default function App() {
@@ -143,7 +215,11 @@ export default function App() {
   const [aboutData, setAboutData] = useState(defaultAbout);
   const [systemData, setSystemData] = useState(defaultSystem);
   const [socials, setSocials] = useState(defaultSocials);
+  const [galleriaData, setGalleriaData] = useState(defaultGalleria);
   const [siteSettings, setSiteSettings] = useState(defaultSettings);
+  const [journalEntries, setJournalEntries] = useState(defaultJournals);
+  const [journalIndex, setJournalIndex] = useState(0);
+  const [currentTime, setCurrentTime] = useState(new Date());
   
   const [guestMessages, setGuestMessages] = useState([]);
   const [newGuestMessage, setNewGuestMessage] = useState("");
@@ -164,35 +240,78 @@ export default function App() {
   const [adminTab, setAdminTab] = useState('about'); 
   const [editingItem, setEditingItem] = useState(null); 
 
+  // === NEW: JOURNAL OVERLAY STATE ===
+  const [activeJournal, setActiveJournal] = useState(null);
+
+  // --- REAL-TIME CLOCK HOOK ---
+  useEffect(() => {
+    if (!activeJournal) return;
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, [activeJournal]);
+
+  const formatTime = (date) => {
+    let h = date.getHours();
+    const m = date.getMinutes().toString().padStart(2, '0');
+    const s = date.getSeconds().toString().padStart(2, '0');
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    h = h % 12 || 12;
+    return { h, m, s, ampm };
+  };
+
   const dragItem = useRef(null);
   const dragOverItem = useRef(null);
+  const [galleriaPanX, setGalleriaPanX] = useState(0);
 
   const showToast = (msg) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3000);
   };
 
-  const handleSortAboutList = (listName) => {
+  const handleSortAboutList = (listName, isRootState = false) => {
     if (dragItem.current === null || dragOverItem.current === null) return;
     if (dragItem.current === dragOverItem.current) return;
     
-    const _aboutData = { ...aboutData };
-    const list = [..._aboutData[listName]];
-    const draggedItemContent = list.splice(dragItem.current, 1)[0];
-    list.splice(dragOverItem.current, 0, draggedItemContent);
-    
+    if (isRootState) {
+        let list = listName === 'galleria' ? [...galleriaData] : [];
+        const draggedItemContent = list.splice(dragItem.current, 1)[0];
+        list.splice(dragOverItem.current, 0, draggedItemContent);
+        if (listName === 'galleria') setGalleriaData(list);
+    } else {
+        const _aboutData = { ...aboutData };
+        const list = [..._aboutData[listName]];
+        const draggedItemContent = list.splice(dragItem.current, 1)[0];
+        list.splice(dragOverItem.current, 0, draggedItemContent);
+        setAboutData({ ..._aboutData, [listName]: list });
+    }
     dragItem.current = null;
     dragOverItem.current = null;
-    setAboutData({ ..._aboutData, [listName]: list });
   };
 
   useEffect(() => {
     async function loadDataAndAuth() {
+      // 1. LOCAL STORAGE FALLBACK (If Supabase is missing)
       if (!supabase) {
         console.warn("Supabase credentials not found. Running in local fallback mode.");
+        const localData = localStorage.getItem('site_data_fallback');
+        if (localData) {
+          try {
+            const parsed = JSON.parse(localData);
+            if (parsed.projects) setProjects(parsed.projects);
+            if (parsed.blogs) setBlogs(parsed.blogs);
+            if (parsed.about) setAboutData(parsed.about);
+            if (parsed.socials) setSocials(parsed.socials);
+            if (parsed.galleria) setGalleriaData(parsed.galleria);
+            if (parsed.system) setSystemData(parsed.system);
+            if (parsed.settings) setSiteSettings(parsed.settings);
+            if (parsed.journals) setJournalEntries(parsed.journals);
+          } catch(e) { console.error("Failed to parse local data", e); }
+        }
         setIsLoading(false);
         return;
       }
+
+      // 2. SUPABASE DB LOAD (If configured)
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (session) setIsAdmin(true);
@@ -203,15 +322,19 @@ export default function App() {
           const b = siteData.find(d => d.section === 'blogs');
           const a = siteData.find(d => d.section === 'about');
           const s = siteData.find(d => d.section === 'socials');
+          const g = siteData.find(d => d.section === 'galleria');
           const sys = siteData.find(d => d.section === 'system');
           const set = siteData.find(d => d.section === 'settings');
+          const j = siteData.find(d => d.section === 'journals');
           
           if (p) setProjects(p.data);
           if (b) setBlogs(b.data);
           if (a) setAboutData(a.data);
           if (s) setSocials(s.data);
+          if (g) setGalleriaData(g.data);
           if (sys && sys.data.timeline) setSystemData(sys.data);
           if (set && set.data.wip) setSiteSettings(set.data);
+          if (j) setJournalEntries(j.data);
         }
 
         const { data: messages } = await supabase.from('playground_messages').select('*').order('created_at', { ascending: false });
@@ -232,8 +355,8 @@ export default function App() {
       const ctx = canvas.getContext('2d');
       ctx.lineWidth = 4;
       ctx.lineCap = 'round';
-      ctx.strokeStyle = '#991b1b';
-      ctx.fillStyle = '#ffffff';
+      ctx.strokeStyle = '#111111';
+      ctx.fillStyle = '#f4f4f0';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
     }
   }, [playgroundMode]);
@@ -261,7 +384,17 @@ export default function App() {
 
   const handleLogin = async (e) => {
     e.preventDefault();
-    if (!supabase) return showToast("Database not connected.");
+    // Allow 'admin123' fallback login when testing locally without DB
+    if (!supabase) {
+      if (passwordInput === 'admin123') {
+        setIsAdmin(true); setShowLogin(false); setActiveTab('admin'); setPasswordInput(""); setEmailInput("");
+        showToast("Local Admin Access Granted.");
+      } else {
+        showToast("Database missing. Local dev password is: admin123");
+      }
+      return;
+    }
+
     setIsLoading(true);
     const { error } = await supabase.auth.signInWithPassword({ email: emailInput, password: passwordInput });
     setIsLoading(false);
@@ -293,16 +426,58 @@ export default function App() {
     reader.readAsDataURL(file);
   };
 
+  const handleBatchGalleriaUpload = (e) => {
+    const files = Array.from(e.target.files);
+    if (files.length === 0) return;
+    if (files.length > 30) { showToast("Please select max 30 images at a time."); return; }
+    
+    showToast("Processing batch upload...");
+    Promise.all(files.map(file => {
+       return new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve({
+             id: Date.now() + Math.random(),
+             image: reader.result,
+             date: new Date().toLocaleDateString(),
+             hasJournal: false // By default, bulk uploads don't have journals
+          });
+          reader.readAsDataURL(file);
+       });
+    })).then(newImages => {
+       setGalleriaData(prev => [...prev, ...newImages]);
+       showToast(`Successfully added ${newImages.length} images!`);
+    });
+  };
+
   const saveAllToCloud = async (overrideProjects = null) => {
-    if (!supabase) return showToast("Database not connected.");
     setIsSaving(true);
+    
+    // Save to LocalStorage if no Supabase connection
+    if (!supabase) {
+      localStorage.setItem('site_data_fallback', JSON.stringify({
+        about: aboutData, 
+        projects: overrideProjects || projects, 
+        blogs: blogs, 
+        socials: socials, 
+        galleria: galleriaData, 
+        system: systemData, 
+        settings: siteSettings, 
+        journals: journalEntries
+      }));
+      setIsSaving(false);
+      showToast("Successfully deployed changes to Local Storage!");
+      return;
+    }
+
     const updates = [
       { section: 'about', data: aboutData },
       { section: 'projects', data: overrideProjects || projects },
       { section: 'blogs', data: blogs },
       { section: 'socials', data: socials },
+      { section: 'galleria', data: galleriaData },
       { section: 'system', data: systemData },
-      { section: 'settings', data: siteSettings }
+      { section: 'settings', data: siteSettings },
+      { section: 'journals', data: journalEntries }
     ];
     const { error } = await supabase.from('site_data').upsert(updates);
     setIsSaving(false);
@@ -321,6 +496,9 @@ export default function App() {
     } else if (listType === 'socials') {
       const newList = editingItem.id ? socials.map(s => s.id === editingItem.id ? editingItem : s) : [...socials, { ...editingItem, id: Date.now() }];
       setSocials(newList);
+    } else if (listType === 'journals') {
+      const newList = editingItem.id ? journalEntries.map(j => j.id === editingItem.id ? editingItem : j) : [...journalEntries, { ...editingItem, id: Date.now() }];
+      setJournalEntries(newList);
     }
     setEditingItem(null);
   };
@@ -330,6 +508,7 @@ export default function App() {
     if (listType === 'projects') setProjects(projects.filter(p => p.id !== id));
     if (listType === 'blogs') setBlogs(blogs.filter(b => b.id !== id));
     if (listType === 'socials') setSocials(socials.filter(s => s.id !== id));
+    if (listType === 'journals') setJournalEntries(journalEntries.filter(j => j.id !== id));
   }
 
   const updateModalGalleryImage = (id, newPos) => {
@@ -352,19 +531,34 @@ export default function App() {
 
   const sendAnonymousMessage = async (e) => {
     e.preventDefault();
-    if (!supabase) return showToast("Database not connected.");
     let payload = newGuestMessage;
     if (playgroundMode === 'draw' && canvasRef.current) payload = canvasRef.current.toDataURL(); 
     if (!payload.trim() || payload === 'data:,') return;
 
     setIsSendingMessage(true);
+    
+    // Save to local state if no Supabase connection
+    if (!supabase) {
+      const newMsg = { id: Date.now(), created_at: new Date().toISOString(), message: payload };
+      setGuestMessages([newMsg, ...guestMessages]);
+      setNewGuestMessage("");
+      if (playgroundMode === 'draw') {
+        const ctx = canvasRef.current.getContext('2d');
+        ctx.fillStyle = '#f4f4f0';
+        ctx.fillRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+      }
+      showToast("Note sent anonymously (Local Mode)!");
+      setIsSendingMessage(false);
+      return;
+    }
+
     const { data, error } = await supabase.from('playground_messages').insert([{ message: payload }]).select();
     if (!error && data) {
       setGuestMessages([data[0], ...guestMessages]);
       setNewGuestMessage("");
       if (playgroundMode === 'draw') {
         const ctx = canvasRef.current.getContext('2d');
-        ctx.fillStyle = '#ffffff';
+        ctx.fillStyle = '#f4f4f0';
         ctx.fillRect(0, 0, canvasRef.current.width, canvasRef.current.height);
       }
       showToast("Note sent anonymously!");
@@ -377,6 +571,7 @@ export default function App() {
   const tabs = [
     { id: 'intro', label: 'Intro' },
     { id: 'portfolio', label: 'Portfolio' },
+    { id: 'galleria', label: 'Galleria' },
     { id: 'system', label: 'System' },
     { id: 'blog', label: 'Blog' },
     { id: 'socials', label: 'Socials' },
@@ -384,192 +579,20 @@ export default function App() {
   ];
   if (isAdmin) tabs.push({ id: 'admin', label: 'Admin Panel' });
 
-  const renderModalContent = () => {
-    if (!selectedItem) return null;
-    
-    // --- VINYL ALBUM REVIEW MODAL ---
-    if (itemType === 'blog' && selectedItem.type === 'album') {
-      return (
-         <div className="w-200 max-w-12xl h-[75vh] min-h-[400px] rounded-xl shadow-2xl relative flex flex-col items-center justify-center overflow-hidden border-4 border-white/20"
-              style={{ backgroundColor: selectedItem.bgColor || '#eb5e28', backgroundImage: selectedItem.bgImage ? `url(${selectedItem.bgImage})` : 'none', backgroundSize: 'cover', backgroundPosition: 'center' }}>
-            <button onClick={() => setSelectedItem(null)} className="absolute top-6 right-6 z-50 text-white/90 hover:text-white bg-black/30 p-2 rounded-full backdrop-blur transition-colors"><X size={24} /></button>
-            
-            {/* Centering Wrapper: Offset by -12 to center the total mass when the vinyl slides out */}
-            <div className="relative flex items-center justify-center scale-[0.65] sm:scale-75 md:scale-100 md:-translate-x-12">
-                
-                {/* Black Spinning Record */}
-                <div className="absolute w-[300px] h-[300px] md:w-[450px] md:h-[450px] z-10 animate-slide-vinyl">
-                    <div className="w-full h-full rounded-full bg-[#111] animate-[spin_4s_linear_infinite] shadow-2xl border border-[#222]" style={{ backgroundImage: 'repeating-radial-gradient(circle at 50% 50%, #111, #111 2px, #1a1a1a 3px, #1a1a1a 4px)' }}>
-                         <div className="absolute inset-0 m-auto w-1/3 h-1/3 rounded-full bg-white shadow-[inset_0_2px_4px_rgba(0,0,0,0.2)] flex items-center justify-center">
-                             <div className="w-2 h-2 rounded-full bg-black shadow-inner"></div>
-                         </div>
-                    </div>
-                </div>
-
-                {/* White Cover Sleeve */}
-                <div className="w-[300px] h-[300px] md:w-[450px] md:h-[450px] bg-[#fefce8] shadow-[15px_0_35px_rgba(0,0,0,0.6)] z-20 relative p-6 md:p-10 flex flex-col border border-gray-200 rounded-sm">
-                    <h2 className="text-3xl md:text-5xl font-title text-gray-900 mb-2 leading-none">{selectedItem.title}</h2>
-                    
-                    <div className="flex text-yellow-600 mb-4 drop-shadow-sm border-b border-gray-300/50 pb-4">
-                        {[...Array(Number(selectedItem.rating || 5))].map((_, i) => <Star key={i} size={16} fill="currentColor" />)}
-                    </div>
-                    
-                    {/* SCROLLABLE REVIEW CONTENT using WP Blocks */}
-                    <div className="flex-1 overflow-y-auto font-body text-sm md:text-base text-gray-800 whitespace-pre-wrap hide-scrollbar pr-2 space-y-4">
-                        {selectedItem.excerpt && <p className="font-bold mb-4">{selectedItem.excerpt}</p>}
-                        {(selectedItem.blocks || []).map((block, idx) => {
-                          if (block.type === 'text') return <p key={idx} className="leading-relaxed">{block.content}</p>;
-                          if (block.type === 'quote') return <blockquote key={idx} className="border-l-4 border-red-700 pl-4 py-1 my-4 text-red-900 italic font-medium">{block.content}</blockquote>;
-                          if (block.type === 'pullquote') return <div key={idx} className="text-xl md:text-2xl font-title text-center text-red-800 my-6 leading-tight">"{block.content}"</div>;
-                          if (block.type === 'image') return <img key={idx} src={block.content} alt="review visual" className="w-full rounded shadow-sm my-4" />;
-                          return null;
-                        })}
-                    </div>
-
-                    {/* Sticky Note Album Art */}
-                    <div className="absolute -bottom-6 -right-6 md:-bottom-8 md:-right-8 w-28 h-28 md:w-40 md:h-40 bg-[#fbf065] shadow-xl rotate-[-6deg] p-1.5 md:p-2 border border-yellow-400 flex flex-col transition-transform hover:rotate-0 hover:scale-105 duration-300 z-30">
-                       <Pin size={24} fill="#b91c1c" className="absolute -top-3 left-1/2 -translate-x-1/2 text-red-700 z-10 drop-shadow-md" />
-                       {selectedItem.coverImage ? (
-                          <img src={selectedItem.coverImage} className="w-full h-full object-cover shadow-inner" alt="Album Art" />
-                       ) : (
-                          <div className="w-full h-full border border-yellow-500/50 flex items-center justify-center text-xs text-yellow-700 font-bold text-center p-2">No Art Uploaded</div>
-                       )}
-                    </div>
-                </div>
-            </div>
-         </div>
-      );
-    }
-
-    // --- VIDEO PLAYER ONLY (iOS Grey Player) ---
-    if (selectedItem.type === 'video') {
-      return (
-         <div className="bg-[#888888] rounded-[36px] p-6 md:p-10 w-full max-w-2xl mx-auto flex flex-col md:flex-row gap-6 md:gap-10 text-white font-sans select-none shadow-2xl relative">
-           <button onClick={() => setSelectedItem(null)} className="absolute top-6 right-6 z-50 text-white/70 hover:text-white transition-colors"><X size={24} /></button>
-           
-           <div className="w-full md:w-72 aspect-square bg-black rounded-[24px] overflow-hidden shrink-0 shadow-inner flex items-center justify-center relative">
-             <video src={selectedItem.image} controls autoPlay loop className="absolute inset-0 w-full h-full object-cover" />
-           </div>
-           
-           <div className="flex-1 flex flex-col justify-center py-2">
-              <div className="flex justify-between items-center mb-2">
-                 <span className="text-sm font-semibold tracking-wide">iPhone</span>
-                 <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                   <path d="M12 22L1 12H7V2H17V12H23L12 22Z" fill="currentColor" opacity="0.3"/>
-                   <path d="M12 18L5 12H9V4H15V12H19L12 18Z" fill="currentColor"/>
-                 </svg>
-              </div>
-              <h2 className="text-3xl font-bold leading-tight mb-1 tracking-tight truncate">{selectedItem.title}</h2>
-              <p className="text-lg font-medium opacity-80 mb-8 truncate">{selectedItem.author || 'Unknown Artist'} — {selectedItem.tabId || 'Album'}</p>
-              
-              <div className="flex items-center gap-3 text-xs mb-8 font-bold opacity-80">
-                 <span>0:00</span>
-                 <div className="flex-1 h-1.5 bg-white/30 rounded-full relative">
-                    <div className="absolute left-0 top-0 h-full w-1/3 bg-white rounded-full">
-                       <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full shadow-sm"></div>
-                    </div>
-                 </div>
-                 <span>3:14</span>
-              </div>
-              
-              <div className="flex justify-center gap-12 items-center px-4 mb-4">
-                 <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><polygon points="11 19 2 12 11 5 11 19"/><polygon points="22 19 13 12 22 5 22 19"/></svg>
-                 <svg width="40" height="40" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
-                 <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><polygon points="13 19 22 12 13 5 13 19"/><polygon points="2 19 11 12 2 5 2 19"/></svg>
-              </div>
-           </div>
-         </div>
-      );
-    }
-
-    // --- ALL OTHER MODALS (Beige box: Regular Blogs, Standard Projects, Gallery, Code, etc) ---
-    return (
-      <div className="bg-[#fefce8] rounded-xl shadow-2xl w-300 max-w-4xl max-h-[90vh] overflow-y-auto relative border border-yellow-200">
-        <button onClick={() => setSelectedItem(null)} className="absolute top-4 right-4 z-50 bg-white/80 p-2 rounded-full hover:bg-red-100 text-gray-800 transition-colors shadow-md"><X size={20} /></button>
-        
-        {itemType === 'project' && (
-          <div className="relative">
-            
-            {selectedItem.type === 'gallery' ? (
-              <div className="w-300 bg-[#f4f4f4] rounded-t-xl min-h-[70vh] relative overflow-hidden p-8 border-b border-gray-300">
-                 {isAdmin && (
-                   <div className="absolute top-4 left-4 z-50 flex gap-2">
-                      <span className="bg-yellow-200 text-yellow-900 font-bold px-3 py-1.5 rounded shadow text-sm">Admin: Drag to move</span>
-                      <button onClick={saveGalleryLayout} className="bg-green-600 text-white font-bold px-4 py-1.5 rounded shadow hover:bg-green-700 transition-colors text-sm">Save Layout</button>
-                   </div>
-                 )}
-                 {modalGalleryBlocks.map((img) => (
-                   <DraggableImage key={img.id} item={img} updateImage={updateModalGalleryImage} bringToFront={bringToFrontModalGallery} isAdmin={isAdmin} />
-                 ))}
-                 <div className="absolute bottom-8 left-8 z-40 pointer-events-none">
-                    <h2 className="text-6xl md:text-8xl font-title font-bold text-gray-900 drop-shadow-lg">{selectedItem.title}</h2>
-                    <p className="font-mono text-gray-800 bg-white/70 px-3 py-1 rounded inline-block backdrop-blur-sm mt-2 font-bold shadow-sm">{selectedItem.tabId}</p>
-                    {selectedItem.content && <p className="font-body text-gray-800 mt-2 max-w-sm bg-white/70 p-3 rounded backdrop-blur-sm shadow-sm">{selectedItem.content}</p>}
-                 </div>
-              </div>
-
-            ) : selectedItem.type === 'custom' ? (
-              <div className="w-full bg-white rounded-t-xl overflow-hidden p-8" dangerouslySetInnerHTML={{ __html: selectedItem.content }} />
-            
-            ) : selectedItem.type === 'iframe' ? (
-              <iframe src={selectedItem.content} className="w-full h-[60vh] bg-white rounded-t-xl border-0" title={selectedItem.title} />
-            
-            ) : (
-              selectedItem.image && <img src={selectedItem.image} className="w-full h-80 object-cover rounded-t-xl" alt="cover" />
-            )}
-            
-            {/* Default Footer for non-fullscreen types */}
-            {selectedItem.type !== 'custom' && selectedItem.type !== 'iframe' && selectedItem.type !== 'gallery' && (
-              <div className="p-10 bg-[#fefce8] rounded-b-xl">
-                <h2 className="text-7xl font-title font-bold text-red-900 mb-1 tracking-wide">{selectedItem.title}</h2>
-                <p className="font-mono text-gray-500 mb-6 pb-6 border-b border-red-900/10">{selectedItem.tabId}</p>
-                <p className="font-body text-lg text-gray-800 leading-relaxed whitespace-pre-wrap">{selectedItem.content}</p>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* REGULAR BLOG MODAL */}
-        {itemType === 'blog' && (
-          <div className="p-10 md:p-14 bg-[#fefce8] rounded-xl">
-              <p className="font-mono text-red-700 mb-2 font-bold tracking-widest text-sm uppercase">{selectedItem.category}</p>
-              <h2 className="text-5xl md:text-6xl font-title font-bold text-gray-900 mb-2 tracking-wide leading-tight">{selectedItem.title}</h2>
-              <div className="flex items-center gap-4 text-gray-500 mb-8 border-b border-gray-300/50 pb-6">
-                 <p className="font-mono text-sm">{selectedItem.date}</p>
-                 {selectedItem.tags && <span className="bg-gray-200/50 px-2 py-0.5 rounded text-xs font-mono">{selectedItem.tags}</span>}
-              </div>
-              
-              <div className="space-y-6 font-body text-lg text-gray-800 leading-relaxed">
-                 {selectedItem.excerpt && <p className="font-bold text-xl mb-4 italic text-gray-600">{selectedItem.excerpt}</p>}
-                 
-                 {(selectedItem.blocks || []).map((block, idx) => {
-                    if (block.type === 'text') return <p key={idx}>{block.content}</p>;
-                    if (block.type === 'quote') return <blockquote key={idx} className="border-l-4 border-red-700 pl-6 py-2 my-6 text-2xl font-title text-gray-900 italic tracking-wide">{block.content}</blockquote>;
-                    if (block.type === 'pullquote') return <div key={idx} className="text-xl md:text-3xl font-title text-center text-red-800 my-10 px-8 leading-tight">"{block.content}"</div>;
-                    if (block.type === 'image') return <img key={idx} src={block.content} alt="blog content" className="w-full rounded-lg shadow-md my-8 object-cover" />;
-                    return null;
-                 })}
-              </div>
-          </div>
-        )}
-      </div>
-    );
-  };
-
   const renderContent = () => {
     if (isLoading && activeTab !== 'admin') {
-      return <div className="h-full flex items-center justify-center text-red-900 font-bold font-mono">Loading...</div>;
+      return <div className="h-full flex items-center justify-center text-[#111] font-bold font-mono">Loading Core Systems...</div>;
     }
 
     if (siteSettings?.wip?.[activeTab] && activeTab !== 'admin') {
       if (!isAdmin) {
         return (
           <div className="min-h-full flex flex-col items-center justify-center text-center pb-20">
-            <div className="w-24 h-24 mb-6 border-4 border-dashed border-red-800 rounded-full animate-[spin_3s_linear_infinite] flex items-center justify-center">
-               <div className="w-16 h-16 bg-red-100 rounded-full"></div>
+            <div className="w-24 h-24 mb-6 border-[3px] border-dashed border-[#111] rounded-full animate-[spin_3s_linear_infinite] flex items-center justify-center">
+               <div className="w-16 h-16 bg-[#111] rounded-full"></div>
             </div>
-            <h1 className="text-5xl md:text-6xl font-title text-[#991b1b] mb-4 tracking-wide">Work In Progress</h1>
-            <p className="font-body text-gray-700 text-lg max-w-md">I am currently building this section. Please check back later for updates!</p>
+            <h1 className="text-5xl md:text-6xl font-serif text-[#111] mb-4">Under Construction</h1>
+            <p className="font-mono text-gray-700 text-sm max-w-md">I am currently compiling this section. Please stand by for updates.</p>
           </div>
         );
       }
@@ -578,57 +601,77 @@ export default function App() {
     switch (activeTab) {
       case 'intro':
         return (
-          <div className="flex flex-col lg:flex-row gap-6 items-start min-h-full pb-16 relative">
-            <div className="flex-1 w-full space-y-10 min-w-0">
-              <div>
-                <h1 className="text-6xl md:text-7xl font-title text-[#991b1b] mb-4 tracking-wide">My Introduction</h1>
-                <div className="flex flex-col md:flex-row gap-4">
-                  <div className="whitespace-pre-wrap font-body text-base text-gray-800 flex-1 leading-normal">{aboutData.introText}</div>
+          <div className="flex flex-col lg:flex-row gap-8 items-start min-h-full pb-16 relative">
+            <div className="flex-1 w-full space-y-16 min-w-0">
+              
+              {/* Intro Title & Description */}
+              <div className="border-b-[2px] border-[#111] pb-10">
+                <h1 className="text-6xl md:text-8xl font-serif text-[#111] mb-6 tracking-tight leading-none">
+                  Designed for Living, <br/><span className="italic text-gray-500">Built for You.</span>
+                </h1>
+                <div className="flex flex-col md:flex-row gap-8 items-start">
+                  <div className="whitespace-pre-wrap font-sans text-lg text-gray-800 flex-1 leading-relaxed border-l-4 border-[#ff5722] pl-6">
+                    {/* Applying brutalist highlighter effect */}
+                    <mark className="bg-[#dfff00] text-[#111] px-1">{aboutData.introText.split('\n')[0]}</mark>
+                    {'\n' + aboutData.introText.split('\n').slice(1).join('\n')}
+                  </div>
                   {aboutData.introImage && (
-                    <div className="w-full md:w-56 shrink-0 rotate-1 hover:rotate-0 transition-transform">
-                      <img src={aboutData.introImage} alt="Intro" className="w-full rounded shadow-md border border-yellow-600/30" />
+                    <div className="w-full md:w-64 shrink-0 shadow-[8px_8px_0px_#111] border-2 border-[#111] bg-white p-2">
+                      <img src={aboutData.introImage} alt="Intro" className="w-full grayscale hover:grayscale-0 transition-all duration-500" />
                     </div>
                   )}
                 </div>
               </div>
 
-              <div>
-                <h2 className="text-6xl md:text-7xl font-title text-[#991b1b] mb-1 border-b border-red-900/20 pb-1 tracking-wide">People I like</h2>
-                <p className="font-body text-xs text-gray-500 mb-3 italic">(Nickname-wise)(Photos are what i think of them :&gt;)</p>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {/* Myspace Box */}
+              <div className="bg-white border-[2px] border-[#111] shadow-[6px_6px_0px_#111] p-8 relative">
+                <div className="absolute -top-3 left-6 bg-[#ff5722] text-white font-mono text-xs font-bold px-3 py-1 border-[2px] border-[#111]">THE CIRCLE</div>
+                <h2 className="text-3xl font-serif text-[#111] mb-6">People I Like</h2>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
                   {aboutData.myspace.map((friend, i) => (
-                    <div key={friend.id} className="group">
-                      <p className="text-lg font-handwriting text-red-800 mb-1">{i+1}. {friend.name}</p>
-                      <img src={friend.image} alt={friend.name} className="w-full aspect-square object-cover rounded-sm shadow-sm border border-yellow-600/30 group-hover:-translate-y-1 transition-transform" />
+                    <div key={friend.id} className="group flex flex-col items-center">
+                      <div className="w-full aspect-square border-[2px] border-[#111] overflow-hidden bg-gray-100 mb-3">
+                         <img src={friend.image} alt={friend.name} className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-300" />
+                      </div>
+                      <p className="text-sm font-mono text-[#111] font-bold uppercase tracking-widest bg-[#dfff00] px-2">{friend.name}</p>
                     </div>
                   ))}
                 </div>
               </div>
 
+              {/* Interests Grid */}
               <div>
-                <h2 className="text-6xl md:text-7xl font-title text-[#991b1b] mb-3 border-b border-red-900/20 pb-1 tracking-wide">Interests</h2>
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                <h2 className="text-4xl font-serif text-[#111] mb-8 border-b-[2px] border-[#111] pb-2">Technical Interests</h2>
+                <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6">
                   {aboutData.interests.map((interest) => (
-                    <div key={interest.id}>
-                      <h3 className="font-subtitle font-bold text-gray-900 mb-1 truncate text-xl" title={interest.title}>{interest.title}</h3>
-                      <img src={interest.image} alt={interest.title} className="w-full aspect-[4/3] object-cover rounded-sm shadow-sm border border-yellow-600/30 mb-2" />
-                      <p className="text-xs text-gray-700 font-body leading-relaxed whitespace-pre-wrap">{interest.desc}</p>
+                    <div key={interest.id} className="border-[2px] border-[#111] bg-white flex flex-col">
+                      <div className="border-b-[2px] border-[#111] p-3 bg-[#e5e5e5]">
+                        <h3 className="font-mono font-bold text-[#111] truncate text-sm uppercase">{interest.title}</h3>
+                      </div>
+                      <img src={interest.image} alt={interest.title} className="w-full aspect-video object-cover border-b-[2px] border-[#111]" />
+                      <div className="p-4 flex-1">
+                        <p className="text-xs text-gray-700 font-sans leading-relaxed whitespace-pre-wrap">{interest.desc}</p>
+                      </div>
                     </div>
                   ))}
                 </div>
               </div>
 
+              {/* Obsessions */}
               <div>
-                <h2 className="text-6xl md:text-7xl font-title text-[#991b1b] mb-3 border-b border-red-900/20 pb-1 tracking-wide">
-                  Obsessions <span className="text-xl font-handwriting text-red-800/60 font-normal ml-2 tracking-normal">(Top 10s)</span>
+                <h2 className="text-4xl font-serif text-[#111] mb-8 flex items-center gap-4">
+                  Obsessions <span className="bg-[#111] text-[#dfff00] text-xs font-mono px-3 py-1 uppercase tracking-widest">Top 10s</span>
                 </h2>
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-                  {aboutData.obsessions.map((obs) => (
-                    <div key={obs.id} className="bg-[#e4d467] shadow-[inset_2px_2px_4px_rgba(0,0,0,0.1),_inset_-2px_-2px_4px_rgba(255,255,255,0.4)] p-4 rounded-xl border border-yellow-600/20 transition-all hover:shadow-[inset_3px_3px_6px_rgba(0,0,0,0.15),_inset_-3px_-3px_6px_rgba(255,255,255,0.5)]">
-                      <h3 className="font-bold font-subtitle text-gray-900 mb-2 text-lg border-b border-gray-900/10 pb-1 leading-tight break-words">{obs.category}</h3>
-                      <ol className="list-decimal list-inside text-xs text-gray-800 space-y-1 font-body">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {aboutData.obsessions.map((obs, index) => (
+                    <div key={obs.id} className="bg-[#ff5722] border-[2px] border-[#111] shadow-[6px_6px_0px_#111] p-6 text-[#111]">
+                      <div className="flex justify-between items-start border-b-[2px] border-[#111] pb-3 mb-4">
+                        <h3 className="font-bold font-serif text-2xl leading-tight">{obs.category}</h3>
+                        <span className="font-mono text-sm font-bold opacity-50">{String(index + 1).padStart(2, '0')}</span>
+                      </div>
+                      <ol className="list-decimal list-inside text-sm space-y-2 font-mono font-bold text-[#111]/90">
                         {obs.items.map((item, i) => (
-                          <li key={i} className="leading-tight pl-1 marker:text-red-800/70 marker:font-bold break-words whitespace-normal" title={item}>{item}</li>
+                          <li key={i} className="leading-tight break-words">{item}</li>
                         ))}
                       </ol>
                     </div>
@@ -637,16 +680,14 @@ export default function App() {
               </div>
             </div>
 
+            {/* Right Side Memo */}
             <div className="w-full lg:w-72 shrink-0 mt-8 lg:mt-0 sticky top-8 z-20">
-              <div className="absolute -top-4 left-1/2 -translate-x-1/2 z-10 text-red-700">
-                <Pin size={32} fill="#b91c1c" className="drop-shadow-md rotate-12" />
-              </div>
-              <div className="bg-[#fefce8] p-5 pt-8 rounded shadow-md rotate-2 transition-transform hover:rotate-0 duration-300 relative overflow-hidden min-h-[16rem] border border-yellow-200">
-                <div className="absolute inset-0 pointer-events-none" style={{ backgroundImage: 'linear-gradient(transparent 95%, #fca5a5 95%)', backgroundSize: '100% 1.8rem' }}></div>
-                <p className="font-handwriting text-2xl text-red-800/90 leading-[1.8rem] relative z-10 break-words">
-                  {aboutData.notepadText || "Write a note in the admin panel!"}
+              <div className="bg-[#dfff00] p-6 border-[2px] border-[#111] shadow-[8px_8px_0px_#111] relative">
+                <div className="absolute -top-3 -right-3 w-8 h-8 bg-[#0000ff] rounded-full border-[2px] border-[#111] flex items-center justify-center text-white shadow-sm"><Pin size={16}/></div>
+                <p className="font-mono text-xs font-bold uppercase tracking-widest text-[#111] mb-4 border-b-[2px] border-[#111] pb-2">System Memo</p>
+                <p className="font-sans text-[#111] leading-relaxed text-sm">
+                  {aboutData.notepadText || "No active memos."}
                 </p>
-                <div className="text-right text-red-800/60 mt-2 font-handwriting text-xl relative z-10">✧.*</div>
               </div>
             </div>
           </div>
@@ -657,24 +698,27 @@ export default function App() {
         return (
           <div className="min-h-full pb-16 flex flex-col items-center">
             
-            <h1 className="text-5xl md:text-6xl font-title text-[#991b1b] mb-12 tracking-wide uppercase flex items-center gap-4 drop-shadow-sm">
-              Index <span className="text-2xl md:text-3xl font-subtitle text-[#1a1a1a] lowercase tracking-normal mt-2">(Projects)</span>
-            </h1>
+            <div className="w-full text-center border-b-[2px] border-[#111] pb-8 mb-12">
+               <h1 className="text-5xl md:text-7xl font-serif text-[#111] tracking-tight uppercase mb-2">Project Index</h1>
+               <p className="font-mono text-gray-500 text-sm">A complete repository of engineering and design deliverables.</p>
+            </div>
 
-            <div className="w-full max-w-4xl flex flex-col items-center relative z-20 mt-4">
+            <div className="w-full max-w-4xl flex flex-col items-center relative z-20">
               <div 
-                className="w-[96%] relative overflow-hidden flex justify-center"
+                className="w-[96%] relative overflow-hidden flex justify-center bg-blueprint border-x-[2px] border-t-[2px] border-[#111]"
                 style={{ height: `${containerHeightRem}rem`, minHeight: '14rem' }}
               >
+                {/* 1. The Slanted Grey Background (Pure Trapezoid) */}
                 <div 
-                  className="absolute inset-0 bg-[#e8e8e8] z-0"
+                  className="absolute inset-0 bg-[#e5e5e5] z-0 opacity-80"
                   style={{ clipPath: 'polygon(10% 2.5rem, 90% 2.5rem, 98% 100%, 2% 100%)' }}
                 ></div>
 
+                {/* 2. The Perspective Lines */}
                 <svg className="absolute inset-0 w-full h-full z-10 pointer-events-none" style={{ overflow: 'visible' }}>
-                   <line x1="10%" y1="2.5rem" x2="90%" y2="2.5rem" stroke="#1a1a1a" strokeWidth="2" />
-                   <line x1="10%" y1="2.5rem" x2="2%" y2="100%" stroke="#1a1a1a" strokeWidth="2" />
-                   <line x1="90%" y1="2.5rem" x2="98%" y2="100%" stroke="#1a1a1a" strokeWidth="2" />
+                   <line x1="10%" y1="2.5rem" x2="90%" y2="2.5rem" stroke="#111" strokeWidth="2" />
+                   <line x1="10%" y1="2.5rem" x2="2%" y2="100%" stroke="#111" strokeWidth="2" />
+                   <line x1="90%" y1="2.5rem" x2="98%" y2="100%" stroke="#111" strokeWidth="2" />
                 </svg>
                 
                 {projects.map((item, i) => {
@@ -683,36 +727,30 @@ export default function App() {
                   const progressY = (topPos - 2.5) / (containerHeightRem - 2.5);
                   const leftPercent = 10 - (progressY * 8); 
                   const widthPercent = 100 - (leftPercent * 2);
-
                   const colIndex = i % 5;
                   const leftOffset = colIndex * 19.5;
                   
                   const isBlack = item.author?.toLowerCase() === 'black' || item.type === 'divider';
-                  const folderBg = isBlack ? 'bg-[#1a1a1a]' : 'bg-[#f4f1e1]';
-                  const textColor = isBlack ? 'text-[#f4f1e1]' : 'text-[#1a1a1a]';
-                  const borderColor = 'border-[#1a1a1a]';
+                  const folderBg = isBlack ? 'bg-[#111]' : 'bg-white';
+                  const textColor = isBlack ? 'text-white' : 'text-[#111]';
+                  const borderColor = 'border-[#111]';
 
                   return (
                     <div 
                       key={item.id} 
                       onClick={() => openModal(item, 'project')}
                       className="absolute transition-transform duration-300 hover:-translate-y-2 cursor-pointer group select-none"
-                      style={{ 
-                        top: `${topPos}rem`,
-                        left: `${leftPercent}%`,
-                        width: `${widthPercent}%`,
-                        zIndex: zIndex
-                      }}
+                      style={{ top: `${topPos}rem`, left: `${leftPercent}%`, width: `${widthPercent}%`, zIndex: zIndex }}
                     >
                       <div 
-                        className={`absolute -top-[1.75rem] h-[2rem] w-[22%] min-w-[50px] ${folderBg} border-2 ${borderColor} border-b-0 rounded-t-[8px] flex items-center justify-between px-2 z-20`}
+                        className={`absolute -top-[1.75rem] h-[2rem] w-[22%] min-w-[50px] ${folderBg} border-[2px] ${borderColor} border-b-0 rounded-t-sm flex items-center justify-between px-2 z-20`}
                         style={{ left: `${leftOffset}%` }}
                       >
                         <span className={`font-mono text-[9px] md:text-[11px] font-bold ${textColor}`}>
                           {isBlack ? item.title.charAt(0).toUpperCase() : (i+94).toString().padStart(3, '0')}
                         </span>
-                        <div className={`w-[1px] h-[50%] ${isBlack ? 'bg-white/20' : 'bg-[#1a1a1a]/30'} mx-1 md:mx-2`}></div>
-                        <span className={`font-mono text-[9px] md:text-[11px] font-bold truncate ${textColor} lowercase`}>
+                        <div className={`w-[1px] h-[50%] ${isBlack ? 'bg-white/20' : 'bg-[#111]/30'} mx-1 md:mx-2`}></div>
+                        <span className={`font-mono text-[9px] md:text-[11px] font-bold truncate ${textColor} uppercase tracking-wider`}>
                           {isBlack ? (i+3).toString().padStart(3, '0') : item.title.split(' ')[0]}
                         </span>
                       </div>
@@ -722,17 +760,17 @@ export default function App() {
                       >
                          <div className={`w-[calc(100%-4px)] h-full ${folderBg}`}></div>
                       </div>
-                      <div className={`w-full h-[24rem] ${folderBg} border-2 ${borderColor} rounded-t-[8px] relative z-10`}>
-                         <div className="absolute top-0 left-0 w-full h-[1px] bg-white/40 rounded-t-[8px] pointer-events-none"></div>
+                      <div className={`w-full h-[24rem] ${folderBg} border-[2px] ${borderColor} relative z-10`}>
+                         <div className="absolute top-0 left-0 w-full h-[1px] bg-black/10 pointer-events-none"></div>
                       </div>
                     </div>
                   );
                 })}
               </div>
 
-              <div className="w-[100%] h-14 bg-[#d4d4d4] border-2 border-[#1a1a1a] border-b-[16px] rounded-sm z-50 flex items-center justify-center relative mt-[-2px]">
-                 <div className="absolute bottom-[-16px] right-8 md:right-16 bg-[#fbf065] px-4 py-1.5 border-2 border-[#1a1a1a] shadow-[2px_2px_0px_#1a1a1a] rotate-[-4deg] font-mono font-bold text-[10px] md:text-xs hover:rotate-0 transition-transform cursor-pointer z-50">
-                   Iceyyy's projects
+              <div className="w-[100%] h-14 bg-[#111] border-[2px] border-[#111] border-b-[16px] z-50 flex items-center justify-center relative mt-[-2px]">
+                 <div className="absolute bottom-[-12px] right-8 md:right-16 bg-[#dfff00] px-4 py-1.5 border-[2px] border-[#111] shadow-[4px_4px_0px_#111] font-mono font-bold text-[10px] md:text-xs uppercase tracking-widest hover:translate-y-[2px] hover:shadow-[2px_2px_0px_#111] transition-all cursor-pointer z-50">
+                   System Files
                  </div>
               </div>
 
@@ -740,24 +778,82 @@ export default function App() {
           </div>
         );
 
+      case 'galleria':
+        return (
+          <div className="w-full h-full min-h-[70vh] relative overflow-hidden bg-blueprint bg-[#e5e5e5] border-[2px] border-[#111] shadow-[8px_8px_0px_#111] flex items-center justify-center" 
+               onWheel={(e) => setGalleriaPanX(p => p - e.deltaY * 2.5)}>
+            
+            <div className="absolute top-8 left-8 font-mono text-[10px] font-bold tracking-widest uppercase text-[#111] bg-[#dfff00] px-3 py-1 border-[2px] border-[#111] z-20 shadow-[2px_2px_0px_#111]">
+               Timeline : Infinite
+            </div>
+            
+            {galleriaData.length === 0 ? (
+               <p className="text-gray-500 font-serif text-3xl">No images uploaded.</p>
+            ) : (
+               /* THE 3D VIEWPORT */
+               <div className="gal-viewport absolute inset-0 w-full h-full pointer-events-none">
+                  
+                  {/* THE 3D SCENE (Shifted to perfectly cross center of screen) */}
+                  <div className="gal-scene absolute top-[60%] left-[50%] pointer-events-auto"
+                       style={{ transform: `rotateX(60deg) rotateZ(45deg) translateY(${galleriaPanX}px)` }}>
+                    
+                    {galleriaData.map((img, i) => (
+                       <div key={img.id} 
+                            /* ONLY open journal if img.hasJournal is true */
+                            onClick={() => img.hasJournal && setActiveJournal(img)} 
+                            style={{ '--i': i }}
+                            className={`gal-item group ${img.hasJournal ? 'cursor-pointer' : 'cursor-default'}`}>
+                          
+                          {/* Image respects its own aspect ratio while filling the height */}
+                          <img src={img.image} className="h-full w-auto max-w-none grayscale group-hover:grayscale-0 transition-all duration-[600ms] block" alt="galleria" />
+                          
+                          {/* Hover Tag */}
+                          <div className="absolute bottom-3 left-3 p-1.5 bg-[#dfff00] border-[2px] border-[#111] opacity-0 group-hover:opacity-100 transition-opacity duration-500 shadow-[4px_4px_0px_#111] flex items-center gap-2">
+                             <p className="text-[#111] font-mono font-bold tracking-widest uppercase text-[10px] whitespace-nowrap">{img.date}</p>
+                             
+                             {/* VISUAL CUE: Only shows up if this specific photo has a journal entry */}
+                             {img.hasJournal && (
+                                <span className="bg-[#ff5722] text-white px-1.5 py-0.5 text-[8px] tracking-widest shadow-sm">MEMO ATTACHED ↗</span>
+                             )}
+                          </div>
+                          
+                       </div>
+                    ))}
+                  </div>
+               </div>
+            )}
+
+            <div className="absolute bottom-8 right-8 flex items-center gap-4 text-[#111] font-mono text-[10px] font-bold uppercase z-20 bg-white px-3 py-1 border-[2px] border-[#111] shadow-[2px_2px_0px_#111]">
+               <span>Scroll to pan</span>
+               <div className="flex gap-1">
+                  <span className="w-4 h-4 rounded-full border-[2px] border-[#111] flex items-center justify-center bg-[#dfff00]">&larr;</span>
+                  <span className="w-4 h-4 rounded-full border-[2px] border-[#111] flex items-center justify-center bg-[#dfff00]">&rarr;</span>
+               </div>
+            </div>
+          </div>
+        );
+
       case 'system': {
         return (
-          <div className="min-h-full pb-16 relative z-30 font-body">
-            <div className="bg-[#f4f1e1] border-[4px] border-[#1a1a1a] shadow-[12px_12px_0px_#1a1a1a] relative w-full overflow-hidden flex flex-col h-[80vh] min-h-[700px]">
-              <div className="bg-[#1a1a1a] text-[#f4f1e1] px-5 py-3 flex justify-between items-center border-b-[4px] border-[#1a1a1a] shrink-0 z-20 relative">
-                 <div className="flex gap-2.5">
-                    <div className="w-4 h-4 rounded-full bg-[#ff5f56] border-[2px] border-[#1a1a1a] shadow-[2px_2px_0px_#000]"></div>
-                    <div className="w-4 h-4 rounded-full bg-[#ffbd2e] border-[2px] border-[#1a1a1a] shadow-[2px_2px_0px_#000]"></div>
-                    <div className="w-4 h-4 rounded-full bg-[#27c93f] border-[2px] border-[#1a1a1a] shadow-[2px_2px_0px_#000]"></div>
+          <div className="min-h-full pb-16 relative z-30 font-sans">
+            <div className="bg-[#f4f4f0] border-[2px] border-[#111] shadow-[12px_12px_0px_#111] relative w-full overflow-hidden flex flex-col h-[80vh] min-h-[700px]">
+              <div className="bg-[#111] text-[#f4f4f0] px-5 py-4 flex justify-between items-center border-b-[2px] border-[#111] shrink-0 z-20 relative">
+                 <div className="flex gap-3">
+                    <div className="w-3 h-3 rounded-full bg-[#ff5722]"></div>
+                    <div className="w-3 h-3 rounded-full bg-[#dfff00]"></div>
+                    <div className="w-3 h-3 rounded-full bg-[#0000ff]"></div>
                  </div>
-                 <h1 className="text-3xl font-title tracking-[0.2em] uppercase absolute left-1/2 -translate-x-1/2 mt-1">{systemData?.title || 'System Core'}</h1>
+                 <h1 className="text-xl font-mono font-bold tracking-[0.2em] uppercase absolute left-1/2 -translate-x-1/2">{systemData?.title || 'System Core'}</h1>
                  <div className="flex gap-2">
                     {(systemData?.navPills || []).slice(0, 2).map((nav, i) => (
-                       <div key={i} className="hidden md:block bg-[#f4f1e1] text-[#1a1a1a] border-[2px] border-[#1a1a1a] px-3 py-1 font-bold text-xs uppercase tracking-widest shadow-[2px_2px_0px_#1a1a1a]">
+                       <div key={i} className="hidden md:block bg-transparent border border-white/30 text-white px-3 py-1 font-mono text-[10px] uppercase tracking-widest">
                           {nav}
                        </div>
                     ))}
                  </div>
+              </div>
+              <div className="flex-1 bg-blueprint p-8 flex items-center justify-center">
+                 <p className="font-mono text-[#111] bg-[#dfff00] px-4 py-2 border-[2px] border-[#111] font-bold shadow-[4px_4px_0px_#111]">SYSTEM VISUALIZATION MOVED TO COMPONENT MODULE</p>
               </div>
             </div>
           </div>
@@ -769,33 +865,36 @@ export default function App() {
         const albumBlogs = blogs.filter(b => b.type === 'album');
 
         return (
-          <div className="min-h-full pb-16 max-w-6xl mx-auto flex flex-col lg:flex-row gap-8 relative items-start">
-            <div className="flex-1 w-full min-w-0">
-              <h1 className="text-6xl md:text-7xl font-title text-[#991b1b] mb-8 tracking-wide">My Thoughts</h1>
+          <div className="min-h-full pb-16 max-w-7xl mx-auto flex flex-col lg:flex-row gap-8 relative items-start">
+            
+            {/* Left Column: Regular Blogs */}
+            <div className="flex-1 w-full min-w-0 border-t-[2px] border-[#111] pt-6">
+              <h1 className="text-5xl md:text-6xl font-serif text-[#111] mb-10 tracking-tight">Transmission Log</h1>
               {regularBlogs.length === 0 ? (
-                <p className="text-xl font-subtitle text-gray-600 mt-10">No regular posts right now...</p>
+                <p className="text-lg font-mono text-gray-500">No logs found.</p>
               ) : (
-                <div className="space-y-6">
+                <div className="space-y-8">
                   {regularBlogs.map((post) => (
-                    <div key={post.id} onClick={() => openModal(post, 'blog')} className="bg-white/40 flex flex-col md:flex-row overflow-hidden rounded-2xl border border-yellow-600/20 shadow-sm hover:bg-white/60 transition-colors cursor-pointer group">
+                    <div key={post.id} onClick={() => openModal(post, 'blog')} className="bg-white flex flex-col md:flex-row border-[2px] border-[#111] shadow-[6px_6px_0px_#111] hover:translate-y-1 hover:shadow-[2px_2px_0px_#111] transition-all cursor-pointer group">
                       {post.coverImage && (
-                        <div className="w-full md:w-[40%] h-56 md:h-auto shrink-0 overflow-hidden relative">
-                          <img src={post.coverImage} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" alt="cover"/>
-                          <div className="absolute inset-0 bg-black/10 group-hover:bg-transparent transition-colors"></div>
+                        <div className="w-full md:w-[35%] h-64 md:h-auto shrink-0 overflow-hidden border-b-[2px] md:border-b-0 md:border-r-[2px] border-[#111]">
+                          <img src={post.coverImage} className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-500" alt="cover"/>
                         </div>
                       )}
                       <div className="p-6 md:p-8 flex-1 flex flex-col justify-center min-w-0">
-                        <div className="flex justify-between items-start mb-3">
-                          <p className="font-handwriting text-red-700 text-2xl whitespace-nowrap">{post.date}</p>
+                        <div className="flex justify-between items-start mb-4">
+                          <p className="font-mono text-xs font-bold bg-[#e5e5e5] px-2 py-1 border border-[#111]">{post.date}</p>
                           {post.rating && (
-                            <div className="flex text-yellow-500 shrink-0">
-                              {[...Array(Number(post.rating))].map((_, i) => <Star key={i} size={16} fill="currentColor" />)}
+                            <div className="flex text-[#ff5722] shrink-0 gap-0.5">
+                              {[...Array(Number(post.rating))].map((_, i) => <Star key={i} size={14} fill="currentColor" />)}
                             </div>
                           )}
                         </div>
-                        <h2 className="font-title text-4xl mb-2 text-gray-900 group-hover:text-red-700 transition-colors tracking-wide break-words">{post.title}</h2>
-                        {post.category && <span className="text-[10px] font-bold uppercase tracking-widest text-red-800 bg-red-100 px-2 py-1 rounded w-fit mb-3">{post.category}</span>}
-                        <p className="font-body text-gray-700 text-base line-clamp-3 leading-relaxed">{post.excerpt}</p>
+                        <h2 className="font-serif text-3xl md:text-4xl mb-4 text-[#111] group-hover:text-[#0000ff] transition-colors leading-tight">{post.title}</h2>
+                        <div className="flex gap-2 mb-4">
+                           {post.category && <span className="text-[10px] font-bold uppercase tracking-widest text-[#111] bg-[#dfff00] px-2 py-1 border border-[#111]">{post.category}</span>}
+                        </div>
+                        <p className="font-sans text-gray-700 text-sm leading-relaxed whitespace-pre-wrap line-clamp-3">{post.excerpt}</p>
                       </div>
                     </div>
                   ))}
@@ -803,22 +902,32 @@ export default function App() {
               )}
             </div>
 
-            {/* Right Column: Vinyl Shelf */}
-            <div className="w-full lg:w-80 shrink-0 lg:mt-24 sticky top-8 z-10 self-start">
-              <h2 className="text-4xl font-title text-[#991b1b] mb-4 tracking-wide border-b border-red-900/20 pb-2">Vinyl Reviews</h2>
-              <div className="w-80 bg-[#4a3629] p-4 rounded-xl shadow-[inset_0_10px_20px_rgba(0,0,0,0.5)] flex flex-col-reverse gap-0.5 min-h-[300px] border-[6px] border-[#312219]">
+            {/* Right Column: Vinyl Shelf (VHS Display Style) */}
+            <div className="w-full lg:w-[340px] shrink-0 lg:mt-24 sticky top-8 z-10 self-start">
+              <div className="flex justify-between items-end border-b-[2px] border-[#111] pb-2 mb-6">
+                 <h2 className="text-2xl font-serif text-[#111]">Audio Logs</h2>
+                 <span className="font-mono text-[10px] text-gray-500 uppercase tracking-widest">Vinyl Collection</span>
+              </div>
+              
+              <div className="bg-[#111] p-6 rounded-sm shadow-[8px_8px_0px_rgba(17,17,17,0.2)] flex flex-col-reverse gap-1.5 min-h-[400px] border-[2px] border-[#111] relative overflow-hidden">
+                  {/* Subtle Grid overlay for the shelf */}
+                  <div className="absolute inset-0 opacity-10 pointer-events-none" style={{ backgroundImage: 'linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)', backgroundSize: '10px 10px' }}></div>
+                  
                   {albumBlogs.length === 0 ? (
-                    <p className="text-gray-400 font-body text-center text-sm py-10">Shelf is empty</p>
+                    <p className="text-gray-500 font-mono text-center text-xs py-10">Archive Empty</p>
                   ) : albumBlogs.map(album => (
-                      <div key={album.id} onClick={() => openModal(album, 'blog')} className="h-10 bg-gradient-to-r from-[#e3dac9] via-[#fff] to-[#e3dac9] rounded-sm shadow-[0_-2px_4px_rgba(0,0,0,0.3)] cursor-pointer hover:-translate-x-4 transition-transform flex items-center px-4 relative overflow-hidden group">
-                         <div className="w-full h-[1px] bg-black/10 absolute top-1 left-0"></div>
-                         <div className="w-full h-[1px] bg-black/10 absolute bottom-1 left-0"></div>
-                         <span className="font-title text-sm tracking-widest text-black/80 truncate w-full group-hover:text-red-800 transition-colors">{album.title}</span>
-                         <div className="absolute right-0 top-0 h-full w-6 bg-[#111] opacity-0 group-hover:opacity-100 transition-opacity" style={{ backgroundImage: 'repeating-linear-gradient(90deg, transparent, transparent 1px, #222 1px, #222 2px)' }}></div>
+                      <div key={album.id} onClick={() => openModal(album, 'blog')} className="h-12 bg-white border border-[#333] cursor-pointer hover:-translate-x-6 transition-transform flex items-center px-4 relative group">
+                         <div className="w-2 h-full bg-[#e5e5e5] absolute left-0 top-0 border-r border-[#ccc]"></div>
+                         
+                         <span className="font-mono text-xs font-bold uppercase tracking-widest text-[#111] truncate w-full pl-3 group-hover:text-[#ff5722] transition-colors">{album.title}</span>
+                         
+                         {/* Grooves Texture */}
+                         <div className="absolute right-0 top-0 h-full w-10 bg-[#111] opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-10 border-l border-black/20" 
+                              style={{ backgroundImage: 'repeating-linear-gradient(90deg, #111, #111 2px, #333 3px, #111 4px)' }}>
+                         </div>
                       </div>
                   ))}
               </div>
-              <p className="text-xs font-body text-gray-600 mt-3 text-center italic">Click a spine to pull out the record.</p>
             </div>
           </div>
         );
@@ -826,26 +935,27 @@ export default function App() {
       case 'blank':
         return (
           <div className="min-h-full pb-16 flex flex-col items-center justify-center relative">
-            <h1 className="text-6xl md:text-7xl font-title text-[#991b1b] mb-4 text-center tracking-wide">Anonymous Notes</h1>
-            <p className="text-gray-700 mb-8 font-body text-base text-center max-w-md">Leave a message, a drawing, or whatever is on your mind. It's completely anonymous.</p>
-            
-            <div className="w-full max-w-xl bg-white/40 p-6 rounded-3xl shadow-sm border border-yellow-600/30 backdrop-blur-sm relative z-10">
-              <div className="flex gap-2 mb-6 justify-center border-b border-yellow-600/20 pb-6">
-                <button onClick={() => setPlaygroundMode('text')} className={`flex items-center gap-2 px-5 py-2.5 rounded-full font-bold text-sm transition-colors ${playgroundMode === 'text' ? 'bg-red-800 text-white shadow-md' : 'bg-white text-gray-700 hover:bg-gray-100'}`}><Type size={18}/> Text</button>
-                <button onClick={() => setPlaygroundMode('draw')} className={`flex items-center gap-2 px-5 py-2.5 rounded-full font-bold text-sm transition-colors ${playgroundMode === 'draw' ? 'bg-red-800 text-white shadow-md' : 'bg-white text-gray-700 hover:bg-gray-100'}`}><Pencil size={18}/> Draw</button>
+            <div className="border-[2px] border-[#111] p-8 md:p-12 w-full max-w-2xl bg-white shadow-[8px_8px_0px_#111]">
+              <div className="border-b-[2px] border-[#111] pb-6 mb-8 text-center">
+                 <h1 className="text-5xl font-serif text-[#111] mb-2">Public Sandbox</h1>
+                 <p className="text-gray-600 font-mono text-xs uppercase tracking-widest">End-to-End Encryption Disabled</p>
+              </div>
+              
+              <div className="flex gap-2 mb-6 justify-center">
+                <button onClick={() => setPlaygroundMode('text')} className={`flex items-center gap-2 px-6 py-2 border-[2px] border-[#111] font-mono text-sm font-bold transition-all ${playgroundMode === 'text' ? 'bg-[#dfff00] shadow-[2px_2px_0px_#111] translate-y-[-2px]' : 'bg-white hover:bg-gray-100'}`}><Type size={16}/> TEXT</button>
+                <button onClick={() => setPlaygroundMode('draw')} className={`flex items-center gap-2 px-6 py-2 border-[2px] border-[#111] font-mono text-sm font-bold transition-all ${playgroundMode === 'draw' ? 'bg-[#dfff00] shadow-[2px_2px_0px_#111] translate-y-[-2px]' : 'bg-white hover:bg-gray-100'}`}><Pencil size={16}/> SKETCH</button>
               </div>
 
               <form onSubmit={sendAnonymousMessage}>
                 {playgroundMode === 'text' ? (
-                  <textarea required value={newGuestMessage} onChange={(e) => setNewGuestMessage(e.target.value)} placeholder="Write something cool here..." className="w-full h-48 p-5 rounded-2xl border border-yellow-600/20 bg-white/70 focus:bg-white outline-none font-handwriting text-3xl text-gray-800 resize-none mb-4 shadow-inner" />
+                  <textarea required value={newGuestMessage} onChange={(e) => setNewGuestMessage(e.target.value)} placeholder="Enter transmission..." className="w-full h-48 p-4 border-[2px] border-[#111] bg-[#f4f4f0] outline-none font-mono text-sm text-[#111] resize-none mb-6 focus:bg-white transition-colors" />
                 ) : (
-                  <div className="mb-4 touch-none">
-                    <canvas ref={canvasRef} onMouseDown={startDrawing} onMouseMove={draw} onMouseUp={stopDrawing} onMouseLeave={stopDrawing} onTouchStart={startDrawing} onTouchMove={draw} onTouchEnd={stopDrawing} className="w-full h-64 bg-white border border-yellow-600/20 rounded-2xl cursor-crosshair shadow-inner" />
-                    <p className="text-xs text-gray-500 mt-3 text-center italic font-body">Draw inside the box. Use mouse or finger.</p>
+                  <div className="mb-6 touch-none relative border-[2px] border-[#111] bg-blueprint">
+                    <canvas ref={canvasRef} onMouseDown={startDrawing} onMouseMove={draw} onMouseUp={stopDrawing} onMouseLeave={stopDrawing} onTouchStart={startDrawing} onTouchMove={draw} onTouchEnd={stopDrawing} className="w-full h-64 cursor-crosshair relative z-10" />
                   </div>
                 )}
-                <button disabled={isSendingMessage} type="submit" className="w-full bg-red-800 text-white font-bold py-4 rounded-2xl hover:bg-red-900 transition-colors flex items-center justify-center gap-2 text-lg shadow-md">
-                  {isSendingMessage ? 'Sending...' : <><Send size={20}/> Send Note</>}
+                <button disabled={isSendingMessage} type="submit" className="w-full bg-[#111] text-[#f4f4f0] font-mono font-bold uppercase tracking-widest py-4 border-[2px] border-[#111] hover:bg-white hover:text-[#111] transition-colors flex items-center justify-center gap-3">
+                  {isSendingMessage ? 'UPLOADING...' : <><Send size={18}/> SUBMIT LOG</>}
                 </button>
               </form>
             </div>
@@ -855,18 +965,17 @@ export default function App() {
       case 'socials':
         return (
           <div className="min-h-full pb-16 flex flex-col items-center justify-center">
-            <h1 className="text-6xl md:text-7xl font-title text-[#991b1b] mb-12 tracking-wide">Where to Find Me</h1>
+            <h1 className="text-5xl md:text-7xl font-serif text-[#111] mb-12 tracking-tight border-b-[2px] border-[#111] pb-4">External Links</h1>
             {socials.length === 0 ? (
-              <p className="text-2xl font-subtitle text-gray-600 text-center">Links coming soon...</p>
+              <p className="text-xl font-mono text-gray-500 text-center">Awaiting configuration.</p>
             ) : (
               <div className="flex gap-6 flex-wrap justify-center">
                 {socials.map((social) => (
-                  <a key={social.id} href={social.url} target="_blank" rel="noopener noreferrer" className="bg-[#fefce8] p-3 pb-10 rounded shadow-md border border-gray-200 rotate-[-2deg] hover:rotate-0 hover:-translate-y-2 transition-all cursor-pointer w-36 text-center relative block">
-                    <div className="absolute top-2 left-1/2 -translate-x-1/2 w-6 h-1.5 bg-white/50 shadow-sm rounded-sm backdrop-blur-sm -rotate-2"></div>
-                    <div className="w-full h-28 bg-gray-200 mb-3 rounded-sm overflow-hidden flex items-center justify-center">
-                      {social.image ? <img src={social.image} alt={social.name} className="w-full h-full object-cover" /> : <span className="font-bold text-gray-400 text-xs">Icon</span>}
+                  <a key={social.id} href={social.url} target="_blank" rel="noopener noreferrer" className="bg-white p-4 border-[2px] border-[#111] shadow-[6px_6px_0px_#111] hover:translate-y-1 hover:shadow-[2px_2px_0px_#111] transition-all cursor-pointer w-48 text-center group block">
+                    <div className="w-full h-32 bg-[#f4f4f0] border-[2px] border-[#111] mb-4 overflow-hidden flex items-center justify-center">
+                      {social.image ? <img src={social.image} alt={social.name} className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-colors" /> : <span className="font-mono text-[#111] text-xs font-bold">MISSING_IMG</span>}
                     </div>
-                    <span className="font-handwriting text-2xl text-gray-800">{social.name}</span>
+                    <span className="font-mono font-bold text-sm uppercase tracking-widest text-[#111] bg-[#dfff00] px-2 py-1">{social.name}</span>
                   </a>
                 ))}
               </div>
@@ -879,36 +988,38 @@ export default function App() {
         
         if (editingItem) {
           return (
-            <div className="max-w-4xl mx-auto bg-white/50 p-5 rounded-xl border border-yellow-600/30 shadow-lg mb-16">
-              <button onClick={() => setEditingItem(null)} className="flex items-center gap-2 text-gray-600 hover:text-red-800 font-bold mb-4 text-sm"><ArrowLeft size={16} /> Back</button>
+            <div className="max-w-5xl mx-auto bg-white p-8 border-[2px] border-[#111] shadow-[8px_8px_0px_#111] mb-16 relative">
+              <button onClick={() => setEditingItem(null)} className="absolute top-4 right-4 text-[#111] hover:bg-[#111] hover:text-white p-2 border-[2px] border-transparent hover:border-[#111] transition-colors"><X size={24}/></button>
+              <h2 className="text-3xl font-serif border-b-[2px] border-[#111] pb-4 mb-8">Edit Record</h2>
               
-              <form onSubmit={(e) => handleListSave(e, adminTab)} className="space-y-4 font-body">
+              <form onSubmit={(e) => handleListSave(e, adminTab)} className="space-y-6 font-mono text-sm">
                 
                 {adminTab === 'projects' && (
                   <>
-                    <div className="flex items-center gap-3 mb-4">
-                      <select value={editingItem.type || 'project'} onChange={e => setEditingItem({...editingItem, type: e.target.value})} className="p-2 rounded border border-gray-300 bg-white text-sm font-bold text-red-900">
+                    <div className="flex items-center gap-4 bg-[#f4f4f0] p-4 border-[2px] border-[#111]">
+                      <label className="font-bold uppercase tracking-widest">Type:</label>
+                      <select value={editingItem.type || 'project'} onChange={e => setEditingItem({...editingItem, type: e.target.value})} className="p-2 border-[2px] border-[#111] bg-white font-bold outline-none">
                          <option value="project">Standard Project</option>
-                         <option value="gallery">Gallery (Free-form Canvas)</option>
-                         <option value="video">Video/Music Player</option>
-                         <option value="custom">Custom Code (HTML/CSS)</option>
-                         <option value="iframe">Embed URL (Iframe)</option>
-                         <option value="divider">Black Divider Tag</option>
+                         <option value="gallery">Canvas Gallery</option>
+                         <option value="video">Video Player</option>
+                         <option value="custom">Custom HTML</option>
+                         <option value="iframe">URL Embed</option>
+                         <option value="divider">Black Folder</option>
                       </select>
                     </div>
 
-                    <div className="grid grid-cols-3 gap-3 mb-4 p-4 bg-gray-50 border border-gray-200 rounded">
+                    <div className="grid grid-cols-3 gap-4">
                       <div>
-                        <label className="block text-[10px] font-bold text-gray-500 uppercase">Tab ID</label>
-                        <input value={editingItem.tabId || ''} onChange={e => setEditingItem({...editingItem, tabId: e.target.value})} className="w-full p-2 rounded border border-gray-300 bg-white text-sm" />
+                        <label className="block font-bold uppercase mb-2">Tab ID</label>
+                        <input value={editingItem.tabId || ''} onChange={e => setEditingItem({...editingItem, tabId: e.target.value})} className="w-full p-3 border-[2px] border-[#111] outline-none focus:bg-[#dfff00]" />
                       </div>
                       <div>
-                        <label className="block text-[10px] font-bold text-gray-500 uppercase">Tab Title</label>
-                        <input value={editingItem.title || ''} onChange={e => setEditingItem({...editingItem, title: e.target.value})} className="w-full p-2 rounded border border-gray-300 bg-white text-sm" />
+                        <label className="block font-bold uppercase mb-2">Tab Title</label>
+                        <input value={editingItem.title || ''} onChange={e => setEditingItem({...editingItem, title: e.target.value})} className="w-full p-3 border-[2px] border-[#111] outline-none focus:bg-[#dfff00]" />
                       </div>
                       <div>
-                        <label className="block text-[10px] font-bold text-gray-500 uppercase">Tab Alignment</label>
-                        <select value={editingItem.tabAlign || 'left'} onChange={e => setEditingItem({...editingItem, tabAlign: e.target.value})} className="w-full p-2 rounded border border-gray-300 bg-white text-sm">
+                        <label className="block font-bold uppercase mb-2">Alignment</label>
+                        <select value={editingItem.tabAlign || 'left'} onChange={e => setEditingItem({...editingItem, tabAlign: e.target.value})} className="w-full p-3 border-[2px] border-[#111] outline-none">
                            <option value="left">Left</option><option value="center">Center</option><option value="right">Right</option>
                         </select>
                       </div>
@@ -917,45 +1028,49 @@ export default function App() {
                     {editingItem.type !== 'divider' && (
                       <>
                         <div>
-                          <label className="block text-xs font-bold text-gray-700 mb-1">Cover Image / Video URL</label>
+                          <label className="block font-bold uppercase mb-2">Media URL</label>
                           <div className="flex gap-2">
-                            <input value={editingItem.image || ''} onChange={e => setEditingItem({...editingItem, image: e.target.value})} className="flex-1 p-2 rounded border border-gray-300 bg-white text-sm" />
-                            <label className="cursor-pointer bg-gray-200 px-3 py-2 rounded font-bold hover:bg-gray-300 flex items-center gap-2 text-sm">
-                              <Upload size={14}/> Upload <input type="file" className="hidden" accept="image/*" onChange={(e) => handleImageUpload(e, (base64) => setEditingItem({...editingItem, image: base64}))} />
+                            <input value={editingItem.image || ''} onChange={e => setEditingItem({...editingItem, image: e.target.value})} className="flex-1 p-3 border-[2px] border-[#111] outline-none focus:bg-[#dfff00]" />
+                            <label className="cursor-pointer bg-[#111] text-white px-6 font-bold flex items-center gap-2 hover:bg-[#ff5722] transition-colors">
+                              <Upload size={16}/> UPLOAD <input type="file" className="hidden" accept="image/*" onChange={(e) => handleImageUpload(e, (base64) => setEditingItem({...editingItem, image: base64}))} />
                             </label>
                           </div>
                         </div>
 
-                        {editingItem.type === 'custom' ? (
-                           <textarea placeholder="<style>...</style> <div>My Custom Code</div>" value={editingItem.content || ''} onChange={e => setEditingItem({...editingItem, content: e.target.value})} className="w-full p-2 rounded border border-gray-300 bg-gray-900 text-green-400 font-mono text-xs h-64" />
-                        ) : editingItem.type === 'iframe' ? (
-                           <input placeholder="https://example.com" value={editingItem.content || ''} onChange={e => setEditingItem({...editingItem, content: e.target.value})} className="w-full p-2 rounded border border-gray-300 bg-white text-sm" />
-                        ) : (
-                           <textarea placeholder="Project Description..." value={editingItem.content || ''} onChange={e => setEditingItem({...editingItem, content: e.target.value})} className="w-full p-2 rounded border border-gray-300 bg-white h-24 text-sm" />
-                        )}
+                        <div>
+                          <label className="block font-bold uppercase mb-2">Content Payload</label>
+                          {editingItem.type === 'custom' ? (
+                             <textarea placeholder="<style>...</style> <div>My Code</div>" value={editingItem.content || ''} onChange={e => setEditingItem({...editingItem, content: e.target.value})} className="w-full p-4 border-[2px] border-[#111] bg-[#111] text-[#00ff00] h-64 outline-none" />
+                          ) : editingItem.type === 'iframe' ? (
+                             <input placeholder="https://..." value={editingItem.content || ''} onChange={e => setEditingItem({...editingItem, content: e.target.value})} className="w-full p-3 border-[2px] border-[#111] outline-none" />
+                          ) : (
+                             <textarea placeholder="Description..." value={editingItem.content || ''} onChange={e => setEditingItem({...editingItem, content: e.target.value})} className="w-full p-4 border-[2px] border-[#111] h-32 outline-none focus:bg-[#dfff00]" />
+                          )}
+                        </div>
                         
                         {editingItem.type === 'gallery' && (
-                          <div className="p-4 bg-yellow-50 rounded-lg border border-yellow-200 mt-4">
-                            <h3 className="font-bold text-yellow-900 mb-3 text-sm flex items-center gap-2"><LayoutGrid size={16}/> Gallery Image Setup</h3>
-                            <div className="flex flex-wrap gap-2 mb-4">
+                          <div className="p-6 border-[2px] border-[#111] bg-[#f4f4f0]">
+                            <h3 className="font-bold uppercase border-b-[2px] border-[#111] pb-2 mb-4 flex items-center gap-2"><LayoutGrid size={18}/> Canvas Image Array</h3>
+                            <div className="flex flex-wrap gap-4 mb-6">
                               {(editingItem.galleryBlocks || []).map((block, idx) => (
-                                <div key={idx} className="relative group border-2 border-yellow-400 border-dashed p-1 w-[calc(33%-4px)]">
-                                  <button type="button" onClick={() => { const n = [...editingItem.galleryBlocks]; n.splice(idx, 1); setEditingItem({...editingItem, galleryBlocks: n}); }} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 z-10"><Trash2 size={12}/></button>
+                                <div key={idx} className="relative group border-[2px] border-[#111] p-2 bg-white w-48">
+                                  <button type="button" onClick={() => { const n = [...editingItem.galleryBlocks]; n.splice(idx, 1); setEditingItem({...editingItem, galleryBlocks: n}); }} className="absolute -top-3 -right-3 bg-[#ff5722] text-white border-[2px] border-[#111] p-1 opacity-0 group-hover:opacity-100 z-10 hover:scale-110"><Trash2 size={14}/></button>
                                   {block.image ? (
-                                    <img src={block.image} className="w-full h-32 object-cover rounded shadow" alt="block"/>
+                                    <img src={block.image} className="w-full h-32 object-cover border-[2px] border-[#111] mb-2" alt="block"/>
                                   ) : (
-                                    <label className="w-full h-32 flex flex-col items-center justify-center bg-white rounded shadow cursor-pointer hover:bg-gray-50 text-xs text-gray-400">
-                                      <Upload size={16} className="mb-1"/> Add Image
+                                    <label className="w-full h-32 flex flex-col items-center justify-center bg-[#f4f4f0] border-[2px] border-[#111] border-dashed mb-2 cursor-pointer hover:bg-[#dfff00]">
+                                      <Upload size={20} className="mb-2"/> <span className="text-[10px]">ADD IMAGE</span>
                                       <input type="file" className="hidden" accept="image/*" onChange={(e) => handleImageUpload(e, (base64) => { const n = [...editingItem.galleryBlocks]; n[idx].image = base64; setEditingItem({...editingItem, galleryBlocks: n}); })} />
                                     </label>
                                   )}
-                                  <div className="mt-1 flex gap-1">
-                                    <input type="number" placeholder="Width px" value={block.w || 250} onChange={e => { const n = [...editingItem.galleryBlocks]; n[idx].w = Number(e.target.value); setEditingItem({...editingItem, galleryBlocks: n}); }} className="w-full text-[10px] p-1 border rounded" />
+                                  <div className="flex items-center gap-2 bg-[#f4f4f0] border-[2px] border-[#111] p-1">
+                                    <span className="text-[10px] font-bold">W:</span>
+                                    <input type="number" value={block.w || 250} onChange={e => { const n = [...editingItem.galleryBlocks]; n[idx].w = Number(e.target.value); setEditingItem({...editingItem, galleryBlocks: n}); }} className="w-full text-xs bg-transparent outline-none" />
                                   </div>
                                 </div>
                               ))}
                             </div>
-                            <button type="button" onClick={() => setEditingItem({...editingItem, galleryBlocks: [...(editingItem.galleryBlocks||[]), {id: Date.now(), w: 250, x: Math.random()*100, y: Math.random()*100, z: 1, image: ''}]})} className="bg-yellow-200 text-yellow-900 px-3 py-1.5 rounded text-xs font-bold hover:bg-yellow-300 transition-colors">+ Add Image</button>
+                            <button type="button" onClick={() => setEditingItem({...editingItem, galleryBlocks: [...(editingItem.galleryBlocks||[]), {id: Date.now(), w: 250, x: Math.random()*100, y: Math.random()*100, z: 1, image: ''}]})} className="bg-[#111] text-[#f4f4f0] px-4 py-2 font-bold uppercase tracking-widest hover:bg-[#ff5722] transition-colors border-[2px] border-[#111]">+ APPEND IMAGE</button>
                           </div>
                         )}
                       </>
@@ -965,118 +1080,121 @@ export default function App() {
 
                 {adminTab === 'blogs' && (
                   <>
-                    <div className="flex gap-4 mb-4">
-                       <div className="flex-1">
-                          <label className="block text-[10px] font-bold text-gray-500 uppercase">Review Type</label>
-                          <select value={editingItem.type || 'regular'} onChange={e => setEditingItem({...editingItem, type: e.target.value})} className="w-full p-2 rounded border bg-white text-sm font-bold text-red-900">
-                              <option value="regular">Regular Blog Post</option>
-                              <option value="album">Vinyl Album Review</option>
-                          </select>
-                       </div>
-                       <div className="flex-1">
-                          <label className="block text-[10px] font-bold text-gray-500 uppercase">Blog Title</label>
-                          <input required value={editingItem.title || ''} onChange={e => setEditingItem({...editingItem, title: e.target.value})} className="w-full p-2 rounded border bg-white text-sm font-bold" />
-                       </div>
-                    </div>
-
-                    <div className="grid grid-cols-4 gap-4 mb-4">
-                      <div>
-                        <label className="block text-[10px] font-bold text-gray-500 uppercase">Date</label>
-                        <input required value={editingItem.date || ''} onChange={e => setEditingItem({...editingItem, date: e.target.value})} className="w-full p-2 rounded border bg-white text-sm" />
-                      </div>
-                      <div>
-                        <label className="block text-[10px] font-bold text-gray-500 uppercase">Category</label>
-                        <input value={editingItem.category || ''} onChange={e => setEditingItem({...editingItem, category: e.target.value})} className="w-full p-2 rounded border bg-white text-sm" />
-                      </div>
-                      <div>
-                        <label className="block text-[10px] font-bold text-gray-500 uppercase">Tags</label>
-                        <input value={editingItem.tags || ''} onChange={e => setEditingItem({...editingItem, tags: e.target.value})} className="w-full p-2 rounded border bg-white text-sm" placeholder="tag1, tag2" />
-                      </div>
-                      <div>
-                        <label className="block text-[10px] font-bold text-gray-500 uppercase">Rating (1-5)</label>
-                        <input type="number" min="1" max="5" value={editingItem.rating || ''} onChange={e => setEditingItem({...editingItem, rating: e.target.value})} className="w-full p-2 rounded border bg-white text-sm" />
-                      </div>
+                    <div className="bg-[#f4f4f0] p-4 border-[2px] border-[#111] mb-6 flex items-center gap-4">
+                       <label className="font-bold uppercase tracking-widest text-[#111]">Log Format:</label>
+                       <select value={editingItem.type || 'regular'} onChange={e => setEditingItem({...editingItem, type: e.target.value})} className="p-2 border-[2px] border-[#111] bg-white font-bold outline-none text-[#ff5722]">
+                           <option value="regular">Standard Log</option>
+                           <option value="album">Vinyl Showcase</option>
+                       </select>
                     </div>
 
                     {editingItem.type === 'album' && (
-                       <div className="flex gap-4 mb-4 bg-orange-50 p-3 rounded-lg border border-orange-200">
+                       <div className="flex gap-6 mb-6 bg-[#ff5722]/10 p-6 border-[2px] border-[#ff5722]">
                           <div>
-                             <label className="block text-[10px] font-bold text-orange-700 uppercase">Pop-Out BG Color</label>
-                             <input type="color" value={editingItem.bgColor || '#eb5e28'} onChange={e => setEditingItem({...editingItem, bgColor: e.target.value})} className="w-16 h-10 p-1 cursor-pointer rounded bg-white border border-orange-300" />
+                             <label className="block font-bold text-[#ff5722] uppercase mb-2">Backdrop Color</label>
+                             <input type="color" value={editingItem.bgColor || '#eb5e28'} onChange={e => setEditingItem({...editingItem, bgColor: e.target.value})} className="w-20 h-12 p-1 cursor-pointer bg-white border-[2px] border-[#ff5722]" />
                           </div>
                           <div className="flex-1">
-                             <label className="block text-[10px] font-bold text-orange-700 uppercase">Pop-Out BG Image URL (Optional)</label>
+                             <label className="block font-bold text-[#ff5722] uppercase mb-2">Backdrop Image URL (Optional)</label>
                              <div className="flex gap-2">
-                                <input value={editingItem.bgImage || ''} onChange={e => setEditingItem({...editingItem, bgImage: e.target.value})} className="flex-1 p-2 rounded border bg-white text-sm" placeholder="https://" />
-                                <label className="cursor-pointer bg-orange-200 px-3 py-2 rounded font-bold hover:bg-orange-300 flex items-center gap-2 text-sm text-orange-900">
-                                   <Upload size={14}/> Upload <input type="file" className="hidden" accept="image/*" onChange={(e) => handleImageUpload(e, (base64) => setEditingItem({...editingItem, bgImage: base64}))} />
+                                <input value={editingItem.bgImage || ''} onChange={e => setEditingItem({...editingItem, bgImage: e.target.value})} className="flex-1 p-3 border-[2px] border-[#ff5722] bg-white outline-none focus:bg-[#ff5722]/20" placeholder="https://" />
+                                <label className="cursor-pointer bg-[#ff5722] text-white px-6 font-bold flex items-center gap-2 hover:bg-[#111] transition-colors border-[2px] border-[#ff5722]">
+                                   <Upload size={16}/> UPLOAD <input type="file" className="hidden" accept="image/*" onChange={(e) => handleImageUpload(e, (base64) => setEditingItem({...editingItem, bgImage: base64}))} />
                                 </label>
                              </div>
                           </div>
                        </div>
                     )}
+
+                    <div className="grid grid-cols-4 gap-4 mb-6">
+                      <div className="col-span-2">
+                        <label className="block font-bold uppercase mb-2">Title</label>
+                        <input required value={editingItem.title || ''} onChange={e => setEditingItem({...editingItem, title: e.target.value})} className="w-full p-3 border-[2px] border-[#111] outline-none focus:bg-[#dfff00]" />
+                      </div>
+                      <div>
+                        <label className="block font-bold uppercase mb-2">Date</label>
+                        <input required value={editingItem.date || ''} onChange={e => setEditingItem({...editingItem, date: e.target.value})} className="w-full p-3 border-[2px] border-[#111] outline-none focus:bg-[#dfff00]" />
+                      </div>
+                      <div>
+                        <label className="block font-bold uppercase mb-2">Rating (1-5)</label>
+                        <input type="number" min="1" max="5" value={editingItem.rating || ''} onChange={e => setEditingItem({...editingItem, rating: e.target.value})} className="w-full p-3 border-[2px] border-[#111] outline-none focus:bg-[#dfff00]" />
+                      </div>
+                    </div>
                     
-                    <div className="mb-4">
-                      <label className="block text-[10px] font-bold text-gray-500 uppercase">
+                    <div className="flex gap-4 mb-6">
+                       <div className="flex-1">
+                          <label className="block font-bold uppercase mb-2">Category</label>
+                          <input value={editingItem.category || ''} onChange={e => setEditingItem({...editingItem, category: e.target.value})} className="w-full p-3 border-[2px] border-[#111] outline-none focus:bg-[#dfff00]" />
+                       </div>
+                       <div className="flex-1">
+                          <label className="block font-bold uppercase mb-2">Tags</label>
+                          <input value={editingItem.tags || ''} onChange={e => setEditingItem({...editingItem, tags: e.target.value})} className="w-full p-3 border-[2px] border-[#111] outline-none focus:bg-[#dfff00]" placeholder="tag1, tag2" />
+                       </div>
+                    </div>
+
+                    <div className="mb-6">
+                      <label className="block font-bold uppercase mb-2">
                          {editingItem.type === 'album' ? 'Album Art (Sticky Note Image)' : 'Cover Image'}
                       </label>
                       <div className="flex gap-2">
-                         <input value={editingItem.coverImage || ''} onChange={e => setEditingItem({...editingItem, coverImage: e.target.value})} className="flex-1 p-2 rounded border bg-white text-sm" />
-                         <label className="cursor-pointer bg-gray-200 px-3 py-2 rounded font-bold hover:bg-gray-300 flex items-center gap-2 text-sm">
-                           <Upload size={14}/> Upload <input type="file" className="hidden" accept="image/*" onChange={(e) => handleImageUpload(e, (base64) => setEditingItem({...editingItem, coverImage: base64}))} />
+                         <input value={editingItem.coverImage || ''} onChange={e => setEditingItem({...editingItem, coverImage: e.target.value})} className="flex-1 p-3 border-[2px] border-[#111] outline-none focus:bg-[#dfff00]" />
+                         <label className="cursor-pointer bg-[#111] text-white px-6 font-bold flex items-center gap-2 hover:bg-[#0000ff] transition-colors border-[2px] border-[#111]">
+                           <Upload size={16}/> UPLOAD <input type="file" className="hidden" accept="image/*" onChange={(e) => handleImageUpload(e, (base64) => setEditingItem({...editingItem, coverImage: base64}))} />
                          </label>
                       </div>
                     </div>
 
-                    <div className="mb-4">
-                       <label className="block text-[10px] font-bold text-gray-500 uppercase">Short Excerpt (Shown on main list)</label>
-                       <textarea value={editingItem.excerpt || ''} onChange={e => setEditingItem({...editingItem, excerpt: e.target.value})} className="w-full p-2 rounded border bg-white min-h-[4rem] text-sm" />
+                    <div className="mb-6">
+                       <label className="block font-bold uppercase mb-2">Preview Excerpt</label>
+                       <textarea value={editingItem.excerpt || ''} onChange={e => setEditingItem({...editingItem, excerpt: e.target.value})} className="w-full p-4 border-[2px] border-[#111] outline-none h-24 focus:bg-[#dfff00]" />
                     </div>
 
-                    {/* WP BLOCK BUILDER FOR WRITING */}
-                    <div className="p-4 bg-gray-100/70 rounded-lg border border-gray-300 mt-4">
-                        <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2"><FileText size={16}/> WordPress-Style Block Builder</h3>
+                    {/* WP BLOCK BUILDER */}
+                    <div className="bg-[#f4f4f0] p-6 border-[2px] border-[#111]">
+                        <h3 className="font-bold text-xl uppercase mb-6 flex items-center gap-3 border-b-[2px] border-[#111] pb-2"><FileText size={20}/> Content Builder</h3>
                         
-                        <div className="space-y-4 mb-4">
+                        <div className="space-y-4 mb-6">
                           {(editingItem.blocks || []).map((block, idx) => (
-                            <div key={idx} className="flex gap-2 items-start bg-white p-3 rounded shadow-sm border border-gray-200 relative group">
-                              <div className="mt-2 text-gray-400">
-                                 {block.type === 'text' && <AlignLeft size={16}/>}
-                                 {block.type === 'quote' && <Quote size={16}/>}
-                                 {block.type === 'pullquote' && <span className="font-bold font-serif text-sm">""</span>}
-                                 {block.type === 'image' && <ImageIcon size={16}/>}
+                            <div key={idx} className="flex gap-4 items-start bg-white p-4 border-[2px] border-[#111] shadow-[4px_4px_0px_#111] relative group">
+                              <div className="mt-3 text-[#111]">
+                                 {block.type === 'text' && <AlignLeft size={20}/>}
+                                 {block.type === 'quote' && <Quote size={20}/>}
+                                 {block.type === 'pullquote' && <span className="font-serif text-2xl font-bold">""</span>}
+                                 {block.type === 'image' && <ImageIcon size={20}/>}
                               </div>
-                              {block.type === 'image' ? (
-                                <div className="w-full flex gap-2">
-                                  <input 
+                              <div className="flex-1">
+                                {block.type === 'image' ? (
+                                  <div className="flex gap-2">
+                                    <input 
+                                      value={block.content} 
+                                      onChange={(e) => { const n = [...editingItem.blocks]; n[idx].content = e.target.value; setEditingItem({...editingItem, blocks: n}); }}
+                                      className="flex-1 p-3 border-[2px] border-[#111] outline-none" placeholder="Image URL..." 
+                                    />
+                                    <label className="cursor-pointer bg-[#111] text-white px-4 font-bold flex items-center gap-2 hover:bg-[#ff5722] border-[2px] border-[#111]">
+                                      <Upload size={14}/> UPLOAD <input type="file" className="hidden" accept="image/*" onChange={(e) => handleImageUpload(e, (base64) => { const n = [...editingItem.blocks]; n[idx].content = base64; setEditingItem({...editingItem, blocks: n}); })} />
+                                    </label>
+                                  </div>
+                                ) : (
+                                  <textarea 
                                     value={block.content} 
                                     onChange={(e) => { const n = [...editingItem.blocks]; n[idx].content = e.target.value; setEditingItem({...editingItem, blocks: n}); }}
-                                    className="flex-1 p-2 border border-gray-200 rounded text-sm" placeholder="Paste Image URL here..." 
+                                    className={`w-full p-4 border-[2px] border-[#111] outline-none min-h-[100px] ${block.type === 'quote' ? 'italic font-serif text-lg bg-gray-50' : block.type === 'pullquote' ? 'font-serif text-2xl text-center text-[#ff5722] bg-[#ff5722]/10' : 'font-sans'}`} 
+                                    placeholder={`Write your ${block.type} block here...`} 
                                   />
-                                  <label className="cursor-pointer bg-gray-200 px-3 py-2 rounded font-bold hover:bg-gray-300 flex items-center gap-2 text-sm">
-                                    <Upload size={14}/> Upload <input type="file" className="hidden" accept="image/*" onChange={(e) => handleImageUpload(e, (base64) => { const n = [...editingItem.blocks]; n[idx].content = base64; setEditingItem({...editingItem, blocks: n}); })} />
-                                  </label>
-                                </div>
-                              ) : (
-                                <textarea 
-                                  value={block.content} 
-                                  onChange={(e) => { const n = [...editingItem.blocks]; n[idx].content = e.target.value; setEditingItem({...editingItem, blocks: n}); }}
-                                  className={`w-full p-2 border border-gray-200 rounded min-h-[80px] text-sm ${block.type === 'quote' ? 'italic bg-gray-50' : block.type === 'pullquote' ? 'font-title text-center text-xl bg-red-50' : ''}`} 
-                                  placeholder={`Write your ${block.type} here...`} 
-                                />
-                              )}
-                              <button type="button" onClick={() => { const n = [...editingItem.blocks]; n.splice(idx, 1); setEditingItem({...editingItem, blocks: n}); }} className="p-2 text-red-500 hover:bg-red-50 rounded">
-                                <Trash2 size={16} />
+                                )}
+                              </div>
+                              <button type="button" onClick={() => { const n = [...editingItem.blocks]; n.splice(idx, 1); setEditingItem({...editingItem, blocks: n}); }} className="p-3 bg-red-100 text-[#991b1b] border-[2px] border-[#111] hover:bg-[#991b1b] hover:text-white transition-colors">
+                                <Trash2 size={20} />
                               </button>
                             </div>
                           ))}
                         </div>
 
-                        <div className="flex flex-wrap gap-2">
-                          <button type="button" onClick={() => setEditingItem({...editingItem, blocks: [...(editingItem.blocks || []), {type: 'text', content: ''}]})} className="flex items-center gap-1 bg-white border border-gray-300 px-3 py-2 rounded text-sm hover:bg-gray-50 font-bold"><AlignLeft size={16}/> Text Paragraph</button>
-                          <button type="button" onClick={() => setEditingItem({...editingItem, blocks: [...(editingItem.blocks || []), {type: 'quote', content: ''}]})} className="flex items-center gap-1 bg-white border border-gray-300 px-3 py-2 rounded text-sm hover:bg-gray-50 font-bold"><Quote size={16}/> Blockquote</button>
-                          <button type="button" onClick={() => setEditingItem({...editingItem, blocks: [...(editingItem.blocks || []), {type: 'pullquote', content: ''}]})} className="flex items-center gap-1 bg-white border border-gray-300 px-3 py-2 rounded text-sm hover:bg-gray-50 font-bold"><span className="font-serif">""</span> Pull Quote</button>
-                          <button type="button" onClick={() => setEditingItem({...editingItem, blocks: [...(editingItem.blocks || []), {type: 'image', content: ''}]})} className="flex items-center gap-1 bg-white border border-gray-300 px-3 py-2 rounded text-sm hover:bg-gray-50 font-bold"><ImageIcon size={16}/> Image</button>
+                        <div className="flex flex-wrap gap-3">
+                          <button type="button" onClick={() => setEditingItem({...editingItem, blocks: [...(editingItem.blocks || []), {type: 'text', content: ''}]})} className="flex items-center gap-2 bg-white border-[2px] border-[#111] px-4 py-2 font-bold uppercase hover:bg-[#111] hover:text-white transition-colors"><AlignLeft size={16}/> Text</button>
+                          <button type="button" onClick={() => setEditingItem({...editingItem, blocks: [...(editingItem.blocks || []), {type: 'quote', content: ''}]})} className="flex items-center gap-2 bg-white border-[2px] border-[#111] px-4 py-2 font-bold uppercase hover:bg-[#111] hover:text-white transition-colors"><Quote size={16}/> Quote</button>
+                          <button type="button" onClick={() => setEditingItem({...editingItem, blocks: [...(editingItem.blocks || []), {type: 'pullquote', content: ''}]})} className="flex items-center gap-2 bg-white border-[2px] border-[#111] px-4 py-2 font-bold uppercase hover:bg-[#111] hover:text-white transition-colors"><span className="font-serif">""</span> Pull Quote</button>
+                          <button type="button" onClick={() => setEditingItem({...editingItem, blocks: [...(editingItem.blocks || []), {type: 'image', content: ''}]})} className="flex items-center gap-2 bg-white border-[2px] border-[#111] px-4 py-2 font-bold uppercase hover:bg-[#111] hover:text-white transition-colors"><ImageIcon size={16}/> Image</button>
                         </div>
                     </div>
                   </>
@@ -1086,57 +1204,113 @@ export default function App() {
                   <>
                     <div className="grid grid-cols-2 gap-4 mb-4">
                       <div>
-                        <label className="block text-[10px] font-bold text-gray-500 uppercase">Platform Name</label>
-                        <input required value={editingItem.name || ''} onChange={e => setEditingItem({...editingItem, name: e.target.value})} className="w-full p-2 rounded border bg-white text-sm" />
+                        <label className="block font-bold uppercase mb-2">Platform Name</label>
+                        <input required value={editingItem.name || ''} onChange={e => setEditingItem({...editingItem, name: e.target.value})} className="w-full p-3 border-[2px] border-[#111] outline-none" />
                       </div>
                       <div>
-                        <label className="block text-[10px] font-bold text-gray-500 uppercase">Profile URL</label>
-                        <input required value={editingItem.url || ''} onChange={e => setEditingItem({...editingItem, url: e.target.value})} className="w-full p-2 rounded border bg-white text-sm" />
+                        <label className="block font-bold uppercase mb-2">Profile URL</label>
+                        <input required value={editingItem.url || ''} onChange={e => setEditingItem({...editingItem, url: e.target.value})} className="w-full p-3 border-[2px] border-[#111] outline-none" />
                       </div>
                     </div>
                     <div>
-                      <label className="block text-[10px] font-bold text-gray-500 uppercase">Icon/Image</label>
+                      <label className="block font-bold uppercase mb-2">Icon/Image</label>
                       <div className="flex gap-2">
-                        <input value={editingItem.image || ''} onChange={e => setEditingItem({...editingItem, image: e.target.value})} className="flex-1 p-2 rounded border bg-white text-sm" />
-                        <label className="cursor-pointer bg-gray-200 px-3 py-2 rounded font-bold hover:bg-gray-300 flex items-center gap-2 text-sm">
-                          <Upload size={14}/> Upload <input type="file" className="hidden" accept="image/*" onChange={(e) => handleImageUpload(e, (base64) => setEditingItem({...editingItem, image: base64}))} />
+                        <input value={editingItem.image || ''} onChange={e => setEditingItem({...editingItem, image: e.target.value})} className="flex-1 p-3 border-[2px] border-[#111] outline-none" />
+                        <label className="cursor-pointer bg-[#111] text-white px-6 font-bold flex items-center gap-2 hover:bg-[#0000ff] border-[2px] border-[#111]">
+                          <Upload size={16}/> UPLOAD <input type="file" className="hidden" accept="image/*" onChange={(e) => handleImageUpload(e, (base64) => setEditingItem({...editingItem, image: base64}))} />
                         </label>
                       </div>
                     </div>
                   </>
                 )}
                 
-                <button type="submit" className="w-full bg-red-800 text-white p-4 rounded font-bold hover:bg-red-900 text-base mt-4 shadow-md flex justify-center items-center gap-2"><Save size={18}/> Done Editing</button>
+                {adminTab === 'journals' && (
+                  <>
+                    <div className="grid grid-cols-3 gap-4 mb-4">
+                      <div>
+                        <label className="block font-bold uppercase mb-2">Month/Day</label>
+                        <input required value={editingItem.date || ''} onChange={e => setEditingItem({...editingItem, date: e.target.value})} placeholder="Jul 18" className="w-full p-3 border-[2px] border-[#111] outline-none" />
+                      </div>
+                      <div>
+                        <label className="block font-bold uppercase mb-2">Year</label>
+                        <input required value={editingItem.year || ''} onChange={e => setEditingItem({...editingItem, year: e.target.value})} placeholder="2026" className="w-full p-3 border-[2px] border-[#111] outline-none" />
+                      </div>
+                      <div>
+                        <label className="block font-bold uppercase mb-2">Short Date</label>
+                        <input required value={editingItem.shortDate || ''} onChange={e => setEditingItem({...editingItem, shortDate: e.target.value})} placeholder="SAT . 18" className="w-full p-3 border-[2px] border-[#111] outline-none" />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4 mb-4">
+                      <div>
+                        <label className="block font-bold uppercase mb-2">Time Span (Ticket)</label>
+                        <input value={editingItem.timeSpan || ''} onChange={e => setEditingItem({...editingItem, timeSpan: e.target.value})} placeholder="7 18 - 8 18" className="w-full p-3 border-[2px] border-[#111] outline-none" />
+                      </div>
+                      <div>
+                        <label className="block font-bold uppercase mb-2">Class (Ticket)</label>
+                        <input value={editingItem.ticketClass || ''} onChange={e => setEditingItem({...editingItem, ticketClass: e.target.value})} placeholder="OMNI" className="w-full p-3 border-[2px] border-[#111] outline-none" />
+                      </div>
+                    </div>
+                    <div className="mb-4">
+                      <label className="block font-bold uppercase mb-2">Boarding Pass Background Image</label>
+                      <div className="flex gap-2">
+                        <input value={editingItem.image || ''} onChange={e => setEditingItem({...editingItem, image: e.target.value})} className="flex-1 p-3 border-[2px] border-[#111] outline-none" />
+                        <label className="cursor-pointer bg-[#111] text-white px-6 font-bold flex items-center gap-2 hover:bg-[#0000ff] border-[2px] border-[#111]">
+                          <Upload size={16}/> UPLOAD <input type="file" className="hidden" accept="image/*" onChange={(e) => handleImageUpload(e, (base64) => setEditingItem({...editingItem, image: base64}))} />
+                        </label>
+                      </div>
+                    </div>
+                    <div className="mb-4">
+                      <label className="block font-bold uppercase mb-2">Entry Logs (One per line)</label>
+                      <textarea value={(editingItem.logs || []).join('\n')} onChange={e => setEditingItem({...editingItem, logs: e.target.value.split('\n')})} className="w-full p-4 border-[2px] border-[#111] outline-none h-32" />
+                    </div>
+                    <div className="grid grid-cols-4 gap-4 mb-4">
+                      <div className="col-span-1">
+                        <label className="block font-bold uppercase mb-2">Hist. Year</label>
+                        <input value={editingItem.historyYear || ''} onChange={e => setEditingItem({...editingItem, historyYear: e.target.value})} placeholder="1493" className="w-full p-3 border-[2px] border-[#111] outline-none" />
+                      </div>
+                      <div className="col-span-3">
+                        <label className="block font-bold uppercase mb-2">History Event</label>
+                        <input value={editingItem.historyText || ''} onChange={e => setEditingItem({...editingItem, historyText: e.target.value})} className="w-full p-3 border-[2px] border-[#111] outline-none" />
+                      </div>
+                    </div>
+                  </>
+                )}
+                
+                <button type="submit" className="w-full bg-[#111] text-[#f4f4f0] p-4 text-xl font-bold uppercase tracking-widest border-[2px] border-[#111] hover:bg-[#dfff00] hover:text-[#111] transition-colors mt-8 flex justify-center items-center gap-3">
+                  <Save size={24}/> COMMIT CHANGES
+                </button>
               </form>
             </div>
           );
         }
 
         return (
-          <div className="min-h-full pb-32 font-body relative">
-            <div className="flex justify-between items-center mb-6">
-              <h1 className="text-5xl md:text-6xl font-title text-[#991b1b] tracking-wide">Admin Dashboard</h1>
-              <button onClick={handleLogout} className="flex items-center gap-2 text-red-700 bg-red-100 px-3 py-1.5 rounded-lg font-bold hover:bg-red-200 text-sm"><LogOut size={16}/> Logout</button>
+          <div className="min-h-full pb-32 relative text-[#111]">
+            <div className="flex justify-between items-end border-b-[4px] border-[#111] pb-6 mb-10">
+              <h1 className="text-6xl font-serif tracking-tight">Admin Override</h1>
+              <button onClick={handleLogout} className="flex items-center gap-2 bg-[#ff5722] text-white px-4 py-2 border-[2px] border-[#111] font-mono font-bold uppercase hover:bg-[#111] transition-colors shadow-[4px_4px_0px_#111]"><LogOut size={16}/> DISCONNECT</button>
             </div>
             
-            <div className="flex gap-1 overflow-x-auto mb-6 border-b border-gray-300 pb-1">
-              {['about', 'projects', 'system', 'blogs', 'socials', 'messages', 'settings'].map(tab => (
-                <button key={tab} onClick={() => setAdminTab(tab)} className={`font-bold capitalize px-4 py-2 rounded-t-lg transition-colors whitespace-nowrap text-sm ${adminTab === tab ? 'bg-red-800 text-white' : 'bg-white/50 text-gray-700 hover:bg-white'}`}>
-                  Manage {tab}
+            <div className="flex flex-wrap gap-2 mb-10 border-b-[2px] border-[#111] pb-2">
+              {['about', 'projects', 'galleria', 'system', 'blogs', 'journals', 'socials', 'messages', 'settings'].map(tab => (
+                <button key={tab} onClick={() => setAdminTab(tab)} className={`font-mono font-bold uppercase px-6 py-3 border-[2px] border-[#111] transition-all ${adminTab === tab ? 'bg-[#111] text-white translate-y-[-2px] shadow-[4px_4px_0px_#ff5722]' : 'bg-white text-[#111] hover:bg-[#f4f4f0]'}`}>
+                  {tab}
                 </button>
               ))}
             </div>
 
             {/* SETTINGS (WIP) */}
             {adminTab === 'settings' && (
-              <div className="bg-white/50 p-6 rounded-xl border border-yellow-600/30 space-y-6">
-                <h3 className="font-bold text-xl mb-4 text-gray-800 border-b border-gray-300 pb-2">Work in Progress (WIP) Controls</h3>
-                <p className="text-sm text-gray-600 mb-4">Toggle these switches to hide pages from the public and display a "Work In Progress" screen instead. As an admin, you will always bypass this screen.</p>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                   {['intro', 'portfolio', 'system', 'blog', 'socials', 'blank'].map(tab => (
-                     <label key={tab} className={`flex items-center gap-2 cursor-pointer p-4 rounded-lg border-2 transition-colors ${siteSettings.wip?.[tab] ? 'bg-red-50 border-red-200 text-red-900' : 'bg-white border-gray-200 text-gray-700'}`}>
-                        <input type="checkbox" checked={!!siteSettings.wip?.[tab]} onChange={e => setSiteSettings({ ...siteSettings, wip: { ...siteSettings.wip, [tab]: e.target.checked } })} className="w-5 h-5 rounded text-red-600 border-gray-300 focus:ring-red-500" />
-                        <span className="capitalize font-bold text-sm">Hide {tab === 'blank' ? 'Playground' : tab}</span>
+              <div className="bg-white p-8 border-[2px] border-[#111] shadow-[8px_8px_0px_#111] space-y-8">
+                <div className="border-b-[2px] border-[#111] pb-4">
+                   <h3 className="font-serif text-3xl mb-2">Access Control (WIP Toggles)</h3>
+                   <p className="font-mono text-sm text-gray-600">Restrict public access to specific modules. Admin maintains full visibility.</p>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
+                   {['intro', 'portfolio', 'galleria', 'system', 'blog', 'socials', 'blank'].map(tab => (
+                     <label key={tab} className={`flex items-center gap-3 cursor-pointer p-4 border-[2px] border-[#111] transition-all ${siteSettings.wip?.[tab] ? 'bg-[#ff5722] text-white shadow-[4px_4px_0px_#111] translate-y-[-2px]' : 'bg-[#f4f4f0] text-[#111] hover:bg-white'}`}>
+                        <input type="checkbox" checked={!!siteSettings.wip?.[tab]} onChange={e => setSiteSettings({ ...siteSettings, wip: { ...siteSettings.wip, [tab]: e.target.checked } })} className="w-6 h-6 border-[2px] border-[#111] accent-[#111]" />
+                        <span className="font-mono font-bold uppercase tracking-widest">{tab === 'blank' ? 'Sandbox' : tab}</span>
                      </label>
                    ))}
                 </div>
@@ -1145,17 +1319,17 @@ export default function App() {
 
             {/* SYSTEM SETTINGS */}
             {adminTab === 'system' && (
-              <div className="bg-white/50 p-5 rounded-xl border border-yellow-600/30 space-y-8">
+              <div className="bg-white p-8 border-[2px] border-[#111] shadow-[8px_8px_0px_#111] space-y-8">
                 <div>
-                  <h3 className="font-bold text-sm mb-2 text-gray-800 border-b border-gray-300 pb-1">1. System Settings</h3>
-                  <div className="grid md:grid-cols-2 gap-4">
+                  <h3 className="font-serif text-3xl mb-6 border-b-[2px] border-[#111] pb-2">1. System Settings</h3>
+                  <div className="grid md:grid-cols-2 gap-6">
                      <div>
-                        <label className="text-[10px] font-bold uppercase text-gray-500">System Title</label>
-                        <input value={systemData.title} onChange={e => setSystemData({...systemData, title: e.target.value})} className="w-full p-2 border rounded text-sm" />
+                        <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">System Title</label>
+                        <input value={systemData.title} onChange={e => setSystemData({...systemData, title: e.target.value})} className="w-full p-4 border-[2px] border-[#111] font-mono outline-none focus:bg-[#dfff00]" />
                      </div>
                      <div>
-                        <label className="text-[10px] font-bold uppercase text-gray-500">Nav Pills (Comma Separated)</label>
-                        <input value={systemData.navPills.join(', ')} onChange={e => setSystemData({...systemData, navPills: e.target.value.split(',').map(s=>s.trim())})} className="w-full p-2 border rounded text-sm" />
+                        <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Nav Pills (Comma Separated)</label>
+                        <input value={systemData.navPills.join(', ')} onChange={e => setSystemData({...systemData, navPills: e.target.value.split(',').map(s=>s.trim())})} className="w-full p-4 border-[2px] border-[#111] font-mono outline-none focus:bg-[#dfff00]" />
                      </div>
                   </div>
                 </div>
@@ -1164,154 +1338,136 @@ export default function App() {
 
             {/* ABOUT TAB SETTINGS */}
             {adminTab === 'about' && (
-              <div className="bg-white/50 p-5 rounded-xl border border-yellow-600/30 space-y-6">
-                <div>
-                  <h3 className="font-bold text-sm mb-2 text-gray-800 border-b border-gray-300 pb-1">Intro & Background</h3>
-                  <textarea value={aboutData.introText} onChange={e => setAboutData({...aboutData, introText: e.target.value})} className="w-full p-2 border rounded h-24 text-sm mb-2" />
-                  <div className="flex gap-2 mb-2">
-                    <input value={aboutData.introImage} onChange={e => setAboutData({...aboutData, introImage: e.target.value})} className="flex-1 p-2 border rounded text-sm" placeholder="Intro Image URL" />
-                    <label className="cursor-pointer bg-gray-200 px-2 rounded hover:bg-gray-300 flex items-center text-xs"><Upload size={14}/> <input type="file" className="hidden" accept="image/*" onChange={e => handleImageUpload(e, b => setAboutData({...aboutData, introImage: b}))} /></label>
+              <div className="space-y-12">
+                <div className="bg-white p-8 border-[2px] border-[#111] shadow-[8px_8px_0px_#111]">
+                  <h3 className="font-serif text-3xl mb-6 border-b-[2px] border-[#111] pb-2">Global Content</h3>
+                  <textarea value={aboutData.introText} onChange={e => setAboutData({...aboutData, introText: e.target.value})} className="w-full p-4 border-[2px] border-[#111] h-32 font-mono text-sm mb-4 outline-none focus:bg-[#dfff00]" placeholder="Intro Text" />
+                  <div className="flex gap-2 mb-4">
+                    <input value={aboutData.introImage} onChange={e => setAboutData({...aboutData, introImage: e.target.value})} className="flex-1 p-3 border-[2px] border-[#111] font-mono text-sm outline-none" placeholder="Intro Image URL" />
+                    <label className="cursor-pointer bg-[#111] text-white px-6 flex items-center font-bold font-mono hover:bg-[#ff5722] transition-colors"><Upload size={16} className="mr-2"/> UPLOAD <input type="file" className="hidden" accept="image/*" onChange={e => handleImageUpload(e, b => setAboutData({...aboutData, introImage: b}))} /></label>
                   </div>
-                  <div className="flex gap-2 mb-2">
-                    <input value={aboutData.appBackground} onChange={e => setAboutData({...aboutData, appBackground: e.target.value})} className="flex-1 p-2 border rounded text-sm" placeholder="App Background Image URL" />
-                    <label className="cursor-pointer bg-gray-200 px-2 rounded hover:bg-gray-300 flex items-center text-xs"><Upload size={14}/> <input type="file" className="hidden" accept="image/*" onChange={e => handleImageUpload(e, b => setAboutData({...aboutData, appBackground: b}))} /></label>
+                  <div className="flex gap-2 mb-4">
+                    <input value={aboutData.appBackground} onChange={e => setAboutData({...aboutData, appBackground: e.target.value})} className="flex-1 p-3 border-[2px] border-[#111] font-mono text-sm outline-none" placeholder="App Background Image URL" />
+                    <label className="cursor-pointer bg-[#111] text-white px-6 flex items-center font-bold font-mono hover:bg-[#ff5722] transition-colors"><Upload size={16} className="mr-2"/> UPLOAD <input type="file" className="hidden" accept="image/*" onChange={e => handleImageUpload(e, b => setAboutData({...aboutData, appBackground: b}))} /></label>
                   </div>
-                  <textarea value={aboutData.notepadText} onChange={e => setAboutData({...aboutData, notepadText: e.target.value})} maxLength={120} className="w-full p-2 border rounded h-16 text-sm" placeholder="Sticky Note Text (Max 120 chars)" />
+                  <textarea value={aboutData.notepadText} onChange={e => setAboutData({...aboutData, notepadText: e.target.value})} maxLength={120} className="w-full p-4 border-[2px] border-[#111] h-24 font-mono text-sm outline-none focus:bg-[#dfff00]" placeholder="System Memo Text (Max 120 chars)" />
                 </div>
 
-                <div>
-                  <h3 className="font-bold text-xl mb-4 text-gray-800 border-b border-gray-300 pb-2">2. Myspace Ref</h3>
-                  <div className="grid md:grid-cols-2 gap-4 mb-4">
+                <div className="bg-white p-8 border-[2px] border-[#111] shadow-[8px_8px_0px_#111]">
+                  <h3 className="font-serif text-3xl mb-6 border-b-[2px] border-[#111] pb-2">The Circle (Myspace)</h3>
+                  <div className="grid md:grid-cols-2 gap-6 mb-6">
                     {aboutData.myspace.map((friend, idx) => (
-                      <div 
-                        key={friend.id} 
-                        draggable
-                        onDragStart={() => dragItem.current = idx}
-                        onDragEnter={() => dragOverItem.current = idx}
-                        onDragEnd={() => handleSortAboutList('myspace')}
-                        onDragOver={(e) => e.preventDefault()}
-                        className="bg-white p-3 border border-gray-200 rounded flex gap-2 items-center hover:border-gray-300 transition-colors"
-                      >
-                        <div className="cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 p-1 -ml-2"><GripVertical size={16}/></div>
-                        <img src={friend.image || 'https://placehold.co/100x100'} className="w-12 h-12 rounded object-cover" alt="prev"/>
+                      <div key={friend.id} draggable onDragStart={() => dragItem.current = idx} onDragEnter={() => dragOverItem.current = idx} onDragEnd={() => handleSortAboutList('myspace')} onDragOver={(e) => e.preventDefault()} className="bg-[#f4f4f0] p-4 border-[2px] border-[#111] flex gap-4 items-center hover:bg-white transition-colors shadow-[4px_4px_0px_rgba(17,17,17,0.2)]">
+                        <div className="cursor-grab text-[#111] p-1 border-[2px] border-[#111] bg-white"><GripVertical size={20}/></div>
+                        <img src={friend.image || 'https://placehold.co/100x100'} className="w-16 h-16 border-[2px] border-[#111] object-cover grayscale" alt="prev"/>
                         <div className="flex-1 space-y-2">
-                          <input 
-                            value={friend.name} 
-                            onChange={(e) => { const n = [...aboutData.myspace]; n[idx].name = e.target.value; setAboutData({...aboutData, myspace: n}); }}
-                            className="w-full p-1 border-b border-gray-200 text-sm outline-none font-bold" placeholder="Friend Name"
-                          />
-                          <div className="flex items-center gap-1">
-                             <input 
-                               value={friend.image} 
-                               onChange={(e) => { const n = [...aboutData.myspace]; n[idx].image = e.target.value; setAboutData({...aboutData, myspace: n}); }}
-                               className="w-full p-1 border-b border-gray-200 text-xs outline-none text-gray-500" placeholder="Image URL"
-                             />
-                             <label className="cursor-pointer bg-gray-200 p-1 rounded hover:bg-gray-300 flex items-center text-xs">
-                               <Upload size={12}/> <input type="file" className="hidden" accept="image/*" onChange={(e) => handleImageUpload(e, (base64) => { const n = [...aboutData.myspace]; n[idx].image = base64; setAboutData({...aboutData, myspace: n}); })} />
-                             </label>
-                          </div>
-                        </div>
-                        <button type="button" onClick={() => setAboutData({...aboutData, myspace: aboutData.myspace.filter((_, i) => i !== idx)})} className="text-red-500 hover:bg-red-50 p-2 rounded"><Trash2 size={16}/></button>
-                      </div>
-                    ))}
-                  </div>
-                  <button type="button" onClick={() => setAboutData({...aboutData, myspace: [...aboutData.myspace, { id: Date.now(), name: "New Friend", image: "" }]})} className="flex items-center gap-1 bg-white border border-gray-300 px-3 py-2 rounded text-sm hover:bg-gray-50 shadow-sm"><Plus size={16}/> Add Myspace Friend</button>
-                </div>
-
-                <div>
-                  <h3 className="font-bold text-xl mb-4 text-gray-800 border-b border-gray-300 pb-2">3. Interests</h3>
-                  <div className="space-y-4 mb-4">
-                    {aboutData.interests.map((interest, idx) => (
-                      <div 
-                        key={interest.id} 
-                        draggable
-                        onDragStart={() => dragItem.current = idx}
-                        onDragEnter={() => dragOverItem.current = idx}
-                        onDragEnd={() => handleSortAboutList('interests')}
-                        onDragOver={(e) => e.preventDefault()}
-                        className="bg-white p-4 border border-gray-200 rounded flex flex-col md:flex-row gap-4 hover:border-gray-300 transition-colors relative"
-                      >
-                        <div className="absolute top-2 left-2 cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 md:relative md:top-0 md:left-0 flex items-center"><GripVertical size={20}/></div>
-                        <div className="w-full md:w-32 shrink-0 mt-4 md:mt-0">
-                           <img src={interest.image || 'https://placehold.co/300x200'} className="w-full h-24 object-cover rounded" alt="prev"/>
-                        </div>
-                        <div className="flex-1 space-y-2">
-                          <input 
-                            value={interest.title} 
-                            onChange={(e) => { const n = [...aboutData.interests]; n[idx].title = e.target.value; setAboutData({...aboutData, interests: n}); }}
-                            className="w-full p-2 border border-gray-200 rounded font-bold outline-none" placeholder="Interest Title"
-                          />
+                          <input value={friend.name} onChange={(e) => { const n = [...aboutData.myspace]; n[idx].name = e.target.value; setAboutData({...aboutData, myspace: n}); }} className="w-full p-2 border-[2px] border-[#111] font-mono font-bold text-sm outline-none focus:bg-[#dfff00]" placeholder="Name" />
                           <div className="flex gap-2">
-                            <input 
-                              value={interest.image} 
-                              onChange={(e) => { const n = [...aboutData.interests]; n[idx].image = e.target.value; setAboutData({...aboutData, interests: n}); }}
-                              className="w-full p-2 border border-gray-200 rounded text-sm outline-none" placeholder="Image URL"
-                            />
-                            <label className="cursor-pointer bg-gray-200 px-3 py-2 rounded hover:bg-gray-300 flex items-center text-xs">
-                               <Upload size={14}/> <input type="file" className="hidden" accept="image/*" onChange={(e) => handleImageUpload(e, (base64) => { const n = [...aboutData.interests]; n[idx].image = base64; setAboutData({...aboutData, interests: n}); })} />
-                            </label>
+                             <input value={friend.image} onChange={(e) => { const n = [...aboutData.myspace]; n[idx].image = e.target.value; setAboutData({...aboutData, myspace: n}); }} className="w-full p-2 border-[2px] border-[#111] font-mono text-xs outline-none" placeholder="Image URL" />
+                             <label className="cursor-pointer bg-[#111] text-white p-2 border-[2px] border-[#111] hover:bg-[#0000ff]"><Upload size={14}/> <input type="file" className="hidden" accept="image/*" onChange={(e) => handleImageUpload(e, (base64) => { const n = [...aboutData.myspace]; n[idx].image = base64; setAboutData({...aboutData, myspace: n}); })} /></label>
                           </div>
-                          <textarea 
-                            value={interest.desc} 
-                            onChange={(e) => { const n = [...aboutData.interests]; n[idx].desc = e.target.value; setAboutData({...aboutData, interests: n}); }}
-                            className="w-full p-2 border border-gray-200 rounded text-sm outline-none min-h-[5rem] whitespace-pre-wrap" placeholder="Description..."
-                          />
                         </div>
-                        <button type="button" onClick={() => setAboutData({...aboutData, interests: aboutData.interests.filter((_, i) => i !== idx)})} className="text-red-500 hover:bg-red-50 p-2 rounded h-fit absolute top-2 right-2 md:relative md:top-0 md:right-0"><Trash2 size={20}/></button>
+                        <button type="button" onClick={() => setAboutData({...aboutData, myspace: aboutData.myspace.filter((_, i) => i !== idx)})} className="bg-[#ff5722] text-white p-3 border-[2px] border-[#111] hover:bg-[#111] transition-colors"><Trash2 size={20}/></button>
                       </div>
                     ))}
                   </div>
-                  <button type="button" onClick={() => setAboutData({...aboutData, interests: [...aboutData.interests, { id: Date.now(), title: "New Interest", desc: "", image: "" }]})} className="flex items-center gap-1 bg-white border border-gray-300 px-3 py-2 rounded text-sm hover:bg-gray-50 shadow-sm"><Plus size={16}/> Add Interest</button>
+                  <button type="button" onClick={() => setAboutData({...aboutData, myspace: [...aboutData.myspace, { id: Date.now(), name: "New Friend", image: "" }]})} className="bg-[#111] text-white px-6 py-3 font-mono font-bold uppercase tracking-widest flex items-center gap-2 hover:bg-[#0000ff] border-[2px] border-[#111]"><Plus size={18}/> Append Record</button>
                 </div>
 
-                <div>
-                  <h3 className="font-bold text-xl mb-4 text-gray-800 border-b border-gray-300 pb-2">4. Obsessions (Top Lists)</h3>
-                  <div className="grid md:grid-cols-2 gap-4 mb-4">
-                    {aboutData.obsessions.map((obs, idx) => (
-                      <div 
-                        key={obs.id} 
-                        draggable
-                        onDragStart={() => dragItem.current = idx}
-                        onDragEnter={() => dragOverItem.current = idx}
-                        onDragEnd={() => handleSortAboutList('obsessions')}
-                        onDragOver={(e) => e.preventDefault()}
-                        className="bg-white p-4 border border-gray-200 rounded shadow-sm relative group hover:border-gray-300 transition-colors"
-                      >
-                        <div className="absolute top-3 left-2 cursor-grab active:cursor-grabbing text-gray-400 opacity-50 hover:opacity-100"><GripVertical size={16}/></div>
-                        <button type="button" onClick={() => setAboutData({...aboutData, obsessions: aboutData.obsessions.filter((_, i) => i !== idx)})} className="absolute top-2 right-2 text-red-500 hover:bg-red-50 p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={16}/></button>
-                        
-                        <input 
-                          value={obs.category} 
-                          onChange={(e) => { const n = [...aboutData.obsessions]; n[idx].category = e.target.value; setAboutData({...aboutData, obsessions: n}); }}
-                          className="font-bold w-full p-2 mb-2 border-b border-gray-200 outline-none pr-8 pl-8"
-                        />
-                        <textarea 
-                          value={obs.items.join('\n')}
-                          onChange={(e) => { const n = [...aboutData.obsessions]; n[idx].items = e.target.value.split('\n'); setAboutData({...aboutData, obsessions: n}); }}
-                          className="w-full p-2 border border-gray-200 rounded h-40 text-sm text-gray-600 font-mono whitespace-pre-wrap"
-                          placeholder="Enter items, one per line..."
-                        />
+                <div className="bg-white p-8 border-[2px] border-[#111] shadow-[8px_8px_0px_#111]">
+                  <h3 className="font-serif text-3xl mb-6 border-b-[2px] border-[#111] pb-2">Technical Interests</h3>
+                  <div className="space-y-6 mb-6">
+                    {aboutData.interests.map((interest, idx) => (
+                      <div key={interest.id} draggable onDragStart={() => dragItem.current = idx} onDragEnter={() => dragOverItem.current = idx} onDragEnd={() => handleSortAboutList('interests')} onDragOver={(e) => e.preventDefault()} className="bg-[#f4f4f0] p-6 border-[2px] border-[#111] flex flex-col md:flex-row gap-6 shadow-[4px_4px_0px_rgba(17,17,17,0.2)]">
+                        <div className="cursor-grab text-[#111] p-2 border-[2px] border-[#111] bg-white h-fit"><GripVertical size={24}/></div>
+                        <img src={interest.image || 'https://placehold.co/300x200'} className="w-full md:w-48 h-32 object-cover border-[2px] border-[#111]" alt="prev"/>
+                        <div className="flex-1 space-y-3 font-mono">
+                          <input value={interest.title} onChange={(e) => { const n = [...aboutData.interests]; n[idx].title = e.target.value; setAboutData({...aboutData, interests: n}); }} className="w-full p-3 border-[2px] border-[#111] font-bold outline-none focus:bg-[#dfff00]" placeholder="Interest Title" />
+                          <div className="flex gap-2">
+                            <input value={interest.image} onChange={(e) => { const n = [...aboutData.interests]; n[idx].image = e.target.value; setAboutData({...aboutData, interests: n}); }} className="w-full p-3 border-[2px] border-[#111] text-sm outline-none" placeholder="Image URL" />
+                            <label className="cursor-pointer bg-[#111] text-white px-6 font-bold flex items-center gap-2 hover:bg-[#ff5722] border-[2px] border-[#111]"><Upload size={16}/> UPLOAD <input type="file" className="hidden" accept="image/*" onChange={(e) => handleImageUpload(e, (base64) => { const n = [...aboutData.interests]; n[idx].image = base64; setAboutData({...aboutData, interests: n}); })} /></label>
+                          </div>
+                          <textarea value={interest.desc} onChange={(e) => { const n = [...aboutData.interests]; n[idx].desc = e.target.value; setAboutData({...aboutData, interests: n}); }} className="w-full p-4 border-[2px] border-[#111] min-h-[6rem] outline-none whitespace-pre-wrap text-sm" placeholder="Description..." />
+                        </div>
+                        <button type="button" onClick={() => setAboutData({...aboutData, interests: aboutData.interests.filter((_, i) => i !== idx)})} className="bg-[#ff5722] text-white p-4 border-[2px] border-[#111] hover:bg-[#111] transition-colors h-fit"><Trash2 size={24}/></button>
                       </div>
                     ))}
                   </div>
-                  <button type="button" onClick={() => setAboutData({...aboutData, obsessions: [...aboutData.obsessions, { id: Date.now(), category: "New List", items: ["Item 1"] }]})} className="flex items-center gap-1 bg-white border border-gray-300 px-3 py-2 rounded text-sm hover:bg-gray-50 shadow-sm"><Plus size={16}/> Add New List</button>
+                  <button type="button" onClick={() => setAboutData({...aboutData, interests: [...aboutData.interests, { id: Date.now(), title: "New Interest", desc: "", image: "" }]})} className="bg-[#111] text-white px-6 py-3 font-mono font-bold uppercase tracking-widest flex items-center gap-2 hover:bg-[#0000ff] border-[2px] border-[#111]"><Plus size={18}/> Append Record</button>
+                </div>
+
+                <div className="bg-white p-8 border-[2px] border-[#111] shadow-[8px_8px_0px_#111]">
+                  <h3 className="font-serif text-3xl mb-6 border-b-[2px] border-[#111] pb-2">Obsessions Data</h3>
+                  <div className="grid md:grid-cols-2 gap-6 mb-6">
+                    {aboutData.obsessions.map((obs, idx) => (
+                      <div key={obs.id} draggable onDragStart={() => dragItem.current = idx} onDragEnter={() => dragOverItem.current = idx} onDragEnd={() => handleSortAboutList('obsessions')} onDragOver={(e) => e.preventDefault()} className="bg-[#f4f4f0] p-6 border-[2px] border-[#111] relative shadow-[4px_4px_0px_rgba(17,17,17,0.2)]">
+                        <div className="absolute top-4 left-4 cursor-grab text-[#111] bg-white border-[2px] border-[#111] p-1"><GripVertical size={16}/></div>
+                        <button type="button" onClick={() => setAboutData({...aboutData, obsessions: aboutData.obsessions.filter((_, i) => i !== idx)})} className="absolute top-4 right-4 bg-[#ff5722] text-white border-[2px] border-[#111] p-2 hover:bg-[#111]"><Trash2 size={16}/></button>
+                        
+                        <input value={obs.category} onChange={(e) => { const n = [...aboutData.obsessions]; n[idx].category = e.target.value; setAboutData({...aboutData, obsessions: n}); }} className="w-full mt-10 mb-4 p-3 border-[2px] border-[#111] font-mono font-bold outline-none focus:bg-[#dfff00] text-center uppercase tracking-widest" />
+                        <textarea value={obs.items.join('\n')} onChange={(e) => { const n = [...aboutData.obsessions]; n[idx].items = e.target.value.split('\n'); setAboutData({...aboutData, obsessions: n}); }} className="w-full p-4 border-[2px] border-[#111] h-48 font-mono text-sm outline-none whitespace-pre-wrap leading-relaxed bg-white" placeholder="Enter items, one per line..." />
+                      </div>
+                    ))}
+                  </div>
+                  <button type="button" onClick={() => setAboutData({...aboutData, obsessions: [...aboutData.obsessions, { id: Date.now(), category: "New List", items: ["Item 1"] }]})} className="bg-[#111] text-white px-6 py-3 font-mono font-bold uppercase tracking-widest flex items-center gap-2 hover:bg-[#0000ff] border-[2px] border-[#111]"><Plus size={18}/> Append Record</button>
                 </div>
               </div>
             )}
 
-            {(adminTab === 'projects' || adminTab === 'blogs' || adminTab === 'socials') && (
-              <div className="bg-white/50 p-5 rounded-xl border border-yellow-600/30">
-                <div className="flex justify-between items-end mb-4 border-b border-gray-300 pb-2">
-                  <h2 className="text-xl font-bold text-gray-800 capitalize">Manage {adminTab}</h2>
-                  <button onClick={() => setEditingItem(adminTab === 'blogs' ? {blocks: [], type: 'regular'} : {})} className="bg-green-700 text-white px-3 py-1.5 rounded text-sm font-bold flex items-center gap-1 hover:bg-green-800"><Plus size={16} /> Add New</button>
+            {/* GALLERIA MANAGER */}
+            {adminTab === 'galleria' && (
+              <div className="bg-white p-8 border-[2px] border-[#111] shadow-[8px_8px_0px_#111] mb-8">
+                <div className="flex justify-between items-end border-b-[2px] border-[#111] pb-4 mb-6">
+                  <div>
+                     <h2 className="text-3xl font-serif text-[#111]">Manage Galleria</h2>
+                     <p className="font-mono text-xs text-gray-500 uppercase tracking-widest mt-2">Batch ingestion active. Drag to reorder.</p>
+                  </div>
+                  <label className="bg-[#0000ff] text-white px-6 py-2 border-[2px] border-[#111] font-mono font-bold uppercase tracking-widest flex items-center gap-2 cursor-pointer shadow-[4px_4px_0px_#111] hover:translate-y-[2px] hover:shadow-[2px_2px_0px_#111] transition-all">
+                     <Layers size={18} /> BATCH UPLOAD
+                     <input type="file" multiple accept="image/*" className="hidden" onChange={handleBatchGalleriaUpload} />
+                  </label>
                 </div>
-                <div className="space-y-2">
-                  {(adminTab === 'projects' ? projects : adminTab === 'blogs' ? blogs : socials).map(item => (
-                    <div key={item.id} className="flex justify-between items-center bg-white p-3 rounded border border-gray-200">
-                      <span className="font-bold text-sm">{item.title || item.name || 'Untitled'}</span>
-                      <div className="flex gap-2">
-                        <button onClick={() => setEditingItem({ ...item, type: item.type || (adminTab === 'blogs' ? 'regular' : 'project') })} className="p-1 text-blue-600 hover:bg-blue-50 rounded"><Edit2 size={16} /></button>
-                        <button onClick={() => handleDeleteItem(adminTab, item.id)} className="p-1 text-red-600 hover:bg-red-50 rounded"><Trash2 size={16} /></button>
+                
+                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-6">
+                  {galleriaData.map((item, idx) => (
+                    <div 
+                        key={item.id}
+                        draggable
+                        onDragStart={() => dragItem.current = idx}
+                        onDragEnter={() => dragOverItem.current = idx}
+                        onDragEnd={() => handleSortAboutList('galleria', true)}
+                        onDragOver={(e) => e.preventDefault()}
+                        className="bg-[#f4f4f0] p-2 border-[2px] border-[#111] group relative hover:-translate-y-1 transition-transform shadow-[4px_4px_0px_rgba(17,17,17,0.2)]"
+                    >
+                       <div className="absolute top-1 left-1 bg-[#111] text-[#dfff00] p-1 border-[2px] border-[#111] cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity z-10"><GripVertical size={16}/></div>
+                       <button onClick={() => setGalleriaData(galleriaData.filter(g => g.id !== item.id))} className="absolute top-1 right-1 bg-[#ff5722] text-white p-1 border-[2px] border-[#111] opacity-0 group-hover:opacity-100 transition-opacity z-10 hover:bg-[#111]"><Trash2 size={16}/></button>
+                       <img src={item.image} className="w-full aspect-square object-cover border-[2px] border-[#111] mb-2 grayscale group-hover:grayscale-0 transition-all" alt="gal_prev"/>
+                       <input value={item.date} onChange={(e) => { const n = [...galleriaData]; n[idx].date = e.target.value; setGalleriaData(n); }} className="w-full text-[10px] p-2 border-[2px] border-[#111] text-center font-mono font-bold outline-none focus:bg-[#dfff00]" placeholder="LABEL"/>
+                       
+                       {/* === NEW: ATTACH MEMO CHECKBOX === */}
+                       <label className="flex items-center gap-2 mt-2 bg-white border-[2px] border-[#111] p-1.5 cursor-pointer hover:bg-[#dfff00] transition-colors">
+                           <input type="checkbox" checked={item.hasJournal || false} onChange={(e) => { const n = [...galleriaData]; n[idx].hasJournal = e.target.checked; setGalleriaData(n); }} className="w-3 h-3 accent-[#ff5722] border-[2px] border-[#111] outline-none" />
+                           <span className="font-mono text-[9px] font-bold uppercase tracking-widest text-[#111]">Attach Memo</span>
+                       </label>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {(adminTab === 'projects' || adminTab === 'blogs' || adminTab === 'socials' || adminTab === 'journals') && (
+              <div className="bg-white p-8 border-[2px] border-[#111] shadow-[8px_8px_0px_#111]">
+                <div className="flex justify-between items-end border-b-[2px] border-[#111] pb-4 mb-6">
+                  <h2 className="text-3xl font-serif capitalize">Manage {adminTab}</h2>
+                  <button onClick={() => setEditingItem(adminTab === 'blogs' ? {blocks: [], type: 'regular'} : adminTab === 'journals' ? {logs: []} : {})} className="bg-[#111] text-[#dfff00] px-6 py-2 border-[2px] border-[#111] font-mono font-bold uppercase tracking-widest flex items-center gap-2 hover:bg-[#0000ff] hover:text-white transition-colors"><Plus size={18} /> INITIALIZE NEW</button>
+                </div>
+                <div className="space-y-3 font-mono">
+                  {(adminTab === 'projects' ? projects : adminTab === 'blogs' ? blogs : adminTab === 'journals' ? journalEntries : socials).map(item => (
+                    <div key={item.id} className="flex justify-between items-center bg-[#f4f4f0] p-4 border-[2px] border-[#111] hover:bg-white transition-colors">
+                      <span className="font-bold text-sm">{item.title || item.name || item.date || 'UNTITLED_RECORD'}</span>
+                      <div className="flex gap-3">
+                        <button onClick={() => setEditingItem({ ...item, type: item.type || (adminTab === 'blogs' ? 'regular' : adminTab === 'journals' ? undefined : 'project') })} className="p-2 bg-[#dfff00] border-[2px] border-[#111] hover:bg-[#111] hover:text-white transition-colors"><Edit2 size={18} /></button>
+                        <button onClick={() => handleDeleteItem(adminTab, item.id)} className="p-2 bg-[#ff5722] text-white border-[2px] border-[#111] hover:bg-[#111] transition-colors"><Trash2 size={18} /></button>
                       </div>
                     </div>
                   ))}
@@ -1320,16 +1476,16 @@ export default function App() {
             )}
 
             {adminTab === 'messages' && (
-              <div className="bg-white/50 p-5 rounded-xl border border-yellow-600/30">
-                 <h2 className="text-xl font-bold text-gray-800 mb-4 border-b border-gray-300 pb-2">Anonymous Notes Received</h2>
-                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    {guestMessages.length === 0 ? <p className="text-sm text-gray-500">No notes yet.</p> : guestMessages.map(msg => (
-                       <div key={msg.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
-                          <p className="text-[10px] text-gray-400 mb-2 uppercase font-bold">{new Date(msg.created_at).toLocaleString()}</p>
+              <div className="bg-white p-8 border-[2px] border-[#111] shadow-[8px_8px_0px_#111]">
+                 <h2 className="text-3xl font-serif mb-6 border-b-[2px] border-[#111] pb-4">Received Intercepts</h2>
+                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                    {guestMessages.length === 0 ? <p className="text-sm font-mono text-gray-500 uppercase">No transmissions found.</p> : guestMessages.map(msg => (
+                       <div key={msg.id} className="bg-[#f4f4f0] p-6 border-[2px] border-[#111] shadow-[4px_4px_0px_rgba(17,17,17,0.2)]">
+                          <p className="text-[10px] text-[#111] mb-4 uppercase font-bold tracking-widest bg-[#dfff00] w-fit px-2 border border-[#111]">{new Date(msg.created_at).toLocaleString()}</p>
                           {msg.message.startsWith('data:image') ? (
-                             <img src={msg.message} alt="drawing" className="w-full rounded border border-gray-200" />
+                             <img src={msg.message} alt="drawing" className="w-full border-[2px] border-[#111]" />
                           ) : (
-                             <p className="font-handwriting text-xl text-gray-800">{msg.message}</p>
+                             <p className="font-mono text-sm leading-relaxed whitespace-pre-wrap">{msg.message}</p>
                           )}
                        </div>
                     ))}
@@ -1337,9 +1493,9 @@ export default function App() {
               </div>
             )}
             
-            <div className="fixed bottom-6 right-6 z-50">
-              <button disabled={isSaving} onClick={() => saveAllToCloud(null)} className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-3 rounded-full shadow-2xl flex items-center gap-2 font-bold text-base tracking-wide transition-transform hover:scale-105 disabled:opacity-50">
-                <Save size={20}/> {isSaving ? 'Deploying...' : 'Deploy All Changes'}
+            <div className="fixed bottom-8 right-8 z-50">
+              <button disabled={isSaving} onClick={() => saveAllToCloud(null)} className="bg-[#111] text-[#dfff00] px-8 py-4 border-[2px] border-[#111] shadow-[8px_8px_0px_rgba(17,17,17,1)] hover:translate-y-[-2px] hover:shadow-[10px_10px_0px_rgba(17,17,17,1)] flex items-center gap-3 font-mono font-bold text-lg tracking-widest transition-all disabled:opacity-50">
+                <Save size={24}/> {isSaving ? 'UPLOADING...' : 'DEPLOY CHANGES'}
               </button>
             </div>
           </div>
@@ -1349,61 +1505,316 @@ export default function App() {
 
   return (
     <>
-      <style dangerouslySetInnerHTML={{__html: `
-        @font-face { font-family: 'Headliner No 45'; src: url('/fonts/HeadlinerNo.45%20DEMO.ttf') format('truetype'); }
-        @font-face { font-family: 'zai crumpled paper'; src: url('/fonts/zai_CrumpledPaper.ttf') format('truetype'); }
-        @font-face { font-family: 'bantayog light'; src: url('/fonts/Bantayog-Light.otf') format('opentype'); }
+     <style dangerouslySetInnerHTML={{__html: `
+        @import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Inter:wght@300;400;500;600&display=swap');
+        .font-serif { font-family: 'Instrument Serif', serif; }
+        .font-mono { font-family: 'Space Mono', monospace; }
+        .font-sans { font-family: 'Inter', sans-serif; }
         
-        .font-title { font-family: 'Headliner No 45', sans-serif; }
-        .font-subtitle { font-family: 'zai crumpled paper', sans-serif; }
-        .font-body { font-family: 'bantayog light', sans-serif; }
-        .font-handwriting { font-family: 'Caveat', cursive; }
-        
+        .bg-blueprint {
+          background-image: linear-gradient(rgba(17,17,17,0.08) 1px, transparent 1px),
+                            linear-gradient(90deg, rgba(17,17,17,0.08) 1px, transparent 1px);
+          background-size: 30px 30px;
+        }
+
         .hide-scrollbar::-webkit-scrollbar { display: none; }
         .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
-        @keyframes slideOutVinyl {
-            0% { transform: translateX(0); }
-            100% { transform: translateX(45%); }
+        /* === TRUE 3D DOMINO ENGINE === */
+        .gal-viewport {
+            perspective: 2500px;
+            transform-style: preserve-3d;
         }
-        .animate-slide-vinyl {
-            animation: slideOutVinyl 1.2s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+        .gal-scene {
+            transform-style: preserve-3d;
+            transition: transform 0.1s linear;
         }
+        .gal-item {
+            position: absolute;
+            left: 50%; 
+            top: 0;
+            height: 260px; 
+            width: max-content; 
+            transform-origin: bottom center;
+            transform-style: preserve-3d;
+            
+            /* BASE SPACING (-10px) controls how tightly packed they are at rest */
+            transform: translate(-50%, calc(var(--i) * -10px)) rotateX(-90deg);
+            transition: transform 0.4s cubic-bezier(0.25, 1, 0.5, 1), box-shadow 0.4s ease;
+            
+            background: transparent;
+            border-radius: 12px; /* MAKES CORNERS ROUND */
+            /* border: 3px solid #fff;  <-- REMOVED BORDER */
+            box-shadow: 0px 0px 10px rgba(0,0,0,0.3);
+            cursor: pointer;
+            z-index: 1;
+        }
+        
+        /* Forces the image inside to respect the rounded corners for any ratio */
+        .gal-item img {
+            border-radius: 12px;
+        }
+        
+        /* 1. ENLARGE THE HOVERED CARD */
+        .gal-item:hover {
+            transform: translate(-50%, calc(var(--i) * -55px)) rotateX(-90deg) scale(1.4);
+            box-shadow: 0px -20px 40px rgba(0,0,0,0.6);
+            z-index: 50;
+        }
+        
+        /* 2. PUSH PREVIOUS CARDS FORWARD (+Y) */
+        .gal-scene:has(.gal-item:hover) .gal-item:has(~ .gal-item:hover) {
+            /* HOVER SPACING (+200px) pushes cards away to reveal the tag */
+            transform: translate(-50%, calc(var(--i) * -55px + 400px)) rotateX(-90deg);
+        }
+
+        /* 3. PUSH SUBSEQUENT CARDS BACKWARD (-Y) */
+        .gal-item:hover ~ .gal-item {
+            /* HOVER SPACING (-200px) pushes cards away to reveal the tag */
+            transform: translate(-50%, calc(var(--i) * -55px - 400px)) rotateX(-90deg);
+        }
+
+        @keyframes slideOutVinyl { 0% { transform: translateX(0); } 100% { transform: translateX(45%); } }
+        .animate-slide-vinyl { animation: slideOutVinyl 1.2s cubic-bezier(0.2, 0.8, 0.2, 1) forwards; }
       `}} />
 
-      <div className="min-h-screen bg-cover bg-center bg-fixed p-4 md:p-8 flex items-center justify-center relative transition-all duration-1000"
-        style={{ backgroundImage: `url(${aboutData.appBackground || 'https://images.unsplash.com/photo-1473448912268-2022ce9509d8?q=80&w=2041'})`, backgroundColor: '#2a4b3c' }}
-      >
+      <div className="min-h-screen bg-[#e8e8e3] p-4 md:p-8 flex items-center justify-center relative transition-all duration-1000">
+        
         {/* GLOBAL TOAST NOTIFICATION */}
         {toastMessage && (
-          <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[100] bg-gray-900 text-white px-6 py-3 rounded-full shadow-2xl font-bold flex items-center gap-2 animate-bounce">
-            <span className="w-2 h-2 rounded-full bg-green-400"></span>
-            {toastMessage}
+          <div className="fixed top-8 left-1/2 -translate-x-1/2 z-[100] bg-[#111] text-[#00ff00] px-8 py-4 border-[4px] border-[#00ff00] shadow-[6px_6px_0px_#000] font-mono font-bold uppercase tracking-widest flex items-center gap-3 animate-bounce">
+            <Terminal size={20}/> {toastMessage}
           </div>
         )}
 
-        <div className="w-full max-w-6xl relative z-10 flex flex-col h-[90vh] mt-4 md:mt-0">
+       <div className="w-full max-w-7xl relative z-10 flex flex-col h-[95vh] mt-4 md:mt-0 pt-8">
           
-          <div className="flex px-4 md:px-8 gap-1 md:gap-2 overflow-x-auto hide-scrollbar shrink-0">
-            {tabs.map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`px-4 md:px-8 py-2.5 rounded-t-2xl font-title text-2xl transition-all whitespace-nowrap tracking-wide
-                  ${activeTab === tab.id ? 'bg-[#EEDF7A] text-[#991b1b] shadow-[0_-5px_15px_-5px_rgba(0,0,0,0.2)] z-20 pb-4 -mb-2' : 'bg-[#DCCB5A] text-gray-700 hover:bg-[#E5D66C] z-10 pb-1.5 mt-2 opacity-90'}`}
-              >
-                {tab.label}
-              </button>
-            ))}
+          {/* === SCALE STUDIO FOLDER HEADER === */}
+          <div className="grid grid-cols-[auto_60px_1fr] w-full h-[104px] items-end relative z-20 -mb-[4px] pointer-events-none">
+            
+            {/* 1. THE LEFT TAB (Logo) */}
+            <div className="h-[104px] bg-[#f4f4f0] border-t-[4px] border-l-[4px] border-[#111] rounded-tl-[16px] pl-6 md:pl-10 pr-4 pt-5 relative z-30 pointer-events-auto">
+               <h1 className="font-serif text-3xl md:text-4xl text-[#111] leading-none tracking-tight">iceyyy's<br/>intro</h1>
+               {/* Mask to erase the folder body border underneath */}
+               <div className="absolute bottom-[-4px] left-0 w-full h-[8px] bg-[#f4f4f0]"></div>
+            </div>
+
+            {/* 2. THE PERFECT S-CURVE (SVG) */}
+            <div className="h-[104px] w-[60px] relative z-20 pointer-events-none -ml-[2px] -mr-[2px]">
+               {/* overflow-visible ensures the 4px stroke is never clipped by the edge */}
+               <svg width="100%" height="100%" viewBox="0 0 60 104" className="absolute bottom-0 left-0 overflow-visible">
+                  {/* The fill: Fills everything below the stroke to bridge the folder body */}
+                  <path d="M-2,2 C30,2 30,82 62,82 L62,104 L-2,104 Z" fill="#f4f4f0" />
+                  {/* The stroke: Starts at Y=2 (tab top border), swoops down to Y=82 (track top border center) */}
+                  <path d="M-2,2 C30,2 30,82 62,82" fill="none" stroke="#111" strokeWidth="4" />
+               </svg>
+               <div className="absolute bottom-[-4px] left-0 w-full h-[8px] bg-[#f4f4f0] z-30"></div>
+            </div>
+
+            {/* 3. THE HORIZONTAL TRACK & FLOATING BUTTONS */}
+            <div className="h-[24px] border-t-[4px] border-r-[4px] border-[#111] rounded-tr-[16px] bg-[#f4f4f0] relative z-10 flex justify-end pointer-events-auto">
+               
+               {/* The Pill Buttons (Added pb-3 so the shadow doesn't get clipped by overflow) */}
+               <div className="absolute bottom-[28px] right-2 md:right-8 flex gap-3 overflow-x-auto hide-scrollbar max-w-[calc(100vw-120px)] md:max-w-none pl-4 pb-3 pt-2">
+                  {tabs.map((tab) => (
+                    <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+                            className={`px-5 py-2 rounded-full border-[2px] border-[#111] font-mono text-[10px] md:text-xs font-bold uppercase tracking-widest transition-all shadow-[2px_2px_0px_#111] hover:translate-y-[2px] hover:shadow-none flex-shrink-0 ${
+                              activeTab === tab.id ? 'bg-[#111] text-[#f4f4f0]' : 'bg-white text-[#111] hover:bg-[#dfff00]'
+                            }`}>
+                      {tab.label}
+                    </button>
+                  ))}
+               </div>
+
+               {/* Mask to erase the folder body border underneath */}
+               <div className="absolute bottom-[-4px] left-0 w-full h-[8px] bg-[#f4f4f0] z-30"></div>
+            </div>
           </div>
 
-          <div className="flex-1 bg-[#EEDF7A] rounded-b-3xl rounded-tr-3xl shadow-2xl relative z-10 flex flex-col overflow-hidden p-3 md:p-5">
-            <div className="flex-1 bg-[#e4d467] rounded-2xl shadow-[inset_0_4px_20px_rgba(0,0,0,0.2)] border border-yellow-800/10 flex flex-col relative overflow-hidden">
+          {/* === THE MAIN FOLDER BODY === */}
+          <div className="flex-1 bg-[#f4f4f0] border-[4px] border-[#111] border-t-0 shadow-[16px_16px_0px_rgba(17,17,17,0.3)] relative z-10 flex flex-col overflow-hidden rounded-b-[24px] w-full pt-1">
+            
+            {/* INNER BLUEPRINT CONTENT FRAME */}
+            <div className="flex-1 m-4 md:m-6 mt-3 border-[2px] border-[#111] bg-white bg-blueprint flex flex-col relative overflow-hidden shadow-[inset_0_0_20px_rgba(0,0,0,0.05)]">
               
-              {/* ADMIN WIP REMINDER BANNER */}
               {isAdmin && siteSettings?.wip?.[activeTab] && activeTab !== 'admin' && (
-                <div className="absolute top-0 left-0 w-full bg-red-600 text-white text-center py-1 font-bold text-[10px] uppercase tracking-widest z-50">
-                  Visible to Admin Only (WIP Mode is Active)
+                <div className="absolute top-0 left-0 w-full bg-[#ff5722] text-white text-center py-1.5 font-mono font-bold text-[10px] uppercase tracking-widest z-50 border-b-[2px] border-[#111]">
+                  ADMIN OVERRIDE: MODULE HIDDEN FROM PUBLIC (WIP ACTIVE)
+                </div>
+              )}
+
+             {/* === NEW: JOURNALING TAB OVERLAY === */}
+              {activeJournal && (
+                <div className="absolute inset-0 z-[60] bg-[#f0ebd8] flex flex-col overflow-y-auto font-sans animate-[fadeIn_0.3s_ease-out] hide-scrollbar">
+                   
+                   {(() => {
+                      const len = journalEntries.length;
+                      let displayCount = len;
+                      
+                      // PAD THE WHEEL: Ensure we always have enough items to draw 7 distinct lines
+                      // This clones your entries in a perfect cycle so the wheel can spin infinitely!
+                      if (len > 0) {
+                         while (displayCount < 7) displayCount += len;
+                      } else {
+                         displayCount = 7;
+                      }
+                      
+                      // Map the infinite index back to your actual database entry
+                      const activeEntry = len > 0 ? journalEntries[journalIndex % len] : null;
+                      const { h, m, s, ampm } = formatTime(currentTime);
+                      
+                      if (!activeEntry) return <div className="p-8">No journal entries found in system.</div>;
+                      
+                      return (
+                        <>
+                           {/* Fake Inspo Top Nav & Close Button */}
+                           <div className="flex justify-between items-center p-6 md:p-8 border-b border-[#111]/10">
+                              <div className="flex items-center gap-2">
+                                 <div className="w-8 h-8 border-[2px] border-[#111] flex items-center justify-center">
+                                    <div className="w-4 h-4 bg-[#111]"></div>
+                                 </div>
+                                 <span className="font-mono text-[10px] bg-[#111] text-[#f0ebd8] px-1 ml-1">STUDIO</span>
+                              </div>
+                              <div className="hidden md:flex gap-6 font-mono text-[10px] font-bold tracking-widest text-[#111] uppercase">
+                                 <span className="cursor-pointer hover:opacity-50">Home</span>
+                                 <span className="cursor-pointer hover:opacity-50">. About .</span>
+                                 <span className="cursor-pointer hover:opacity-50">Month</span>
+                              </div>
+                              <button onClick={() => setActiveJournal(null)} className="font-mono text-xs font-bold tracking-widest uppercase bg-[#111] text-[#f0ebd8] px-4 py-2 hover:bg-[#ff5722] transition-colors shadow-[2px_2px_0px_rgba(17,17,17,0.3)]">
+                                 Close Entry
+                              </button>
+                           </div>
+
+                           <div className="w-full max-w-6xl mx-auto p-4 md:p-8 flex flex-col pb-24">
+                              
+                              {/* THE TICKET BANNER (Dynamic to Journal Entry) */}
+                              <div className="w-full h-[220px] md:h-[320px] bg-white rounded-2xl md:rounded-[32px] overflow-hidden relative group cursor-crosshair shadow-[0_20px_40px_rgba(0,0,0,0.1)] mb-12 shrink-0 border-[4px] border-[#111]/5">
+                                 <img src={activeEntry.image} className="absolute inset-0 w-full h-full object-cover transition-transform duration-[1.2s] ease-[cubic-bezier(0.25,1,0.5,1)] group-hover:scale-105" alt="Journal cover" />
+                                 <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-all duration-700"></div>
+                                 
+                                 <div className="absolute top-0 left-0 w-[80px] md:w-[120px] h-full bg-[#f8f9fa] border-r-[3px] border-dashed border-[#111]/30 -translate-x-full group-hover:translate-x-0 transition-transform duration-700 ease-[cubic-bezier(0.25,1,0.5,1)] flex flex-col items-center justify-between py-6 shadow-[10px_0_20px_rgba(0,0,0,0.2)]">
+                                    <p className="[writing-mode:vertical-lr] rotate-180 font-mono text-[8px] md:text-[10px] text-gray-500 tracking-widest">STAPLE HERE</p>
+                                    <h3 className="[writing-mode:vertical-lr] rotate-180 font-serif text-3xl md:text-5xl text-[#111]">{activeEntry.year}</h3>
+                                    <p className="[writing-mode:vertical-lr] rotate-180 font-mono text-[8px] md:text-[10px] uppercase font-bold text-[#111] text-center leading-tight">PASSENGER<br/>TICKET</p>
+                                 </div>
+                                 
+                                 <div className="absolute bottom-6 right-6 md:bottom-10 md:right-10 flex flex-col items-end text-white opacity-0 translate-y-4 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-700 delay-150 ease-out">
+                                    <h2 className="font-serif text-5xl md:text-7xl leading-none shadow-black drop-shadow-xl">{activeEntry.date} {activeEntry.year}</h2>
+                                    <div className="flex gap-4 font-mono text-[10px] md:text-xs mt-2 opacity-90 tracking-widest bg-black/40 px-3 py-1 backdrop-blur-md rounded shadow-lg">
+                                       <span>{activeEntry.timeSpan}</span>
+                                       <span>CLASS: {activeEntry.ticketClass}</span>
+                                    </div>
+                                    <div className="mt-4 h-10 w-48 md:w-64 bg-white/90 backdrop-blur-md rounded-sm shadow-xl" style={{backgroundImage: 'repeating-linear-gradient(90deg, #111, #111 2px, transparent 2px, transparent 5px, #111 5px, #111 6px, transparent 6px, transparent 10px, #111 10px, #111 14px, transparent 14px)'}}></div>
+                                 </div>
+                              </div>
+
+                              {/* THE BEIGE CALENDAR LAYOUT */}
+                              <div className="flex flex-col md:flex-row gap-12 text-[#111] w-full mt-4">
+                                 
+                                 {/* Left: Huge Date Block */}
+                                 <div className="md:w-1/3 flex flex-col items-start pt-4">
+                                    <p className="font-mono text-sm mb-2">{activeEntry.date.split(' ')[0]}</p>
+                                    <div className="flex items-center gap-3">
+                                       <div className="flex flex-col text-xs text-gray-400 font-mono leading-none">
+                                          <span>^</span><span className="rotate-180 pt-1">^</span>
+                                       </div>
+                                       <h2 className="font-serif text-7xl md:text-8xl leading-[0.8] tracking-tighter uppercase">{activeEntry.year}</h2>
+                                    </div>
+                                    <p className="font-mono text-xl mt-4 self-end pr-8">2026</p>
+                                    <p className="text-[8px] text-gray-400 font-mono uppercase mt-12 tracking-widest">© STUDIO 2026</p>
+                                 </div>
+
+                                 {/* Center: Radial CSS Scrollable Wheel */}
+                                 <div className="hidden lg:block relative w-64 shrink-0 h-[400px] mt-12" 
+                                      onWheel={(e) => {
+                                         if (len === 0) return;
+                                         if (e.deltaY > 0) setJournalIndex((prev) => (prev + 1) % displayCount);
+                                         else if (e.deltaY < 0) setJournalIndex((prev) => (prev - 1 + displayCount) % displayCount);
+                                      }}>
+                                      <div className="absolute top-1/2 right-12 w-[220px] h-[1px] -translate-y-1/2 transition-transform duration-300">
+                                         
+                                         {/* Infinite Spoke Generator */}
+                                         {Array.from({ length: displayCount }, (_, i) => {
+                                            const entry = journalEntries[i % len];
+                                            let offset = i - journalIndex;
+                                            
+                                            // Circular boundary calculation for infinite scrolling
+                                            const half = Math.floor(displayCount / 2);
+                                            if (offset > half) offset -= displayCount;
+                                            if (offset < -half) offset += displayCount;
+                                            
+                                            const angle = offset * 22; // Degrees between spokes
+                                            const isVisible = Math.abs(offset) <= 3; // EXACTLY 7 LINES VISIBLE
+                                            
+                                            return (
+                                              <div key={`wheel-${i}`} className="absolute top-0 right-0 w-full h-[1px] origin-right transition-all duration-500 ease-out" 
+                                                   style={{transform: `rotate(${angle}deg)`, opacity: isVisible ? 1 : 0, zIndex: offset === 0 ? 10 : 1, visibility: isVisible ? 'visible' : 'hidden'}}>
+                                                 <div className={`w-full h-full relative transition-colors duration-500 ${offset === 0 ? 'bg-[#111]' : 'bg-[#111]/20'}`}>
+                                                     <div className={`absolute left-0 top-1/2 -translate-y-1/2 -translate-x-full pr-4 font-mono cursor-pointer transition-all duration-300 flex items-center justify-end ${offset === 0 ? 'text-[#111] scale-110' : 'text-[#111]/40 hover:text-[#111]'}`} 
+                                                           style={{transform: `rotate(${-angle}deg)`}} 
+                                                           onClick={() => setJournalIndex(i)}>
+                                                        
+                                                        {/* CLEANED UP Typography */}
+                                                        <div className="flex items-center whitespace-nowrap">
+                                                           {offset === 0 && <span className="text-4xl font-bold tracking-tighter leading-none mr-3">{entry.year}</span>} 
+                                                           <span className={`${offset === 0 ? "font-bold text-sm" : "text-xs tracking-widest uppercase"}`}>{entry.shortDate}</span>
+                                                        </div>
+                                                        
+                                                     </div>
+                                                 </div>
+                                              </div>
+                                            )
+                                         })}
+                                         <div className="absolute top-1/2 right-[-16px] -translate-y-1/2 bg-[#111] text-[#f0ebd8] font-mono text-[9px] tracking-widest px-1.5 py-4 rounded-full [writing-mode:vertical-lr] z-20 shadow-[0_4px_10px_rgba(0,0,0,0.3)] pointer-events-none">TODAY</div>
+                                      </div>
+                                 </div>
+
+                                 {/* Right: Data & Text Column */}
+                                 <div className="md:w-1/3 flex flex-col gap-6 md:pt-4">
+                                    
+                                    {/* Real-time Clock Header */}
+                                    <div className="flex justify-between items-end border-b border-[#111]/30 pb-2">
+                                       <div className="flex gap-4 font-serif text-5xl leading-none tracking-tight">
+                                          <span>{h.toString().padStart(2, '0')}</span>
+                                          <div className="flex gap-2 items-start pt-1 font-mono tracking-normal">
+                                             <span className="text-xl">{m}</span>
+                                             <span className="text-xl text-gray-500">{s}</span>
+                                          </div>
+                                       </div>
+                                       <span className="font-mono text-sm mb-1 font-bold">{ampm}</span>
+                                    </div>
+
+                                    {/* Section 1 */}
+                                    <div>
+                                       <p className="font-mono text-[9px] font-bold tracking-widest uppercase border-b border-[#111]/30 pb-1 mb-3">Location Status</p>
+                                       <p className="font-mono text-[10px] text-gray-500 uppercase tracking-widest">Coordinates Locked</p>
+                                    </div>
+
+                                    {/* Section 2 (Dynamic Journal Logs) */}
+                                    <div>
+                                       <p className="font-mono text-[9px] font-bold tracking-widest uppercase border-b border-[#111]/30 pb-1 mb-3">Today | Entry Log</p>
+                                       <ul className="space-y-3 font-sans text-sm text-[#111]/80 leading-relaxed">
+                                          {(activeEntry.logs || []).map((log, idx) => (
+                                             <li key={idx}>• {log}</li>
+                                          ))}
+                                       </ul>
+                                    </div>
+
+                                    {/* Section 3 (Dynamic History) */}
+                                    <div className="mt-4">
+                                       <p className="font-mono text-[9px] font-bold tracking-widest uppercase border-b border-[#111]/30 pb-1 mb-3">This Day In History</p>
+                                       <div className="flex gap-4 items-start">
+                                          <span className="font-serif text-4xl">{activeEntry.historyYear}</span>
+                                          <span className="font-mono text-[9px] uppercase text-gray-500 leading-tight pt-1.5">{activeEntry.historyText}</span>
+                                       </div>
+                                    </div>
+
+                                 </div>
+                              </div>
+                           </div>
+                        </>
+                      );
+                   })()}
                 </div>
               )}
 
@@ -1411,36 +1822,204 @@ export default function App() {
                 {renderContent()}
               </main>
 
-              <div className="absolute bottom-0 left-0 w-full p-4 md:p-6 flex justify-between items-end text-red-900/60 pointer-events-none bg-gradient-to-t from-[#e4d467] via-[#e4d467]/90 to-transparent pt-12">
-                <span className="font-body font-bold tracking-widest text-xs">archive</span>
-                <button onClick={() => setShowLogin(true)} className="pointer-events-auto font-body text-base tracking-[0.3em] hover:text-red-800 transition-colors" title="Secret Login">✧.* ♡ ✿</button>
-                <span className="font-body font-bold text-xs">2026</span>
+              {/* FOOTER BAR */}
+              <div className="absolute bottom-0 left-0 w-full p-4 md:p-6 flex justify-between items-end text-[#111] pointer-events-none bg-gradient-to-t from-white via-white/90 to-transparent pt-16 border-t border-[#111]/10">
+                <span className="font-mono font-bold tracking-widest text-[10px] uppercase bg-white/80 px-2 py-1 border-[2px] border-[#111] shadow-[2px_2px_0px_#111] backdrop-blur-sm">SYS_ARCHIVE // 2026</span>
+                <button onClick={() => setShowLogin(true)} className="pointer-events-auto font-mono text-[#111]/30 hover:text-[#ff5722] transition-colors flex items-center justify-center p-2 bg-white/80 backdrop-blur-sm rounded-full border-[2px] border-transparent hover:border-[#111]" title="Auth Override"><Lock size={14}/></button>
               </div>
             </div>
           </div>
         </div>
 
-        {/* MODALS TRIGGER */}
-        <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center">
-           <div className="pointer-events-auto">
-             {renderModalContent()}
-           </div>
-        </div>
+        {/* MODAL HANDLING */}
+        {selectedItem && (
+          <div className="fixed inset-0 bg-[#f4f4f0]/80 backdrop-blur-md z-50 flex items-center justify-center p-4 md:p-8">
+            
+            {/* === VINYL ALBUM MODAL === */}
+            {itemType === 'blog' && selectedItem.type === 'album' ? (
+               <div className="w-[95vw] max-w-6xl h-[85vh] min-h-[500px] shadow-[16px_16px_0px_#111] relative flex flex-col items-center justify-center overflow-hidden border-[4px] border-[#111]"
+                    style={{ backgroundColor: selectedItem.bgColor || '#ff5722', backgroundImage: selectedItem.bgImage ? `url(${selectedItem.bgImage})` : 'none', backgroundSize: 'cover', backgroundPosition: 'center' }}>
+                  
+                  {/* Diagonal slash background accent */}
+                  <div className="absolute inset-0 opacity-20 pointer-events-none" style={{ backgroundImage: 'repeating-linear-gradient(45deg, #111, #111 2px, transparent 2px, transparent 10px)' }}></div>
 
-        {/* LOGIN MODAL */}
-        {showLogin && !isAdmin && (
-          <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-[#fefce8] p-6 rounded-xl shadow-2xl w-full max-w-sm border border-yellow-200 relative">
-              <button onClick={() => setShowLogin(false)} className="absolute top-3 right-3 text-gray-500 hover:text-red-700"><X size={18}/></button>
-              <div className="flex flex-col items-center text-center mb-5">
-                <div className="w-10 h-10 bg-red-100 text-red-800 rounded-full flex items-center justify-center mb-2"><Lock size={20} /></div>
-                <h2 className="text-4xl font-title font-bold text-gray-800 tracking-wide">Admin Login</h2>
+                  <button onClick={() => setSelectedItem(null)} className="absolute top-6 right-6 z-50 text-white bg-[#111] p-3 border-[2px] border-white/20 hover:bg-white hover:text-[#111] hover:border-[#111] transition-all"><X size={24} /></button>
+                  
+                  <div className="relative flex items-center justify-center scale-[0.65] sm:scale-75 md:scale-100 md:-translate-x-12">
+                      
+                      <div className="absolute w-[300px] h-[300px] md:w-[450px] md:h-[450px] z-10 animate-slide-vinyl border-[2px] border-[#111] rounded-full shadow-[8px_8px_0px_rgba(17,17,17,0.5)]">
+                          <div className="w-full h-full rounded-full bg-[#111] animate-[spin_4s_linear_infinite]" style={{ backgroundImage: 'repeating-radial-gradient(circle at 50% 50%, #111, #111 2px, #222 3px, #222 4px)' }}>
+                               <div className="absolute inset-0 m-auto w-1/3 h-1/3 rounded-full bg-white flex items-center justify-center border-[4px] border-[#111]">
+                                   <div className="w-3 h-3 rounded-full bg-[#111]"></div>
+                               </div>
+                          </div>
+                      </div>
+
+                      <div className="w-[300px] h-[300px] md:w-[450px] md:h-[450px] bg-white shadow-[12px_12px_0px_rgba(17,17,17,0.7)] z-20 relative p-8 md:p-12 flex flex-col border-[3px] border-[#111]">
+                          <h2 className="text-3xl md:text-5xl font-serif text-[#111] mb-4 leading-none uppercase">{selectedItem.title}</h2>
+                          
+                          <div className="flex text-[#0000ff] mb-6 drop-shadow-sm border-b-[2px] border-[#111] pb-4 shrink-0">
+                              {[...Array(Number(selectedItem.rating || 5))].map((_, i) => <Star key={i} size={18} fill="currentColor" />)}
+                          </div>
+                          
+                          <div className="flex-1 overflow-y-auto font-sans text-sm md:text-base text-gray-800 whitespace-pre-wrap hide-scrollbar pr-4 space-y-6">
+                              {selectedItem.excerpt && <p className="font-bold mb-4 bg-[#dfff00] p-2 border-[2px] border-[#111]">{selectedItem.excerpt}</p>}
+                              {(selectedItem.blocks || []).map((block, idx) => {
+                                if (block.type === 'text') return <p key={idx} className="leading-relaxed">{block.content}</p>;
+                                if (block.type === 'quote') return <blockquote key={idx} className="border-l-4 border-[#ff5722] pl-4 py-2 my-4 text-[#111] italic font-serif text-xl">{block.content}</blockquote>;
+                                if (block.type === 'pullquote') return <div key={idx} className="text-2xl md:text-3xl font-serif text-center text-[#0000ff] my-8 leading-tight">"{block.content}"</div>;
+                                if (block.type === 'image') return <img key={idx} src={block.content} alt="review visual" className="w-full border-[2px] border-[#111] shadow-[4px_4px_0px_#111] my-6 grayscale hover:grayscale-0 transition-all" />;
+                                return null;
+                              })}
+                          </div>
+
+                          <div className="absolute -bottom-8 -right-8 w-28 h-28 md:w-40 md:h-40 bg-[#dfff00] shadow-[8px_8px_0px_#111] rotate-[4deg] p-2 border-[2px] border-[#111] flex flex-col transition-transform hover:rotate-0 hover:scale-105 duration-300 z-30">
+                             <Pin size={28} fill="#ff5722" className="absolute -top-4 left-1/2 -translate-x-1/2 text-[#111] z-10" />
+                             {selectedItem.coverImage ? (
+                                <img src={selectedItem.coverImage} className="w-full h-full object-cover border-[2px] border-[#111]" alt="Album Art" />
+                             ) : (
+                                <div className="w-full h-full border-[2px] border-[#111] flex items-center justify-center text-[10px] font-mono font-bold text-center p-2 uppercase">No Asset Provided</div>
+                             )}
+                          </div>
+                      </div>
+                  </div>
+               </div>
+
+            // === VIDEO PLAYER ===
+            ) : selectedItem.type === 'video' ? (
+               <div className="bg-[#111] border-[4px] border-[#ff5722] shadow-[16px_16px_0px_#ff5722] p-8 md:p-12 w-full max-w-3xl mx-auto flex flex-col md:flex-row gap-8 md:gap-12 text-[#f4f4f0] font-mono select-none relative">
+                 <button onClick={() => setSelectedItem(null)} className="absolute top-4 right-4 z-50 text-white/50 hover:text-[#ff5722] transition-colors"><X size={28} /></button>
+                 
+                 <div className="w-full md:w-80 aspect-video md:aspect-square bg-[#000] border-[2px] border-[#333] overflow-hidden shrink-0 flex items-center justify-center relative shadow-[8px_8px_0px_#000]">
+                   <video src={selectedItem.image} controls autoPlay loop className="absolute inset-0 w-full h-full object-cover" />
+                 </div>
+                 
+                 <div className="flex-1 flex flex-col justify-center py-2">
+                    <div className="flex justify-between items-center border-b-[2px] border-[#333] pb-2 mb-4">
+                       <span className="text-[10px] uppercase tracking-widest text-[#00ff00]">A/V Playback Active</span>
+                       <Activity size={16} className="text-[#00ff00] animate-pulse"/>
+                    </div>
+                    <h2 className="text-4xl font-serif text-white mb-2 leading-none uppercase">{selectedItem.title}</h2>
+                    <p className="text-sm opacity-70 mb-8 truncate">{selectedItem.author || 'UNKNOWN_AUTHOR'} // {selectedItem.tabId || 'ARCHIVE'}</p>
+                    
+                    <div className="flex items-center gap-4 text-xs mb-8 font-bold text-[#ff5722]">
+                       <span>0:00</span>
+                       <div className="flex-1 h-2 bg-[#333] border border-[#555] relative">
+                          <div className="absolute left-0 top-0 h-full w-1/3 bg-[#ff5722]"></div>
+                       </div>
+                       <span>3:14</span>
+                    </div>
+                    
+                    <div className="flex justify-center gap-12 items-center px-4">
+                       <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" className="hover:text-white cursor-pointer"><polygon points="11 19 2 12 11 5 11 19"/><polygon points="22 19 13 12 22 5 22 19"/></svg>
+                       <svg width="36" height="36" viewBox="0 0 24 24" fill="currentColor" className="text-white cursor-pointer hover:scale-110 transition-transform"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+                       <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" className="hover:text-white cursor-pointer"><polygon points="13 19 22 12 13 5 13 19"/><polygon points="2 19 11 12 2 5 2 19"/></svg>
+                    </div>
+                 </div>
+               </div>
+
+            ) : (
+
+              /* === ALL OTHER MODALS === */
+              <div className="bg-[#f4f4f0] border-[4px] border-[#111] shadow-[16px_16px_0px_#111] w-full max-w-5xl max-h-[90vh] overflow-y-auto relative">
+                <button onClick={() => setSelectedItem(null)} className="absolute top-4 right-4 z-50 bg-[#111] text-white p-3 border-[2px] border-[#111] hover:bg-[#ff5722] transition-colors"><X size={20} /></button>
+                
+                {itemType === 'project' && (
+                  <div className="relative">
+                    
+                    {selectedItem.type === 'gallery' ? (
+                      <div className="w-full bg-blueprint border-b-[4px] border-[#111] min-h-[75vh] relative overflow-hidden p-8">
+                         {isAdmin && (
+                           <div className="absolute top-4 left-4 z-50 flex gap-3">
+                              <span className="bg-[#111] text-[#00ff00] font-mono font-bold px-4 py-2 text-xs uppercase tracking-widest border-[2px] border-[#00ff00]">ADMIN OVERRIDE: DRAG ACTIVE</span>
+                              <button onClick={saveGalleryLayout} className="bg-[#0000ff] text-white font-mono font-bold px-6 py-2 uppercase tracking-widest border-[2px] border-[#111] shadow-[4px_4px_0px_#111] hover:translate-y-[2px] hover:shadow-[2px_2px_0px_#111]">SAVE LAYOUT</button>
+                           </div>
+                         )}
+                         {modalGalleryBlocks.map((img) => (
+                           <DraggableImage key={img.id} item={img} updateImage={updateModalGalleryImage} bringToFront={bringToFrontModalGallery} isAdmin={isAdmin} />
+                         ))}
+                         
+                         <div className="absolute bottom-8 left-8 z-40 pointer-events-none bg-white p-8 border-[4px] border-[#111] shadow-[8px_8px_0px_#111] max-w-xl">
+                            <h2 className="text-5xl md:text-7xl font-serif text-[#111] mb-2 uppercase leading-none">{selectedItem.title}</h2>
+                            <div className="flex items-center gap-3 mb-4">
+                               <p className="font-mono text-white bg-[#111] px-3 py-1 font-bold text-xs uppercase">{selectedItem.tabId}</p>
+                               <span className="w-full h-[2px] bg-[#111]"></span>
+                            </div>
+                            {selectedItem.content && <p className="font-sans text-[#111] leading-relaxed border-l-[4px] border-[#ff5722] pl-4">{selectedItem.content}</p>}
+                         </div>
+                      </div>
+
+                    ) : selectedItem.type === 'custom' ? (
+                      <div className="w-full bg-white overflow-hidden p-8 border-b-[4px] border-[#111]" dangerouslySetInnerHTML={{ __html: selectedItem.content }} />
+                    
+                    ) : selectedItem.type === 'iframe' ? (
+                      <iframe src={selectedItem.content} className="w-full h-[70vh] bg-white border-b-[4px] border-[#111]" title={selectedItem.title} />
+                    
+                    ) : (
+                      selectedItem.image && <img src={selectedItem.image} className="w-full h-96 object-cover border-b-[4px] border-[#111] grayscale" alt="cover" />
+                    )}
+                    
+                    {selectedItem.type !== 'custom' && selectedItem.type !== 'iframe' && selectedItem.type !== 'gallery' && (
+                      <div className="p-12 md:p-16 bg-[#f4f4f0]">
+                        <h2 className="text-6xl md:text-8xl font-serif text-[#111] mb-6 uppercase tracking-tight leading-none">{selectedItem.title}</h2>
+                        <div className="flex items-center gap-4 mb-10 border-b-[2px] border-[#111] pb-6">
+                           <p className="font-mono text-white bg-[#111] px-4 py-1 text-sm font-bold uppercase">{selectedItem.tabId}</p>
+                           {selectedItem.author && <p className="font-mono text-[#111] text-sm font-bold uppercase tracking-widest">{selectedItem.author}</p>}
+                        </div>
+                        <p className="font-sans text-xl text-[#111] leading-relaxed whitespace-pre-wrap max-w-4xl">{selectedItem.content}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {itemType === 'blog' && (
+                  <div className="p-12 md:p-20 bg-white">
+                      <div className="flex items-center gap-4 mb-8">
+                         <p className="font-mono text-white bg-[#0000ff] px-4 py-1 text-xs font-bold uppercase tracking-widest">{selectedItem.category}</p>
+                         <p className="font-mono text-[#111] text-xs font-bold uppercase tracking-widest">{selectedItem.date}</p>
+                      </div>
+                      
+                      <h2 className="text-5xl md:text-7xl font-serif text-[#111] mb-10 uppercase tracking-tight leading-none">{selectedItem.title}</h2>
+                      
+                      {selectedItem.tags && (
+                         <div className="flex items-center gap-2 mb-12 border-b-[2px] border-[#111] pb-8">
+                           <span className="font-mono text-[10px] text-gray-500 uppercase tracking-widest">TAGS:</span>
+                           <span className="font-mono text-[#111] text-xs uppercase bg-[#e5e5e5] border border-[#111] px-2 py-1">{selectedItem.tags}</span>
+                         </div>
+                      )}
+                      
+                      <div className="space-y-8 font-sans text-lg text-[#111] leading-relaxed max-w-4xl mx-auto">
+                         {selectedItem.excerpt && <p className="font-bold text-2xl mb-8 bg-[#dfff00] p-4 border-[2px] border-[#111]">{selectedItem.excerpt}</p>}
+                         
+                         {(selectedItem.blocks || []).map((block, idx) => {
+                            if (block.type === 'text') return <p key={idx}>{block.content}</p>;
+                            if (block.type === 'quote') return <blockquote key={idx} className="border-l-[6px] border-[#111] pl-6 py-2 my-8 text-3xl font-serif italic text-gray-600">{block.content}</blockquote>;
+                            if (block.type === 'pullquote') return <div key={idx} className="text-3xl md:text-5xl font-serif text-center text-[#ff5722] my-16 px-8 leading-tight uppercase">"{block.content}"</div>;
+                            if (block.type === 'image') return <img key={idx} src={block.content} alt="blog content" className="w-full border-[2px] border-[#111] shadow-[8px_8px_0px_#111] my-12 grayscale hover:grayscale-0 transition-all" />;
+                            return null;
+                         })}
+                      </div>
+                  </div>
+                )}
               </div>
-              <form onSubmit={handleLogin} className="space-y-2">
-                <input type="email" required placeholder="Admin Email" value={emailInput} onChange={(e) => setEmailInput(e.target.value)} className="w-full p-2.5 rounded border border-gray-300 bg-white font-body text-sm outline-none" />
-                <input type="password" required placeholder="Password" value={passwordInput} onChange={(e) => setPasswordInput(e.target.value)} className="w-full p-2.5 rounded border border-gray-300 bg-white font-body text-sm outline-none" />
-                <button disabled={isLoading} type="submit" className="w-full bg-red-800 text-white font-bold p-2.5 rounded hover:bg-red-900 transition-colors disabled:opacity-50 text-sm mt-2 font-body">
-                  {isLoading ? 'Authenticating...' : 'Unlock Dashboard'}
+            )}
+          </div>
+        )}
+
+        {/* AUTH MODAL */}
+        {showLogin && !isAdmin && (
+          <div className="fixed inset-0 bg-[#f4f4f0]/90 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-white p-10 border-[4px] border-[#111] shadow-[16px_16px_0px_#111] w-full max-w-md relative">
+              <button onClick={() => setShowLogin(false)} className="absolute top-4 right-4 text-[#111] hover:bg-[#ff5722] hover:text-white p-2 transition-colors border-[2px] border-transparent hover:border-[#111]"><X size={24}/></button>
+              <div className="flex flex-col items-center text-center mb-8">
+                <div className="w-16 h-16 bg-[#111] text-white flex items-center justify-center mb-4 border-[2px] border-[#111] shadow-[4px_4px_0px_#ff5722]"><Lock size={32} /></div>
+                <h2 className="text-3xl font-serif text-[#111] uppercase tracking-widest">Admin Override</h2>
+              </div>
+              <form onSubmit={handleLogin} className="space-y-4">
+                <input type="email" required placeholder="IDENTIFICATION" value={emailInput} onChange={(e) => setEmailInput(e.target.value)} className="w-full p-4 border-[2px] border-[#111] bg-[#f4f4f0] font-mono text-sm outline-none focus:bg-[#dfff00] transition-colors" />
+                <input type="password" required placeholder="PASSCODE" value={passwordInput} onChange={(e) => setPasswordInput(e.target.value)} className="w-full p-4 border-[2px] border-[#111] bg-[#f4f4f0] font-mono text-sm outline-none focus:bg-[#dfff00] transition-colors" />
+                <button disabled={isLoading} type="submit" className="w-full bg-[#111] text-[#f4f4f0] font-mono font-bold uppercase tracking-widest p-4 border-[2px] border-[#111] hover:bg-[#0000ff] hover:text-white transition-colors disabled:opacity-50 mt-4 shadow-[4px_4px_0px_#111] hover:translate-y-[2px] hover:shadow-[2px_2px_0px_#111]">
+                  {isLoading ? 'AUTHENTICATING...' : 'INITIALIZE ACCESS'}
                 </button>
               </form>
             </div>
