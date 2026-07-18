@@ -68,23 +68,36 @@ const defaultProjects = [
 
 const defaultBlogs = [
   { 
-    id: 1, type: "regular", date: "Oct 12, 2026", title: "Finding peace in slower development cycles", 
+    id: 1, type: "regular", blogCategory: "anime", date: "Oct 12, 2026", title: "Finding peace in slower development cycles", 
     excerpt: "Sometimes the best code is the code you write after stepping away from the screen for a while.", 
     category: "Life", tags: "thoughts, dev", rating: 5, coverImage: "https://images.unsplash.com/photo-1499750310107-5fef28a66643?w=800&q=80",
+    imageEffect: "none",
     blocks: [
       { type: 'text', content: 'In a world obsessed with shipping fast, I took a month to just plan my next architecture.' },
       { type: 'pullquote', content: 'Slow down to speed up.' }
     ]
   },
   { 
-    id: 2, type: "album", date: "Nov 01, 2026", title: "Blonde - Frank Ocean", 
+    id: 2, type: "album", blogCategory: "anime", date: "Nov 01, 2026", title: "Blonde - Frank Ocean", 
     excerpt: "A masterpiece of modern R&B that explores the duality of youth, nostalgia, and heartbreak.", 
     category: "Music", tags: "rnb, classics", rating: 5, coverImage: "https://images.unsplash.com/photo-1614850523459-c2f4c699c52e?w=400&q=80",
-    bgColor: "#eb5e28", bgImage: "",
+    bgColor: "#eb5e28", bgImage: "", imageEffect: "none",
     blocks: [
       { type: 'text', content: "The minimalist production leaves so much room for emotional resonance.\n\nFavorite tracks:\n- Nikes\n- Ivy\n- White Ferrari" },
       { type: 'quote', content: "I'd rather live outside, I'd rather chip my pride than lose my mind out here." }
     ]
+  },
+  {
+    id: 3, type: "regular", blogCategory: "manhwa", date: "Work fast. Live slow.", title: "Create your digital reality.", 
+    excerpt: "From nothing to everything, let's bring your vision to life in an elegant, structured format.", 
+    category: "Design", tags: "web, product, brand", rating: 5, coverImage: "https://images.unsplash.com/photo-1462331940025-496dfbfc7564?w=800&q=80",
+    imageEffect: "none", blocks: [{ type: 'text', content: 'Manhwa entry text block.' }]
+  },
+  {
+    id: 4, type: "regular", blogCategory: "shows", date: "PREDICTIVE MODELING", title: "PREDICTIVE MODELING, RISK MITIGATION.", 
+    excerpt: "EVERY DECISION TREE MAPPED. AETHERON THINKS AHEAD AND LIVES THERE.", 
+    category: "Sci-Fi", tags: "PROBABILISTIC FORESIGHT, FAILSAFE FALLBACK PATHS, HEDGE LOGIC", rating: 5, coverImage: "https://images.unsplash.com/photo-1614729939124-032f0b56c9ce?w=800&q=80",
+    imageEffect: "both", blocks: [{ type: 'text', content: 'Show entry text block.' }]
   }
 ];
 
@@ -93,6 +106,12 @@ const defaultAbout = {
   introText: "Hellooo, the name is Vinz!\n\nYou can call me Ice^^\n\nI am 16 years of age, born on April 16, 2008\n\nI am an Aries, and Intp-t (I don't believe fully in these)\n\nMy sexuality is AroAce (Not interested romantically or sexually)\n\n3 words about me?: Chaotic, Needy, Nerdy",
   introImage: "https://images.unsplash.com/photo-1614850523459-c2f4c699c52e?w=400&q=80",
   notepadText: "This year, I decided to focus on building things I love. I wasn't able to launch many projects, but I did build a few amazing ones. I took my time with them, and I'm glad I did.",
+  mood: {
+    score: "85",
+    status: "OPTIMAL",
+    title: "System\nStability",
+    desc: "Performance score and\nemotional statistics for Q3."
+  },
   myspace: [
     { id: 1, name: "Dirk", image: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&q=80" },
     { id: 2, name: "Renz", image: "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=200&q=80" },
@@ -200,6 +219,18 @@ const defaultJournals = [
   }
 ];
 
+const defaultPlaylists = [
+  {
+    id: 1, title: "Late Night Code", price: "$0.00", genre: "Lofi", tags: "Focus", description: "Deep focus beats for long coding sessions and debugging in the dark.", image: "https://images.unsplash.com/photo-1516280440502-5c058ddf6567?w=600&q=80", url: "#", color: "#1f2937"
+  },
+  {
+    id: 2, title: "Sunday Morning", price: "$0.00", genre: "Acoustic", tags: "Warm", description: "Warm acoustic melodies to start your day right with a cup of coffee.", image: "https://images.unsplash.com/photo-1495434942714-9b1efa10a89a?w=600&q=80", url: "#", color: "#6b4226"
+  },
+  {
+    id: 3, title: "Tokyo Drift", price: "$0.00", genre: "Phonk", tags: "Fast", description: "High energy tracks for when you need to push through a tough deadline.", image: "https://images.unsplash.com/photo-1542051842-83531bcfbb7a?w=600&q=80", url: "#", color: "#3a2e39"
+  }
+];
+
 const defaultSettings = {
   wip: { intro: false, portfolio: false, galleria: false, system: false, blog: false, socials: false, blank: false }
 };
@@ -212,12 +243,16 @@ export default function App() {
   
   const [projects, setProjects] = useState(defaultProjects);
   const [blogs, setBlogs] = useState(defaultBlogs);
+  const [blogCategoryFilter, setBlogCategoryFilter] = useState('anime'); // NEW STATE FOR BLOG TABS
   const [aboutData, setAboutData] = useState(defaultAbout);
   const [systemData, setSystemData] = useState(defaultSystem);
   const [socials, setSocials] = useState(defaultSocials);
   const [galleriaData, setGalleriaData] = useState(defaultGalleria);
   const [siteSettings, setSiteSettings] = useState(defaultSettings);
   const [journalEntries, setJournalEntries] = useState(defaultJournals);
+  const [playlists, setPlaylists] = useState(defaultPlaylists);
+  const [accessLogs, setAccessLogs] = useState([]); // NEW STATE FOR JOURNAL LOGS
+  
   const [journalIndex, setJournalIndex] = useState(0);
   const [currentTime, setCurrentTime] = useState(new Date());
   
@@ -240,8 +275,11 @@ export default function App() {
   const [adminTab, setAdminTab] = useState('about'); 
   const [editingItem, setEditingItem] = useState(null); 
 
-  // === NEW: JOURNAL OVERLAY STATE ===
+  // === NEW: JOURNAL OVERLAY & TICKET STATE ===
+  const [pendingJournal, setPendingJournal] = useState(null); 
   const [activeJournal, setActiveJournal] = useState(null);
+  const [visitorName, setVisitorName] = useState("");
+  const [isTicketValidating, setIsTicketValidating] = useState(false);
 
   // --- REAL-TIME CLOCK HOOK ---
   useEffect(() => {
@@ -305,6 +343,8 @@ export default function App() {
             if (parsed.system) setSystemData(parsed.system);
             if (parsed.settings) setSiteSettings(parsed.settings);
             if (parsed.journals) setJournalEntries(parsed.journals);
+            if (parsed.playlists) setPlaylists(parsed.playlists);
+            if (parsed.access_logs) setAccessLogs(parsed.access_logs);
           } catch(e) { console.error("Failed to parse local data", e); }
         }
         setIsLoading(false);
@@ -326,6 +366,7 @@ export default function App() {
           const sys = siteData.find(d => d.section === 'system');
           const set = siteData.find(d => d.section === 'settings');
           const j = siteData.find(d => d.section === 'journals');
+          const pl = siteData.find(d => d.section === 'playlists');
           
           if (p) setProjects(p.data);
           if (b) setBlogs(b.data);
@@ -335,10 +376,16 @@ export default function App() {
           if (sys && sys.data.timeline) setSystemData(sys.data);
           if (set && set.data.wip) setSiteSettings(set.data);
           if (j) setJournalEntries(j.data);
+          if (pl) setPlaylists(pl.data);
         }
 
         const { data: messages } = await supabase.from('playground_messages').select('*').order('created_at', { ascending: false });
         if (messages) setGuestMessages(messages);
+        
+        // Try fetching access logs. If table missing, ignore error.
+        const { data: logs } = await supabase.from('journal_access_logs').select('*').order('created_at', { ascending: false });
+        if (logs) setAccessLogs(logs);
+
       } catch (e) {
         console.error("Error loading data:", e);
       }
@@ -438,7 +485,7 @@ export default function App() {
              id: Date.now() + Math.random(),
              image: reader.result,
              date: new Date().toLocaleDateString(),
-             hasJournal: false
+             hasJournal: false // By default, bulk uploads don't have journals
           });
           reader.readAsDataURL(file);
        });
@@ -461,7 +508,9 @@ export default function App() {
         galleria: galleriaData, 
         system: systemData, 
         settings: siteSettings, 
-        journals: journalEntries
+        journals: journalEntries,
+        playlists: playlists,
+        access_logs: accessLogs
       }));
       setIsSaving(false);
       showToast("Successfully deployed changes to Local Storage!");
@@ -476,7 +525,8 @@ export default function App() {
       { section: 'galleria', data: galleriaData },
       { section: 'system', data: systemData },
       { section: 'settings', data: siteSettings },
-      { section: 'journals', data: journalEntries }
+      { section: 'journals', data: journalEntries },
+      { section: 'playlists', data: playlists }
     ];
     const { error } = await supabase.from('site_data').upsert(updates);
     setIsSaving(false);
@@ -498,6 +548,9 @@ export default function App() {
     } else if (listType === 'journals') {
       const newList = editingItem.id ? journalEntries.map(j => j.id === editingItem.id ? editingItem : j) : [...journalEntries, { ...editingItem, id: Date.now() }];
       setJournalEntries(newList);
+    } else if (listType === 'playlists') {
+      const newList = editingItem.id ? playlists.map(pl => pl.id === editingItem.id ? editingItem : pl) : [...playlists, { ...editingItem, id: Date.now() }];
+      setPlaylists(newList);
     }
     setEditingItem(null);
   };
@@ -508,6 +561,7 @@ export default function App() {
     if (listType === 'blogs') setBlogs(blogs.filter(b => b.id !== id));
     if (listType === 'socials') setSocials(socials.filter(s => s.id !== id));
     if (listType === 'journals') setJournalEntries(journalEntries.filter(j => j.id !== id));
+    if (listType === 'playlists') setPlaylists(playlists.filter(pl => pl.id !== id));
   }
 
   const updateModalGalleryImage = (id, newPos) => {
@@ -565,6 +619,57 @@ export default function App() {
       showToast("Error sending note.");
     }
     setIsSendingMessage(false);
+  };
+
+  // --- NEW: TICKET GATE SUBMIT HANDLER ---
+  const submitJournalAccess = async (e) => {
+    e.preventDefault();
+    if (!visitorName.trim()) return showToast("Identification required.");
+    setIsTicketValidating(true);
+    
+    const newLog = {
+      id: Date.now(),
+      created_at: new Date().toISOString(),
+      visitor_name: visitorName.trim(),
+      journal_id: pendingJournal.id || "Unknown"
+    };
+
+    if (!supabase) {
+      // Local Only Mode
+      const updatedLogs = [newLog, ...accessLogs];
+      setAccessLogs(updatedLogs);
+      localStorage.setItem('site_data_fallback', JSON.stringify({
+        ...JSON.parse(localStorage.getItem('site_data_fallback') || '{}'),
+        access_logs: updatedLogs
+      }));
+      
+      // Artificial delay for aesthetic validation
+      setTimeout(() => {
+        setActiveJournal(pendingJournal);
+        setPendingJournal(null);
+        setVisitorName("");
+        setIsTicketValidating(false);
+      }, 800); 
+      return;
+    }
+
+    // Supabase Mode
+    const { data, error } = await supabase.from('journal_access_logs').insert([
+      { visitor_name: newLog.visitor_name, journal_id: newLog.journal_id }
+    ]).select();
+
+    if (!error && data) {
+       setAccessLogs([data[0], ...accessLogs]);
+    } else {
+       // Graceful fallback if table isn't created yet but db is linked
+       console.warn("Table journal_access_logs missing, saving to local state only.");
+       setAccessLogs([newLog, ...accessLogs]);
+    }
+    
+    setActiveJournal(pendingJournal);
+    setPendingJournal(null);
+    setVisitorName("");
+    setIsTicketValidating(false);
   };
 
   const tabs = [
@@ -668,9 +773,9 @@ export default function App() {
                         <h3 className="font-bold font-serif text-2xl leading-tight">{obs.category}</h3>
                         <span className="font-mono text-sm font-bold opacity-50">{String(index + 1).padStart(2, '0')}</span>
                       </div>
-                      <ol className="list-decimal list-inside text-sm space-y-2 font-mono font-bold text-[#111]/90">
+                      <ol className="list-decimal list-inside text-sm font-mono font-bold text-[#111]/90">
                         {obs.items.map((item, i) => (
-                          <li key={i} className="leading-tight break-words">{item}</li>
+                          <li key={i} className="leading-tight break-words mb-2 last:mb-0 border-0 outline-none decoration-transparent ring-0">{item}</li>
                         ))}
                       </ol>
                     </div>
@@ -679,8 +784,9 @@ export default function App() {
               </div>
             </div>
 
-            {/* Right Side Memo */}
-            <div className="w-full lg:w-72 shrink-0 mt-8 lg:mt-0 sticky top-8 z-20">
+            {/* Right Side Memo & Mood Checker */}
+            <div className="w-full lg:w-72 shrink-0 mt-8 lg:mt-0 flex flex-col gap-8 lg:sticky lg:top-8 self-start z-20">
+              
               <div className="bg-[#dfff00] p-6 border-[2px] border-[#111] shadow-[8px_8px_0px_#111] relative">
                 <div className="absolute -top-3 -right-3 w-8 h-8 bg-[#0000ff] rounded-full border-[2px] border-[#111] flex items-center justify-center text-white shadow-sm"><Pin size={16}/></div>
                 <p className="font-mono text-xs font-bold uppercase tracking-widest text-[#111] mb-4 border-b-[2px] border-[#111] pb-2">System Memo</p>
@@ -688,6 +794,52 @@ export default function App() {
                   {aboutData.notepadText || "No active memos."}
                 </p>
               </div>
+
+              {/* MOOD CHECKER COMPONENT */}
+              <div className="w-full border-[2px] border-[#111] shadow-[8px_8px_0px_#111] rounded-xl overflow-hidden flex flex-col bg-white select-none">
+                 {/* Top Row */}
+                 <div className="flex h-16 border-b-[2px] border-[#111]">
+                    <div className="flex-1 bg-[#f4f4f0] flex items-center px-5">
+                       <span className="font-sans text-3xl font-semibold tracking-tighter text-[#111]">Mood<span className="text-[#ff5722]">.</span></span>
+                    </div>
+                    <div className="w-16 shrink-0 border-l-[2px] border-[#111] relative overflow-hidden" 
+                         style={{ background: 'conic-gradient(from 145deg at 50% 50%, #d1d5db 0deg, #f9fafb 90deg, #9ca3af 180deg, #f9fafb 270deg, #d1d5db 360deg)' }}>
+                         {/* Metallic Sheen Overlay */}
+                         <div className="absolute inset-0 opacity-40" style={{ backgroundImage: 'linear-gradient(45deg, transparent 40%, rgba(255,255,255,0.9) 50%, transparent 60%)' }}></div>
+                    </div>
+                 </div>
+                 
+                 {/* Bottom Row */}
+                 <div className="flex h-[13rem]">
+                    {/* Left Column (Orange) */}
+                    <div className="w-[35%] bg-[#ff5722] flex flex-col border-r-[2px] border-[#111]">
+                       <div className="h-16 border-b-[2px] border-[#111] bg-[#111]" 
+                            style={{ backgroundImage: 'repeating-linear-gradient(45deg, #111, #111 3px, #ff5722 3px, #ff5722 4px)' }}>
+                       </div>
+                       <div className="flex-1 flex flex-col items-center justify-center relative">
+                          <span className="font-sans text-6xl font-medium tracking-tighter text-[#111] -mt-6">{aboutData.mood?.score || "85"}</span>
+                          <div className="w-8 h-8 rounded-full bg-[#111] text-[#ff5722] flex items-center justify-center font-sans text-sm font-bold absolute bottom-4">
+                             %
+                          </div>
+                       </div>
+                    </div>
+                    
+                    {/* Right Column (White) */}
+                    <div className="flex-1 bg-[#f4f4f0] flex flex-col p-5 relative">
+                       <div className="flex justify-between items-center font-mono text-[10px] text-[#111] uppercase tracking-widest mb-auto">
+                          <span className="cursor-pointer hover:opacity-50 transition-opacity">&larr;</span>
+                          <span>status: {aboutData.mood?.status || "OPTIMAL"}</span>
+                          <span className="cursor-pointer hover:opacity-50 transition-opacity">&rarr;</span>
+                       </div>
+                       
+                       <div className="mt-auto">
+                          <h3 className="font-sans text-[#111] font-semibold text-2xl leading-[1.1] tracking-tight mb-2 whitespace-pre-wrap">{aboutData.mood?.title || "System\nStability"}</h3>
+                          <p className="font-sans text-[11px] text-gray-500 leading-snug whitespace-pre-wrap">{aboutData.mood?.desc || "Performance score and\nemotional statistics for Q3."}</p>
+                       </div>
+                    </div>
+                 </div>
+              </div>
+
             </div>
           </div>
         );
@@ -779,55 +931,106 @@ export default function App() {
 
       case 'galleria':
         return (
-          <div className="w-full h-full min-h-[70vh] relative overflow-hidden bg-blueprint bg-[#e5e5e5] border-[2px] border-[#111] shadow-[8px_8px_0px_#111] flex items-center justify-center" 
-               onWheel={(e) => setGalleriaPanX(p => p - e.deltaY * 2.5)}>
-            
-            <div className="absolute top-8 left-8 font-mono text-[10px] font-bold tracking-widest uppercase text-[#111] bg-[#dfff00] px-3 py-1 border-[2px] border-[#111] z-20 shadow-[2px_2px_0px_#111]">
-               Timeline : Infinite
-            </div>
-            
-            {galleriaData.length === 0 ? (
-               <p className="text-gray-500 font-serif text-3xl">No images uploaded.</p>
-            ) : (
-               /* THE 3D VIEWPORT */
-               <div className="gal-viewport absolute inset-0 w-full h-full pointer-events-none">
-                  
-                  {/* THE 3D SCENE (Shifted to perfectly cross center of screen) */}
-                  <div className="gal-scene absolute top-[60%] left-[50%] pointer-events-auto"
-                       style={{ transform: `rotateX(60deg) rotateZ(45deg) translateY(${galleriaPanX}px)` }}>
+          <div className="w-full flex flex-col gap-12 pb-16">
+            <div className="w-full h-[70vh] min-h-[500px] relative overflow-hidden bg-blueprint bg-[#e5e5e5] border-[2px] border-[#111] shadow-[8px_8px_0px_#111] flex items-center justify-center shrink-0" 
+                 onWheel={(e) => setGalleriaPanX(p => p - e.deltaY * 2.5)}>
+              
+              <div className="absolute top-8 left-8 font-mono text-[10px] font-bold tracking-widest uppercase text-[#111] bg-[#dfff00] px-3 py-1 border-[2px] border-[#111] z-20 shadow-[2px_2px_0px_#111]">
+                 Timeline : Infinite
+              </div>
+              
+              {galleriaData.length === 0 ? (
+                 <p className="text-gray-500 font-serif text-3xl">No images uploaded.</p>
+              ) : (
+                 /* THE 3D VIEWPORT */
+                 <div className="gal-viewport absolute inset-0 w-full h-full pointer-events-none">
                     
-                    {galleriaData.map((img, i) => (
-                       <div key={img.id} 
-                            /* ONLY open journal if img.hasJournal is true */
-                            onClick={() => img.hasJournal && setActiveJournal(img)} 
-                            style={{ '--i': i }}
-                            className={`gal-item group ${img.hasJournal ? 'cursor-pointer' : 'cursor-default'}`}>
-                          
-                          {/* Image respects its own aspect ratio while filling the height */}
-                          <img src={img.image} className="h-full w-auto max-w-none grayscale group-hover:grayscale-0 transition-all duration-[600ms] block" alt="galleria" />
-                          
-                          {/* Hover Tag */}
-                          <div className="absolute bottom-3 left-3 p-1.5 bg-[#dfff00] border-[2px] border-[#111] opacity-0 group-hover:opacity-100 transition-opacity duration-500 shadow-[4px_4px_0px_#111] flex items-center gap-2">
-                             <p className="text-[#111] font-mono font-bold tracking-widest uppercase text-[10px] whitespace-nowrap">{img.date}</p>
-                             
-                             {/* VISUAL CUE: Only shows up if this specific photo has a journal entry */}
-                             {img.hasJournal && (
-                                <span className="bg-[#ff5722] text-white px-1.5 py-0.5 text-[8px] tracking-widest shadow-sm">MEMO ATTACHED ↗</span>
-                             )}
-                          </div>
-                          
-                       </div>
-                    ))}
-                  </div>
-               </div>
-            )}
+                    {/* THE 3D SCENE (Shifted to perfectly cross center of screen) */}
+                    <div className="gal-scene absolute top-[60%] left-[50%] pointer-events-auto"
+                         style={{ transform: `rotateX(60deg) rotateZ(45deg) translateY(${galleriaPanX}px)` }}>
+                      
+                      {galleriaData.map((img, i) => (
+                         <div key={img.id} 
+                              /* INTERCEPT WITH TICKET GATE */
+                              onClick={() => img.hasJournal && setPendingJournal(img)} 
+                              style={{ '--i': i }}
+                              className={`gal-item group ${img.hasJournal ? 'cursor-pointer' : 'cursor-default'}`}>
+                            
+                            {/* Image respects its own aspect ratio while filling the height */}
+                            <img src={img.image} className="h-full w-auto max-w-none grayscale group-hover:grayscale-0 transition-all duration-[600ms] block" alt="galleria" />
+                            
+                            {/* Hover Tag */}
+                            <div className="absolute bottom-3 left-3 p-1.5 bg-[#dfff00] border-[2px] border-[#111] opacity-0 group-hover:opacity-100 transition-opacity duration-500 shadow-[4px_4px_0px_#111] flex items-center gap-2">
+                               <p className="text-[#111] font-mono font-bold tracking-widest uppercase text-[10px] whitespace-nowrap">{img.date}</p>
+                               
+                               {/* VISUAL CUE: Only shows up if this specific photo has a journal entry */}
+                               {img.hasJournal && (
+                                  <span className="bg-[#ff5722] text-white px-1.5 py-0.5 text-[8px] tracking-widest shadow-sm">MEMO ATTACHED ↗</span>
+                               )}
+                            </div>
+                            
+                         </div>
+                      ))}
+                    </div>
+                 </div>
+              )}
 
-            <div className="absolute bottom-8 right-8 flex items-center gap-4 text-[#111] font-mono text-[10px] font-bold uppercase z-20 bg-white px-3 py-1 border-[2px] border-[#111] shadow-[2px_2px_0px_#111]">
-               <span>Scroll to pan</span>
-               <div className="flex gap-1">
-                  <span className="w-4 h-4 rounded-full border-[2px] border-[#111] flex items-center justify-center bg-[#dfff00]">&larr;</span>
-                  <span className="w-4 h-4 rounded-full border-[2px] border-[#111] flex items-center justify-center bg-[#dfff00]">&rarr;</span>
-               </div>
+              <div className="absolute bottom-8 right-8 flex items-center gap-4 text-[#111] font-mono text-[10px] font-bold uppercase z-20 bg-white px-3 py-1 border-[2px] border-[#111] shadow-[2px_2px_0px_#111]">
+                 <span>Scroll to pan</span>
+                 <div className="flex gap-1">
+                    <span className="w-4 h-4 rounded-full border-[2px] border-[#111] flex items-center justify-center bg-[#dfff00]">&larr;</span>
+                    <span className="w-4 h-4 rounded-full border-[2px] border-[#111] flex items-center justify-center bg-[#dfff00]">&rarr;</span>
+                 </div>
+              </div>
+            </div>
+
+            {/* PLAYLISTS SECTION (Underneath Galleria) */}
+            <div className="w-full">
+              <div className="flex justify-between items-end border-b-[2px] border-[#111] pb-4 mb-10">
+                 <h2 className="text-4xl md:text-5xl font-serif text-[#111] tracking-tight">Audio Archives</h2>
+                 <span className="font-mono text-[10px] md:text-xs font-bold uppercase tracking-widest bg-[#111] text-white px-3 py-1 border-[2px] border-[#111] shadow-[4px_4px_0px_#ff5722]">Curated Playlists</span>
+              </div>
+
+              {playlists.length === 0 ? (
+                <p className="font-mono text-gray-500 text-sm">No playlists configured.</p>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                   {playlists.map((pl) => (
+                      <div key={pl.id} style={{ backgroundColor: pl.color || '#333' }} className="rounded-[2.5rem] overflow-hidden shadow-[8px_8px_0px_rgba(17,17,17,0.3)] flex flex-col text-white transform transition-transform hover:-translate-y-2 border-[2px] border-transparent hover:border-[#111] group relative">
+                         
+                         {/* Image & Gradient Fade Area */}
+                         <div className="w-full h-56 relative shrink-0 bg-[#111]">
+                            {pl.image && <img src={pl.image} alt={pl.title} className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 text-transparent" />}
+                            {/* CSS Gradient dynamically bound to the configured hex color */}
+                            <div className="absolute inset-0" style={{ backgroundImage: `linear-gradient(to bottom, transparent 10%, ${pl.color || '#333'} 100%)` }}></div>
+                         </div>
+                         
+                         {/* Text Content Area */}
+                         <div className="px-8 pb-8 pt-0 flex-1 flex flex-col relative z-10">
+                            {/* Title & Genre Tag */}
+                            <div className="flex justify-between items-center mb-4 gap-4">
+                               <h3 className="font-sans font-bold text-2xl tracking-tight truncate">{pl.title}</h3>
+                               {pl.genre && <span className="font-sans text-[11px] font-bold tracking-wider bg-black/40 px-3 py-1.5 rounded-full shrink-0">{pl.genre}</span>}
+                            </div>
+                            
+                            {/* Description */}
+                            <p className="font-sans text-sm text-white/70 leading-relaxed mb-6 flex-1 line-clamp-3">{pl.description}</p>
+                            
+                            {/* Tags */}
+                            <div className="flex flex-wrap gap-2 mb-8">
+                               {pl.price && <span className="font-sans text-[10px] font-medium tracking-wide bg-white/10 px-3 py-1.5 rounded-full text-white/90">{pl.price}</span>}
+                               {pl.tags && <span className="font-sans text-[10px] font-medium tracking-wide bg-white/10 px-3 py-1.5 rounded-full text-white/90">{pl.tags}</span>}
+                            </div>
+                            
+                            {/* Action Button */}
+                            <a href={pl.url} target="_blank" rel="noopener noreferrer" className="w-full py-4 bg-white text-black font-sans font-bold text-sm rounded-full text-center hover:bg-[#dfff00] transition-colors shadow-lg hover:scale-[1.02] active:scale-95">
+                               Listen Now
+                            </a>
+                         </div>
+                      </div>
+                   ))}
+                </div>
+              )}
             </div>
           </div>
         );
@@ -860,74 +1063,134 @@ export default function App() {
       }
 
       case 'blog':
-        const regularBlogs = blogs.filter(b => b.type !== 'album');
-        const albumBlogs = blogs.filter(b => b.type === 'album');
+        const filteredBlogs = (blogs || []).filter(b => (b.blogCategory || 'anime') === blogCategoryFilter);
 
         return (
-          <div className="min-h-full pb-16 max-w-7xl mx-auto flex flex-col lg:flex-row gap-8 relative items-start">
+          <div className="min-h-full pb-16 max-w-7xl mx-auto flex flex-col relative items-start">
             
-            {/* Left Column: Regular Blogs */}
-            <div className="flex-1 w-full min-w-0 border-t-[2px] border-[#111] pt-6">
-              <h1 className="text-5xl md:text-6xl font-serif text-[#111] mb-10 tracking-tight">Transmission Log</h1>
-              {regularBlogs.length === 0 ? (
-                <p className="text-lg font-mono text-gray-500">No logs found.</p>
-              ) : (
-                <div className="space-y-8">
-                  {regularBlogs.map((post) => (
-                    <div key={post.id} onClick={() => openModal(post, 'blog')} className="bg-white flex flex-col md:flex-row border-[2px] border-[#111] shadow-[6px_6px_0px_#111] hover:translate-y-1 hover:shadow-[2px_2px_0px_#111] transition-all cursor-pointer group">
-                      {post.coverImage && (
-                        <div className="w-full md:w-[35%] h-64 md:h-auto shrink-0 overflow-hidden border-b-[2px] md:border-b-0 md:border-r-[2px] border-[#111]">
-                          <img src={post.coverImage} className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-500" alt="cover"/>
-                        </div>
-                      )}
-                      <div className="p-6 md:p-8 flex-1 flex flex-col justify-center min-w-0">
-                        <div className="flex justify-between items-start mb-4">
-                          <p className="font-mono text-xs font-bold bg-[#e5e5e5] px-2 py-1 border border-[#111]">{post.date}</p>
-                          {post.rating && (
-                            <div className="flex text-[#ff5722] shrink-0 gap-0.5">
-                              {[...Array(Number(post.rating))].map((_, i) => <Star key={i} size={14} fill="currentColor" />)}
-                            </div>
-                          )}
-                        </div>
-                        <h2 className="font-serif text-3xl md:text-4xl mb-4 text-[#111] group-hover:text-[#0000ff] transition-colors leading-tight">{post.title}</h2>
-                        <div className="flex gap-2 mb-4">
-                           {post.category && <span className="text-[10px] font-bold uppercase tracking-widest text-[#111] bg-[#dfff00] px-2 py-1 border border-[#111]">{post.category}</span>}
-                        </div>
-                        <p className="font-sans text-gray-700 text-sm leading-relaxed whitespace-pre-wrap line-clamp-3">{post.excerpt}</p>
-                      </div>
-                    </div>
+            <div className="w-full flex flex-col md:flex-row justify-between items-end border-b-[2px] border-[#111] pb-4 mb-10 pt-6">
+               <h1 className="text-5xl md:text-6xl font-serif text-[#111] tracking-tight">Transmission Log</h1>
+               <div className="flex gap-2 mt-4 md:mt-0">
+                  {['anime', 'manhwa', 'shows'].map(cat => (
+                     <button key={cat} onClick={() => setBlogCategoryFilter(cat)} className={`font-mono text-[10px] md:text-xs font-bold uppercase px-4 py-2 border-[2px] border-[#111] transition-all ${blogCategoryFilter === cat ? 'bg-[#111] text-[#dfff00] shadow-[2px_2px_0px_#ff5722] translate-y-[-2px]' : 'bg-white text-[#111] hover:bg-[#f4f4f0]'}`}>
+                        {cat}
+                     </button>
                   ))}
-                </div>
-              )}
+               </div>
             </div>
 
-            {/* Right Column: Vinyl Shelf (VHS Display Style) */}
-            <div className="w-full lg:w-[340px] shrink-0 lg:mt-24 sticky top-8 z-10 self-start">
-              <div className="flex justify-between items-end border-b-[2px] border-[#111] pb-2 mb-6">
-                 <h2 className="text-2xl font-serif text-[#111]">Audio Logs</h2>
-                 <span className="font-mono text-[10px] text-gray-500 uppercase tracking-widest">Vinyl Collection</span>
-              </div>
-              
-              <div className="bg-[#111] p-6 rounded-sm shadow-[8px_8px_0px_rgba(17,17,17,0.2)] flex flex-col-reverse gap-1.5 min-h-[400px] border-[2px] border-[#111] relative overflow-hidden">
-                  {/* Subtle Grid overlay for the shelf */}
-                  <div className="absolute inset-0 opacity-10 pointer-events-none" style={{ backgroundImage: 'linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)', backgroundSize: '10px 10px' }}></div>
-                  
-                  {albumBlogs.length === 0 ? (
-                    <p className="text-gray-500 font-mono text-center text-xs py-10">Archive Empty</p>
-                  ) : albumBlogs.map(album => (
-                      <div key={album.id} onClick={() => openModal(album, 'blog')} className="h-12 bg-white border border-[#333] cursor-pointer hover:-translate-x-6 transition-transform flex items-center px-4 relative group">
-                         <div className="w-2 h-full bg-[#e5e5e5] absolute left-0 top-0 border-r border-[#ccc]"></div>
-                         
-                         <span className="font-mono text-xs font-bold uppercase tracking-widest text-[#111] truncate w-full pl-3 group-hover:text-[#ff5722] transition-colors">{album.title}</span>
-                         
-                         {/* Grooves Texture */}
-                         <div className="absolute right-0 top-0 h-full w-10 bg-[#111] opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-10 border-l border-black/20" 
-                              style={{ backgroundImage: 'repeating-linear-gradient(90deg, #111, #111 2px, #333 3px, #111 4px)' }}>
-                         </div>
-                      </div>
-                  ))}
-              </div>
-            </div>
+            {filteredBlogs.length === 0 ? (
+               <p className="text-lg font-mono text-gray-500 w-full text-center py-20">No logs found in this sector.</p>
+            ) : (
+               <>
+                  {blogCategoryFilter === 'anime' && (
+                     <div className="flex flex-col lg:flex-row gap-8 w-full">
+                        <div className="flex-1 w-full min-w-0">
+                           <div className="space-y-8">
+                             {filteredBlogs.filter(b => b.type !== 'album').map((post) => (
+                               <div key={post.id} onClick={() => openModal(post, 'blog')} className="bg-white flex flex-col md:flex-row border-[2px] border-[#111] shadow-[6px_6px_0px_#111] hover:translate-y-1 hover:shadow-[2px_2px_0px_#111] transition-all cursor-pointer group">
+                                 {post.coverImage && (
+                                   <div className="w-full md:w-[35%] h-64 md:h-auto shrink-0 overflow-hidden border-b-[2px] md:border-b-0 md:border-r-[2px] border-[#111]">
+                                     <img src={post.coverImage} className={`w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-500 ${post.imageEffect === 'duotone' || post.imageEffect === 'both' ? 'img-duotone' : ''}`} alt="cover"/>
+                                     {(post.imageEffect === 'ascii' || post.imageEffect === 'both') && <div className="effect-ascii-overlay"></div>}
+                                   </div>
+                                 )}
+                                 <div className="p-6 md:p-8 flex-1 flex flex-col justify-center min-w-0">
+                                   <div className="flex justify-between items-start mb-4">
+                                     <p className="font-mono text-xs font-bold bg-[#e5e5e5] px-2 py-1 border border-[#111]">{post.date}</p>
+                                     {post.rating && !isNaN(Number(post.rating)) && (
+                                       <div className="flex text-[#ff5722] shrink-0 gap-0.5">
+                                         {[...Array(Math.max(0, Number(post.rating)))].map((_, i) => <Star key={i} size={14} fill="currentColor" />)}
+                                       </div>
+                                     )}
+                                   </div>
+                                   <h2 className="font-serif text-3xl md:text-4xl mb-4 text-[#111] group-hover:text-[#0000ff] transition-colors leading-tight">{post.title}</h2>
+                                   <div className="flex gap-2 mb-4">
+                                      {post.category && <span className="text-[10px] font-bold uppercase tracking-widest text-[#111] bg-[#dfff00] px-2 py-1 border border-[#111]">{post.category}</span>}
+                                   </div>
+                                   <p className="font-sans text-gray-700 text-sm leading-relaxed whitespace-pre-wrap line-clamp-3">{post.excerpt}</p>
+                                 </div>
+                               </div>
+                             ))}
+                           </div>
+                        </div>
+
+                        <div className="w-full lg:w-[340px] shrink-0 lg:mt-8 sticky top-8 z-10 self-start">
+                          <div className="flex justify-between items-end border-b-[2px] border-[#111] pb-2 mb-6">
+                             <h2 className="text-2xl font-serif text-[#111]">Audio Logs</h2>
+                             <span className="font-mono text-[10px] text-gray-500 uppercase tracking-widest">Vinyl Collection</span>
+                          </div>
+                          <div className="bg-[#111] p-6 rounded-sm shadow-[8px_8px_0px_rgba(17,17,17,0.2)] flex flex-col-reverse gap-1.5 min-h-[400px] border-[2px] border-[#111] relative overflow-hidden">
+                              <div className="absolute inset-0 opacity-10 pointer-events-none" style={{ backgroundImage: 'linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)', backgroundSize: '10px 10px' }}></div>
+                              {filteredBlogs.filter(b => b.type === 'album').map(album => (
+                                  <div key={album.id} onClick={() => openModal(album, 'blog')} className="h-12 bg-white border border-[#333] cursor-pointer hover:-translate-x-6 transition-transform flex items-center px-4 relative group">
+                                     <div className="w-2 h-full bg-[#e5e5e5] absolute left-0 top-0 border-r border-[#ccc]"></div>
+                                     <span className="font-mono text-xs font-bold uppercase tracking-widest text-[#111] truncate w-full pl-3 group-hover:text-[#ff5722] transition-colors">{album.title}</span>
+                                     <div className="absolute right-0 top-0 h-full w-10 bg-[#111] opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-10 border-l border-black/20" 
+                                          style={{ backgroundImage: 'repeating-linear-gradient(90deg, #111, #111 2px, #333 3px, #111 4px)' }}>
+                                     </div>
+                                  </div>
+                              ))}
+                          </div>
+                        </div>
+                     </div>
+                  )}
+
+                  {blogCategoryFilter === 'manhwa' && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 w-full">
+                       {filteredBlogs.map(post => (
+                          <div key={post.id} onClick={() => openModal(post, 'blog')} className="relative w-full min-h-[480px] bg-[#111] rounded-[24px] overflow-hidden shadow-[8px_8px_0px_#111] border-[2px] border-[#111] cursor-pointer group flex flex-col justify-end p-8 hover:-translate-y-2 transition-transform">
+                             <div className="absolute inset-0 z-0 bg-[#111]">
+                                <img src={post.coverImage} className={`w-full h-[60%] object-cover transition-transform duration-700 group-hover:scale-105 ${post.imageEffect === 'duotone' || post.imageEffect === 'both' ? 'img-duotone opacity-80' : ''}`} alt={post.title} />
+                                {(post.imageEffect === 'ascii' || post.imageEffect === 'both') && <div className="effect-ascii-overlay mix-blend-color-dodge opacity-60"></div>}
+                                <div className="absolute inset-0 bg-gradient-to-b from-transparent via-[#111]/90 to-[#111] h-full w-full"></div>
+                             </div>
+                             
+                             <div className="absolute top-8 left-8 z-10 font-serif text-white/80 text-sm tracking-wide">{post.date}</div>
+                             
+                             <div className="relative z-10 flex flex-col gap-4">
+                                <h2 className="text-4xl font-serif text-white leading-tight">{post.title}</h2>
+                                <p className="font-sans text-white/70 text-sm line-clamp-3">{post.excerpt}</p>
+                                <div className="flex mt-2">
+                                   <span className="border-[2px] border-white/20 rounded-full px-5 py-2 text-white/90 text-xs font-bold hover:bg-white hover:text-[#111] transition-colors shadow-sm">Read entry</span>
+                                </div>
+                             </div>
+                             
+                             <div className="relative w-full flex justify-between items-center text-white/50 text-[10px] font-sans z-10 border-t border-white/10 pt-4 mt-8">
+                                <span className="font-bold tracking-wider">iceyyy.design</span>
+                                <span className="tracking-widest uppercase truncate max-w-[60%] text-right">{(post.tags?.toString() || '').split(',').join(' ✦ ')}</span>
+                             </div>
+                          </div>
+                       ))}
+                    </div>
+                  )}
+
+                  {blogCategoryFilter === 'shows' && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-8 w-full">
+                       {filteredBlogs.map(post => (
+                          <div key={post.id} onClick={() => openModal(post, 'blog')} className="bg-[#111] p-6 md:p-8 border-[2px] border-[#333] cursor-pointer group hover:-translate-y-2 transition-transform flex flex-col">
+                             <div className="relative w-full aspect-[4/3] bg-[#ff5722] mb-8 overflow-hidden border-[2px] border-[#333]">
+                                 <img src={post.coverImage} className={`w-full h-full object-cover transition-transform duration-700 group-hover:scale-105 ${post.imageEffect === 'duotone' || post.imageEffect === 'both' ? 'mix-blend-multiply grayscale contrast-[1.2]' : ''}`} alt={post.title} />
+                                 {(post.imageEffect === 'ascii' || post.imageEffect === 'both') && <div className="effect-ascii-overlay mix-blend-color-dodge opacity-80"></div>}
+                             </div>
+                             
+                             <h2 className="font-mono text-white text-base md:text-lg uppercase tracking-widest mb-4 font-bold leading-tight">{post.title}</h2>
+                             <p className="font-mono text-gray-400 text-xs md:text-sm uppercase mb-8 leading-relaxed flex-1 line-clamp-4">{post.excerpt}</p>
+                             
+                             <ul className="space-y-4 mt-auto border-t-[1px] border-[#444] pt-6">
+                               {(post.tags?.toString() || '').split(',').map((tag, i) => (
+                                 <li key={i} className="font-mono text-[10px] md:text-xs text-white flex gap-3 items-center">
+                                    <span className="text-[#ff5722] font-bold">&gt;</span> 
+                                    <span className="bg-white text-[#111] px-2 py-1 leading-none font-bold uppercase tracking-wider">{tag.trim()}</span>
+                                 </li>
+                               ))}
+                             </ul>
+                          </div>
+                       ))}
+                    </div>
+                  )}
+               </>
+            )}
           </div>
         );
 
@@ -1079,12 +1342,32 @@ export default function App() {
 
                 {adminTab === 'blogs' && (
                   <>
-                    <div className="bg-[#f4f4f0] p-4 border-[2px] border-[#111] mb-6 flex items-center gap-4">
+                    <div className="bg-[#f4f4f0] p-4 border-[2px] border-[#111] mb-6 flex flex-col gap-4 md:flex-row items-start md:items-center">
                        <label className="font-bold uppercase tracking-widest text-[#111]">Log Format:</label>
                        <select value={editingItem.type || 'regular'} onChange={e => setEditingItem({...editingItem, type: e.target.value})} className="p-2 border-[2px] border-[#111] bg-white font-bold outline-none text-[#ff5722]">
                            <option value="regular">Standard Log</option>
                            <option value="album">Vinyl Showcase</option>
                        </select>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                       <div>
+                          <label className="block font-bold uppercase mb-2">Category (Sub-page)</label>
+                          <select value={editingItem.blogCategory || 'anime'} onChange={e => setEditingItem({...editingItem, blogCategory: e.target.value})} className="w-full p-3 border-[2px] border-[#111] outline-none">
+                             <option value="anime">Anime</option>
+                             <option value="manhwa">Manhwa</option>
+                             <option value="shows">Shows</option>
+                          </select>
+                       </div>
+                       <div>
+                          <label className="block font-bold uppercase mb-2">Cover Image Effect</label>
+                          <select value={editingItem.imageEffect || 'none'} onChange={e => setEditingItem({...editingItem, imageEffect: e.target.value})} className="w-full p-3 border-[2px] border-[#111] outline-none">
+                             <option value="none">None</option>
+                             <option value="duotone">Duotone (Orange/Black)</option>
+                             <option value="ascii">ASCII Matrix Overlay</option>
+                             <option value="both">Both (Duotone + ASCII)</option>
+                          </select>
+                       </div>
                     </div>
 
                     {editingItem.type === 'album' && (
@@ -1122,11 +1405,11 @@ export default function App() {
                     
                     <div className="flex gap-4 mb-6">
                        <div className="flex-1">
-                          <label className="block font-bold uppercase mb-2">Category</label>
+                          <label className="block font-bold uppercase mb-2">Category (Tag)</label>
                           <input value={editingItem.category || ''} onChange={e => setEditingItem({...editingItem, category: e.target.value})} className="w-full p-3 border-[2px] border-[#111] outline-none focus:bg-[#dfff00]" />
                        </div>
                        <div className="flex-1">
-                          <label className="block font-bold uppercase mb-2">Tags</label>
+                          <label className="block font-bold uppercase mb-2">Tags (Comma separated)</label>
                           <input value={editingItem.tags || ''} onChange={e => setEditingItem({...editingItem, tags: e.target.value})} className="w-full p-3 border-[2px] border-[#111] outline-none focus:bg-[#dfff00]" placeholder="tag1, tag2" />
                        </div>
                     </div>
@@ -1198,21 +1481,36 @@ export default function App() {
                     </div>
                   </>
                 )}
-                
-                {adminTab === 'socials' && (
+
+                {adminTab === 'playlists' && (
                   <>
                     <div className="grid grid-cols-2 gap-4 mb-4">
                       <div>
-                        <label className="block font-bold uppercase mb-2">Platform Name</label>
-                        <input required value={editingItem.name || ''} onChange={e => setEditingItem({...editingItem, name: e.target.value})} className="w-full p-3 border-[2px] border-[#111] outline-none" />
+                        <label className="block font-bold uppercase mb-2">Title</label>
+                        <input required value={editingItem.title || ''} onChange={e => setEditingItem({...editingItem, title: e.target.value})} className="w-full p-3 border-[2px] border-[#111] outline-none" />
                       </div>
                       <div>
-                        <label className="block font-bold uppercase mb-2">Profile URL</label>
+                        <label className="block font-bold uppercase mb-2">Price / Sub-label</label>
+                        <input required value={editingItem.price || ''} onChange={e => setEditingItem({...editingItem, price: e.target.value})} className="w-full p-3 border-[2px] border-[#111] outline-none" />
+                      </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-4 mb-4">
+                      <div>
+                        <label className="block font-bold uppercase mb-2">URL Link</label>
                         <input required value={editingItem.url || ''} onChange={e => setEditingItem({...editingItem, url: e.target.value})} className="w-full p-3 border-[2px] border-[#111] outline-none" />
                       </div>
+                      <div>
+                        <label className="block font-bold uppercase mb-2">Card Color (Hex)</label>
+                        <div className="flex gap-2">
+                           <input type="color" value={editingItem.color || '#333333'} onChange={e => setEditingItem({...editingItem, color: e.target.value})} className="w-16 h-12 p-1 border-[2px] border-[#111] cursor-pointer" />
+                           <input value={editingItem.color || ''} onChange={e => setEditingItem({...editingItem, color: e.target.value})} className="flex-1 p-3 border-[2px] border-[#111] uppercase outline-none" />
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <label className="block font-bold uppercase mb-2">Icon/Image</label>
+
+                    <div className="mb-4">
+                      <label className="block font-bold uppercase mb-2">Cover Image</label>
                       <div className="flex gap-2">
                         <input value={editingItem.image || ''} onChange={e => setEditingItem({...editingItem, image: e.target.value})} className="flex-1 p-3 border-[2px] border-[#111] outline-none" />
                         <label className="cursor-pointer bg-[#111] text-white px-6 font-bold flex items-center gap-2 hover:bg-[#0000ff] border-[2px] border-[#111]">
@@ -1220,57 +1518,21 @@ export default function App() {
                         </label>
                       </div>
                     </div>
-                  </>
-                )}
-                
-                {adminTab === 'journals' && (
-                  <>
-                    <div className="grid grid-cols-3 gap-4 mb-4">
-                      <div>
-                        <label className="block font-bold uppercase mb-2">Month/Day</label>
-                        <input required value={editingItem.date || ''} onChange={e => setEditingItem({...editingItem, date: e.target.value})} placeholder="Jul 18" className="w-full p-3 border-[2px] border-[#111] outline-none" />
-                      </div>
-                      <div>
-                        <label className="block font-bold uppercase mb-2">Year</label>
-                        <input required value={editingItem.year || ''} onChange={e => setEditingItem({...editingItem, year: e.target.value})} placeholder="2026" className="w-full p-3 border-[2px] border-[#111] outline-none" />
-                      </div>
-                      <div>
-                        <label className="block font-bold uppercase mb-2">Short Date</label>
-                        <input required value={editingItem.shortDate || ''} onChange={e => setEditingItem({...editingItem, shortDate: e.target.value})} placeholder="SAT . 18" className="w-full p-3 border-[2px] border-[#111] outline-none" />
-                      </div>
-                    </div>
+
                     <div className="grid grid-cols-2 gap-4 mb-4">
                       <div>
-                        <label className="block font-bold uppercase mb-2">Time Span (Ticket)</label>
-                        <input value={editingItem.timeSpan || ''} onChange={e => setEditingItem({...editingItem, timeSpan: e.target.value})} placeholder="7 18 - 8 18" className="w-full p-3 border-[2px] border-[#111] outline-none" />
+                        <label className="block font-bold uppercase mb-2">Genre Tag</label>
+                        <input value={editingItem.genre || ''} onChange={e => setEditingItem({...editingItem, genre: e.target.value})} className="w-full p-3 border-[2px] border-[#111] outline-none" />
                       </div>
                       <div>
-                        <label className="block font-bold uppercase mb-2">Class (Ticket)</label>
-                        <input value={editingItem.ticketClass || ''} onChange={e => setEditingItem({...editingItem, ticketClass: e.target.value})} placeholder="OMNI" className="w-full p-3 border-[2px] border-[#111] outline-none" />
+                        <label className="block font-bold uppercase mb-2">Secondary Tag</label>
+                        <input value={editingItem.tags || ''} onChange={e => setEditingItem({...editingItem, tags: e.target.value})} className="w-full p-3 border-[2px] border-[#111] outline-none" />
                       </div>
                     </div>
+
                     <div className="mb-4">
-                      <label className="block font-bold uppercase mb-2">Boarding Pass Background Image</label>
-                      <div className="flex gap-2">
-                        <input value={editingItem.image || ''} onChange={e => setEditingItem({...editingItem, image: e.target.value})} className="flex-1 p-3 border-[2px] border-[#111] outline-none" />
-                        <label className="cursor-pointer bg-[#111] text-white px-6 font-bold flex items-center gap-2 hover:bg-[#0000ff] border-[2px] border-[#111]">
-                          <Upload size={16}/> UPLOAD <input type="file" className="hidden" accept="image/*" onChange={(e) => handleImageUpload(e, (base64) => setEditingItem({...editingItem, image: base64}))} />
-                        </label>
-                      </div>
-                    </div>
-                    <div className="mb-4">
-                      <label className="block font-bold uppercase mb-2">Entry Logs (One per line)</label>
-                      <textarea value={(editingItem.logs || []).join('\n')} onChange={e => setEditingItem({...editingItem, logs: e.target.value.split('\n')})} className="w-full p-4 border-[2px] border-[#111] outline-none h-32" />
-                    </div>
-                    <div className="grid grid-cols-4 gap-4 mb-4">
-                      <div className="col-span-1">
-                        <label className="block font-bold uppercase mb-2">Hist. Year</label>
-                        <input value={editingItem.historyYear || ''} onChange={e => setEditingItem({...editingItem, historyYear: e.target.value})} placeholder="1493" className="w-full p-3 border-[2px] border-[#111] outline-none" />
-                      </div>
-                      <div className="col-span-3">
-                        <label className="block font-bold uppercase mb-2">History Event</label>
-                        <input value={editingItem.historyText || ''} onChange={e => setEditingItem({...editingItem, historyText: e.target.value})} className="w-full p-3 border-[2px] border-[#111] outline-none" />
-                      </div>
+                      <label className="block font-bold uppercase mb-2">Description</label>
+                      <textarea value={editingItem.description || ''} onChange={e => setEditingItem({...editingItem, description: e.target.value})} className="w-full p-4 border-[2px] border-[#111] h-24 outline-none" />
                     </div>
                   </>
                 )}
@@ -1291,12 +1553,30 @@ export default function App() {
             </div>
             
             <div className="flex flex-wrap gap-2 mb-10 border-b-[2px] border-[#111] pb-2">
-              {['about', 'projects', 'galleria', 'system', 'blogs', 'journals', 'socials', 'messages', 'settings'].map(tab => (
+              {['about', 'projects', 'galleria', 'system', 'blogs', 'journals', 'socials', 'messages', 'settings', 'playlists', 'access_logs'].map(tab => (
                 <button key={tab} onClick={() => setAdminTab(tab)} className={`font-mono font-bold uppercase px-6 py-3 border-[2px] border-[#111] transition-all ${adminTab === tab ? 'bg-[#111] text-white translate-y-[-2px] shadow-[4px_4px_0px_#ff5722]' : 'bg-white text-[#111] hover:bg-[#f4f4f0]'}`}>
-                  {tab}
+                  {tab.replace('_', ' ')}
                 </button>
               ))}
             </div>
+
+            {/* ACCESS LOGS (NEW) */}
+            {adminTab === 'access_logs' && (
+              <div className="bg-white p-8 border-[2px] border-[#111] shadow-[8px_8px_0px_#111]">
+                 <h2 className="text-3xl font-serif mb-6 border-b-[2px] border-[#111] pb-4">Journal Access Logs</h2>
+                 <div className="space-y-4">
+                    {accessLogs.length === 0 ? <p className="text-sm font-mono text-gray-500 uppercase">No visitors logged.</p> : accessLogs.map((log, i) => (
+                       <div key={log.id || i} className="bg-[#f4f4f0] p-4 border-[2px] border-[#111] shadow-[4px_4px_0px_rgba(17,17,17,0.2)] flex justify-between items-center">
+                          <div>
+                            <p className="text-[10px] text-gray-500 font-bold tracking-widest font-mono uppercase mb-1">{new Date(log.created_at).toLocaleString()}</p>
+                            <p className="font-mono text-sm font-bold uppercase text-[#111]">{log.visitor_name}</p>
+                          </div>
+                          <span className="font-mono text-[10px] bg-[#111] text-[#dfff00] px-3 py-1 font-bold tracking-widest uppercase border-[2px] border-[#111]">NODE: {log.journal_id}</span>
+                       </div>
+                    ))}
+                 </div>
+              </div>
+            )}
 
             {/* SETTINGS (WIP) */}
             {adminTab === 'settings' && (
@@ -1350,6 +1630,28 @@ export default function App() {
                     <label className="cursor-pointer bg-[#111] text-white px-6 flex items-center font-bold font-mono hover:bg-[#ff5722] transition-colors"><Upload size={16} className="mr-2"/> UPLOAD <input type="file" className="hidden" accept="image/*" onChange={e => handleImageUpload(e, b => setAboutData({...aboutData, appBackground: b}))} /></label>
                   </div>
                   <textarea value={aboutData.notepadText} onChange={e => setAboutData({...aboutData, notepadText: e.target.value})} maxLength={120} className="w-full p-4 border-[2px] border-[#111] h-24 font-mono text-sm outline-none focus:bg-[#dfff00]" placeholder="System Memo Text (Max 120 chars)" />
+                </div>
+
+                <div className="bg-white p-8 border-[2px] border-[#111] shadow-[8px_8px_0px_#111]">
+                  <h3 className="font-serif text-3xl mb-6 border-b-[2px] border-[#111] pb-2">Mood / System Checker</h3>
+                  <div className="grid md:grid-cols-2 gap-6">
+                    <div>
+                       <label className="block font-bold uppercase mb-2">Score (Number)</label>
+                       <input value={aboutData.mood?.score || ''} onChange={e => setAboutData({...aboutData, mood: {...(aboutData.mood || {}), score: e.target.value}})} className="w-full p-3 border-[2px] border-[#111] font-mono outline-none focus:bg-[#dfff00]" placeholder="85" />
+                    </div>
+                    <div>
+                       <label className="block font-bold uppercase mb-2">Status (e.g. OPTIMAL)</label>
+                       <input value={aboutData.mood?.status || ''} onChange={e => setAboutData({...aboutData, mood: {...(aboutData.mood || {}), status: e.target.value}})} className="w-full p-3 border-[2px] border-[#111] font-mono outline-none focus:bg-[#dfff00]" placeholder="OPTIMAL" />
+                    </div>
+                    <div>
+                       <label className="block font-bold uppercase mb-2">Title (Allows Newlines)</label>
+                       <textarea value={aboutData.mood?.title || ''} onChange={e => setAboutData({...aboutData, mood: {...(aboutData.mood || {}), title: e.target.value}})} className="w-full p-3 border-[2px] border-[#111] font-mono outline-none focus:bg-[#dfff00] h-24 whitespace-pre-wrap" placeholder="System&#10;Stability" />
+                    </div>
+                    <div>
+                       <label className="block font-bold uppercase mb-2">Description</label>
+                       <textarea value={aboutData.mood?.desc || ''} onChange={e => setAboutData({...aboutData, mood: {...(aboutData.mood || {}), desc: e.target.value}})} className="w-full p-3 border-[2px] border-[#111] font-mono outline-none focus:bg-[#dfff00] h-24 whitespace-pre-wrap" placeholder="Performance score..." />
+                    </div>
+                  </div>
                 </div>
 
                 <div className="bg-white p-8 border-[2px] border-[#111] shadow-[8px_8px_0px_#111]">
@@ -1454,14 +1756,14 @@ export default function App() {
               </div>
             )}
 
-            {(adminTab === 'projects' || adminTab === 'blogs' || adminTab === 'socials' || adminTab === 'journals') && (
+            {(adminTab === 'projects' || adminTab === 'blogs' || adminTab === 'socials' || adminTab === 'journals' || adminTab === 'playlists') && (
               <div className="bg-white p-8 border-[2px] border-[#111] shadow-[8px_8px_0px_#111]">
                 <div className="flex justify-between items-end border-b-[2px] border-[#111] pb-4 mb-6">
                   <h2 className="text-3xl font-serif capitalize">Manage {adminTab}</h2>
                   <button onClick={() => setEditingItem(adminTab === 'blogs' ? {blocks: [], type: 'regular'} : adminTab === 'journals' ? {logs: []} : {})} className="bg-[#111] text-[#dfff00] px-6 py-2 border-[2px] border-[#111] font-mono font-bold uppercase tracking-widest flex items-center gap-2 hover:bg-[#0000ff] hover:text-white transition-colors"><Plus size={18} /> INITIALIZE NEW</button>
                 </div>
                 <div className="space-y-3 font-mono">
-                  {(adminTab === 'projects' ? projects : adminTab === 'blogs' ? blogs : adminTab === 'journals' ? journalEntries : socials).map(item => (
+                  {(adminTab === 'projects' ? projects : adminTab === 'blogs' ? blogs : adminTab === 'journals' ? journalEntries : adminTab === 'playlists' ? playlists : socials).map(item => (
                     <div key={item.id} className="flex justify-between items-center bg-[#f4f4f0] p-4 border-[2px] border-[#111] hover:bg-white transition-colors">
                       <span className="font-bold text-sm">{item.title || item.name || item.date || 'UNTITLED_RECORD'}</span>
                       <div className="flex gap-3">
@@ -1575,6 +1877,19 @@ export default function App() {
 
         @keyframes slideOutVinyl { 0% { transform: translateX(0); } 100% { transform: translateX(45%); } }
         .animate-slide-vinyl { animation: slideOutVinyl 1.2s cubic-bezier(0.2, 0.8, 0.2, 1) forwards; }
+        
+        /* === NEW IMAGE EFFECTS === */
+        .img-duotone {
+           mix-blend-mode: multiply;
+           filter: grayscale(100%) contrast(150%);
+        }
+        .effect-ascii-overlay {
+           position: absolute;
+           inset: 0;
+           background-image: radial-gradient(circle, #ff5722 1px, transparent 1px);
+           background-size: 4px 4px;
+           pointer-events: none;
+        }
       `}} />
 
       <div className="min-h-screen bg-[#e8e8e3] p-4 md:p-8 flex items-center justify-center relative transition-all duration-1000">
@@ -1586,9 +1901,72 @@ export default function App() {
           </div>
         )}
 
+       {/* === NEW: TICKET GATE OVERLAY === */}
+       {pendingJournal && (
+          <div className="fixed inset-0 z-[70] bg-[#111]/80 backdrop-blur-md flex items-center justify-center p-4">
+             <div className="w-[300px] h-[580px] bg-[#ff5722] rounded-[20px] p-4 flex flex-col relative shadow-[16px_16px_0px_rgba(0,0,0,0.5)] border-[2px] border-[#111]">
+                
+                <button onClick={() => {setPendingJournal(null); setIsTicketValidating(false); setVisitorName('');}} className="absolute top-2 right-2 text-white hover:text-[#111] z-50 p-2"><X size={20}/></button>
+
+                {/* Top Image Box */}
+                <div className="w-full h-[220px] rounded-[16px] overflow-hidden relative border-[2px] border-[#111] bg-white">
+                   <img src={pendingJournal.image} className="w-full h-full object-cover grayscale mix-blend-multiply opacity-80" alt="Ticket Art" />
+                   
+                   {/* Decorative holes */}
+                   <div className="absolute top-8 -right-4 w-8 h-8 bg-[#f4f4f0] border-[2px] border-[#111] rounded-full"></div>
+                   <div className="absolute -bottom-4 left-1/2 -translate-x-1/2 w-8 h-8 bg-[#f4f4f0] border-[2px] border-[#111] rounded-full"></div>
+                </div>
+
+                {/* Middle Date/Title */}
+                <div className="mt-8 px-2 flex justify-between items-start font-mono font-bold text-sm text-[#111] border-b-[2px] border-[#111] pb-2 relative">
+                   <span>{new Date().getDate().toString().padStart(2, '0')}</span>
+                   <div className="flex flex-col items-end">
+                      <span>{(new Date().getMonth()+1).toString().padStart(2, '0')}</span>
+                      <span className="text-[8px] opacity-70 mt-1">{new Date().getFullYear()}</span>
+                   </div>
+                </div>
+                <h2 className="text-6xl font-serif text-[#111] text-center mt-2 tracking-tight">archive</h2>
+
+                {/* Perforation */}
+                <div className="w-full border-t-[3px] border-dashed border-[#111] my-8 relative">
+                   <div className="absolute -left-6 top-1/2 -translate-y-1/2 w-4 h-6 bg-[#111]/80 rounded-r-full"></div>
+                   <div className="absolute -right-6 top-1/2 -translate-y-1/2 w-4 h-6 bg-[#111]/80 rounded-l-full"></div>
+                </div>
+
+                {/* Bottom Form */}
+                <div className="flex-1 flex flex-col px-2">
+                   <div className="flex justify-between items-center mb-6">
+                      <div className="flex items-center gap-2 font-mono font-bold text-[10px] uppercase text-[#111] tracking-widest"><div className="w-2.5 h-2.5 rounded-full bg-[#111]"></div> TICKET</div>
+                      {/* Fake Barcode */}
+                      <div className="w-16 h-6 bg-[#111]" style={{backgroundImage: 'repeating-linear-gradient(90deg, #ff5722, #ff5722 1px, transparent 1px, transparent 3px)'}}></div>
+                   </div>
+                   
+                   <form onSubmit={submitJournalAccess} className="mt-auto">
+                      <input 
+                         required
+                         autoFocus
+                         disabled={isTicketValidating}
+                         value={visitorName} 
+                         onChange={e=>setVisitorName(e.target.value)} 
+                         placeholder="ENTER IDENTIFICATION" 
+                         className="w-full bg-transparent border-b-[2px] border-[#111] placeholder:text-[#111]/60 text-[#111] font-mono text-sm font-bold outline-none py-2 mb-6 focus:bg-white/20 transition-colors disabled:opacity-50" 
+                      />
+                      <div className="flex justify-between items-end">
+                        <p className="text-[6.5px] font-mono text-[#111] leading-tight w-[55%]">This ticket grants temporary access to the specified memory node. Unauthorized extraction is strictly prohibited.</p>
+                        <button disabled={isTicketValidating} type="submit" className="bg-[#111] text-[#ff5722] font-mono font-bold text-[10px] tracking-widest px-4 py-2.5 hover:bg-white hover:text-[#111] transition-colors shadow-[2px_2px_0px_#111] disabled:opacity-50 border-[2px] border-[#111]">
+                           {isTicketValidating ? 'VERIFYING...' : 'VALIDATE'}
+                        </button>
+                      </div>
+                   </form>
+                </div>
+             </div>
+          </div>
+       )}
+
        <div className="w-full max-w-7xl relative z-10 flex flex-col h-[95vh] mt-4 md:mt-0 pt-8">
           
           {/* === SCALE STUDIO FOLDER HEADER === */}
+          {/* Increased height to 104px to ensure text never clips */}
           <div className="grid grid-cols-[auto_60px_1fr] w-full h-[104px] items-end relative z-20 -mb-[4px] pointer-events-none">
             
             {/* 1. THE LEFT TAB (Logo) */}
@@ -1642,23 +2020,21 @@ export default function App() {
                 </div>
               )}
 
-             {/* === NEW: JOURNALING TAB OVERLAY === */}
+              {/* === NEW: JOURNALING TAB OVERLAY === */}
               {activeJournal && (
                 <div className="absolute inset-0 z-[60] bg-[#f0ebd8] flex flex-col overflow-y-auto font-sans animate-[fadeIn_0.3s_ease-out] hide-scrollbar">
                    
                    {(() => {
                       const len = journalEntries.length;
-                      let displayCount = len;
                       
-                      // PAD THE WHEEL: Ensure we always have enough items to draw 7 distinct lines
-                      // This clones your entries in a perfect cycle so the wheel can spin infinitely!
-                      if (len > 0) {
-                         while (displayCount < 7) displayCount += len;
-                      } else {
-                         displayCount = 7;
-                      }
+                      // PAD THE WHEEL: Ensure we always have enough items to draw a continuous loop
+                      const displayCount = len < 7 ? len * Math.ceil(7 / len) : len;
                       
-                      // Map the infinite index back to your actual database entry
+                      const virtualEntries = Array.from({ length: displayCount }, (_, i) => ({
+                         ...journalEntries[i % len],
+                         virtualIndex: i
+                      }));
+                      
                       const activeEntry = len > 0 ? journalEntries[journalIndex % len] : null;
                       const { h, m, s, ampm } = formatTime(currentTime);
                       
@@ -1724,7 +2100,7 @@ export default function App() {
                                  </div>
 
                                  {/* Center: Radial CSS Scrollable Wheel */}
-                                 <div className="hidden lg:block relative w-64 shrink-0 h-[400px] mt-12" 
+                                 <div className="hidden lg:block relative w-64 shrink-0 h-[400px] mt-24" 
                                       onWheel={(e) => {
                                          if (len === 0) return;
                                          if (e.deltaY > 0) setJournalIndex((prev) => (prev + 1) % displayCount);
@@ -1733,8 +2109,7 @@ export default function App() {
                                       <div className="absolute top-1/2 right-12 w-[220px] h-[1px] -translate-y-1/2 transition-transform duration-300">
                                          
                                          {/* Infinite Spoke Generator */}
-                                         {Array.from({ length: displayCount }, (_, i) => {
-                                            const entry = journalEntries[i % len];
+                                         {virtualEntries.map((entry, i) => {
                                             let offset = i - journalIndex;
                                             
                                             // Circular boundary calculation for infinite scrolling
@@ -1747,7 +2122,7 @@ export default function App() {
                                             
                                             return (
                                               <div key={`wheel-${i}`} className="absolute top-0 right-0 w-full h-[1px] origin-right transition-all duration-500 ease-out" 
-                                                   style={{transform: `rotate(${angle}deg)`, opacity: isVisible ? 1 : 0, zIndex: offset === 0 ? 10 : 1, visibility: isVisible ? 'visible' : 'hidden'}}>
+                                                   style={{transform: `rotate(${angle}deg)`, opacity: isVisible ? 1 : 0, zIndex: offset === 0 ? 10 : 1, pointerEvents: isVisible ? 'auto' : 'none'}}>
                                                  <div className={`w-full h-full relative transition-colors duration-500 ${offset === 0 ? 'bg-[#111]' : 'bg-[#111]/20'}`}>
                                                      <div className={`absolute left-0 top-1/2 -translate-y-1/2 -translate-x-full pr-4 font-mono cursor-pointer transition-all duration-300 flex items-center justify-end ${offset === 0 ? 'text-[#111] scale-110' : 'text-[#111]/40 hover:text-[#111]'}`} 
                                                            style={{transform: `rotate(${-angle}deg)`}} 
@@ -1823,7 +2198,7 @@ export default function App() {
 
               {/* FOOTER BAR */}
               <div className="absolute bottom-0 left-0 w-full p-4 md:p-6 flex justify-between items-end text-[#111] pointer-events-none bg-gradient-to-t from-white via-white/90 to-transparent pt-16 border-t border-[#111]/10">
-                <span className="font-mono font-bold tracking-widest text-[10px] uppercase bg-white/80 px-2 py-1 border-[2px] border-[#111] shadow-[2px_2px_0px_#111] backdrop-blur-sm">SYS_ARCHIVE // 2026</span>
+                <span className="font-mono font-bold tracking-widest text-[10px] uppercase bg-white/80 px-2 py-1 border-[2px] border-[#111] shadow-[2px_2px_0px_#111] backdrop-blur-sm pointer-events-auto">SYS_ARCHIVE // 2026</span>
                 <button onClick={() => setShowLogin(true)} className="pointer-events-auto font-mono text-[#111]/30 hover:text-[#ff5722] transition-colors flex items-center justify-center p-2 bg-white/80 backdrop-blur-sm rounded-full border-[2px] border-transparent hover:border-[#111]" title="Auth Override"><Lock size={14}/></button>
               </div>
             </div>
@@ -1858,7 +2233,7 @@ export default function App() {
                           <h2 className="text-3xl md:text-5xl font-serif text-[#111] mb-4 leading-none uppercase">{selectedItem.title}</h2>
                           
                           <div className="flex text-[#0000ff] mb-6 drop-shadow-sm border-b-[2px] border-[#111] pb-4 shrink-0">
-                              {[...Array(Number(selectedItem.rating || 5))].map((_, i) => <Star key={i} size={18} fill="currentColor" />)}
+                              {[...Array(Math.max(0, Number(selectedItem.rating) || 5))].map((_, i) => <Star key={i} size={18} fill="currentColor" />)}
                           </div>
                           
                           <div className="flex-1 overflow-y-auto font-sans text-sm md:text-base text-gray-800 whitespace-pre-wrap hide-scrollbar pr-4 space-y-6">
