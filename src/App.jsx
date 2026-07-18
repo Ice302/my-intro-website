@@ -536,7 +536,10 @@ export default function App() {
 
   const handleListSave = (e, listType) => {
     e.preventDefault();
-    if (listType === 'projects') {
+    if (editingItem.isPlaylist) {
+      const newList = editingItem.id ? playlists.map(pl => pl.id === editingItem.id ? editingItem : pl) : [...playlists, { ...editingItem, id: Date.now() }];
+      setPlaylists(newList);
+    } else if (listType === 'projects') {
       const newList = editingItem.id ? projects.map(p => p.id === editingItem.id ? editingItem : p) : [...projects, { ...editingItem, id: Date.now() }];
       setProjects(newList);
     } else if (listType === 'blogs') {
@@ -548,9 +551,6 @@ export default function App() {
     } else if (listType === 'journals') {
       const newList = editingItem.id ? journalEntries.map(j => j.id === editingItem.id ? editingItem : j) : [...journalEntries, { ...editingItem, id: Date.now() }];
       setJournalEntries(newList);
-    } else if (listType === 'playlists') {
-      const newList = editingItem.id ? playlists.map(pl => pl.id === editingItem.id ? editingItem : pl) : [...playlists, { ...editingItem, id: Date.now() }];
-      setPlaylists(newList);
     }
     setEditingItem(null);
   };
@@ -1139,7 +1139,7 @@ export default function App() {
                   {blogCategoryFilter === 'manhwa' && (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 w-full">
                        {filteredBlogs.map(post => (
-                          <div key={post.id} onClick={() => openModal(post, 'blog')} className="relative w-full min-h-[480px] bg-[#111] rounded-[24px] overflow-hidden shadow-[8px_8px_0px_#111] border-[2px] border-[#111] cursor-pointer group flex flex-col justify-end p-8 hover:-translate-y-2 transition-transform">
+                          <div key={post.id} onClick={() => openModal(post, 'blog')} className="relative w-full min-h-[480px] bg-[#111] rounded-[24px] overflow-hidden shadow-[8px_8px_0px_#111] border-[2px] border-[#111] cursor-pointer group flex flex-col justify-end p-8 hover:-translate-y-2 transition-transform pb-6">
                              <div className="absolute inset-0 z-0 bg-[#111]">
                                 <img src={post.coverImage} className={`w-full h-[60%] object-cover transition-transform duration-700 group-hover:scale-105 ${post.imageEffect === 'duotone' || post.imageEffect === 'both' ? 'img-duotone opacity-80' : ''}`} alt={post.title} />
                                 {(post.imageEffect === 'ascii' || post.imageEffect === 'both') && <div className="effect-ascii-overlay mix-blend-color-dodge opacity-60"></div>}
@@ -1152,13 +1152,13 @@ export default function App() {
                                 <h2 className="text-4xl font-serif text-white leading-tight">{post.title}</h2>
                                 <p className="font-sans text-white/70 text-sm line-clamp-3">{post.excerpt}</p>
                                 <div className="flex mt-2">
-                                   <span className="border-[2px] border-white/20 rounded-full px-5 py-2 text-white/90 text-xs font-bold hover:bg-white hover:text-[#111] transition-colors shadow-sm">Read entry</span>
+                                   <span className="border-[2px] border-white/20 rounded-full px-5 py-2 text-white font-bold hover:bg-white hover:text-[#111] transition-colors shadow-sm text-sm">Read entry</span>
                                 </div>
                              </div>
                              
                              <div className="relative w-full flex justify-between items-center text-white/50 text-[10px] font-sans z-10 border-t border-white/10 pt-4 mt-8">
-                                <span className="font-bold tracking-wider">iceyyy.design</span>
-                                <span className="tracking-widest uppercase truncate max-w-[60%] text-right">{(post.tags?.toString() || '').split(',').join(' ✦ ')}</span>
+                                <span className="font-bold tracking-wider text-white uppercase">{post.category || 'iceyyy.design'}</span>
+                                <span className="tracking-widest uppercase truncate max-w-[60%] text-right text-white font-bold">{(post.tags?.toString() || '').split(',').join(' ✦ ')}</span>
                              </div>
                           </div>
                        ))}
@@ -1174,6 +1174,7 @@ export default function App() {
                                  {(post.imageEffect === 'ascii' || post.imageEffect === 'both') && <div className="effect-ascii-overlay mix-blend-color-dodge opacity-80"></div>}
                              </div>
                              
+                             {post.category && <span className="text-[#ff5722] font-bold text-[10px] uppercase tracking-widest mb-1">{post.category}</span>}
                              <h2 className="font-mono text-white text-base md:text-lg uppercase tracking-widest mb-4 font-bold leading-tight">{post.title}</h2>
                              <p className="font-mono text-gray-400 text-xs md:text-sm uppercase mb-8 leading-relaxed flex-1 line-clamp-4">{post.excerpt}</p>
                              
@@ -1181,7 +1182,7 @@ export default function App() {
                                {(post.tags?.toString() || '').split(',').map((tag, i) => (
                                  <li key={i} className="font-mono text-[10px] md:text-xs text-white flex gap-3 items-center">
                                     <span className="text-[#ff5722] font-bold">&gt;</span> 
-                                    <span className="bg-white text-[#111] px-2 py-1 leading-none font-bold uppercase tracking-wider">{tag.trim()}</span>
+                                    <span className="bg-white/10 text-white px-2 py-1 leading-none font-bold uppercase tracking-wider">{tag.trim()}</span>
                                  </li>
                                ))}
                              </ul>
@@ -1342,18 +1343,27 @@ export default function App() {
 
                 {adminTab === 'blogs' && (
                   <>
-                    <div className="bg-[#f4f4f0] p-4 border-[2px] border-[#111] mb-6 flex flex-col gap-4 md:flex-row items-start md:items-center">
-                       <label className="font-bold uppercase tracking-widest text-[#111]">Log Format:</label>
-                       <select value={editingItem.type || 'regular'} onChange={e => setEditingItem({...editingItem, type: e.target.value})} className="p-2 border-[2px] border-[#111] bg-white font-bold outline-none text-[#ff5722]">
-                           <option value="regular">Standard Log</option>
-                           <option value="album">Vinyl Showcase</option>
-                       </select>
-                    </div>
+                    {(!editingItem.blogCategory || editingItem.blogCategory === 'anime') && (
+                       <div className="bg-[#f4f4f0] p-4 border-[2px] border-[#111] mb-6 flex flex-col gap-4 md:flex-row items-start md:items-center">
+                          <label className="font-bold uppercase tracking-widest text-[#111]">Log Format:</label>
+                          <select value={editingItem.type || 'regular'} onChange={e => setEditingItem({...editingItem, type: e.target.value})} className="p-2 border-[2px] border-[#111] bg-white font-bold outline-none text-[#ff5722]">
+                              <option value="regular">Standard Log</option>
+                              <option value="album">Vinyl Showcase</option>
+                          </select>
+                       </div>
+                    )}
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                        <div>
                           <label className="block font-bold uppercase mb-2">Category (Sub-page)</label>
-                          <select value={editingItem.blogCategory || 'anime'} onChange={e => setEditingItem({...editingItem, blogCategory: e.target.value})} className="w-full p-3 border-[2px] border-[#111] outline-none">
+                          <select value={editingItem.blogCategory || 'anime'} onChange={e => {
+                             const newCat = e.target.value;
+                             setEditingItem({
+                                ...editingItem, 
+                                blogCategory: newCat, 
+                                type: (newCat === 'manhwa' || newCat === 'shows') ? 'regular' : editingItem.type
+                             });
+                          }} className="w-full p-3 border-[2px] border-[#111] outline-none">
                              <option value="anime">Anime</option>
                              <option value="manhwa">Manhwa</option>
                              <option value="shows">Shows</option>
@@ -1370,7 +1380,7 @@ export default function App() {
                        </div>
                     </div>
 
-                    {editingItem.type === 'album' && (
+                    {editingItem.type === 'album' && (!editingItem.blogCategory || editingItem.blogCategory === 'anime') && (
                        <div className="flex gap-6 mb-6 bg-[#ff5722]/10 p-6 border-[2px] border-[#ff5722]">
                           <div>
                              <label className="block font-bold text-[#ff5722] uppercase mb-2">Backdrop Color</label>
@@ -1482,7 +1492,7 @@ export default function App() {
                   </>
                 )}
 
-                {adminTab === 'playlists' && (
+                {editingItem.isPlaylist && (
                   <>
                     <div className="grid grid-cols-2 gap-4 mb-4">
                       <div>
@@ -1553,7 +1563,7 @@ export default function App() {
             </div>
             
             <div className="flex flex-wrap gap-2 mb-10 border-b-[2px] border-[#111] pb-2">
-              {['about', 'projects', 'galleria', 'system', 'blogs', 'journals', 'socials', 'messages', 'settings', 'playlists', 'access_logs'].map(tab => (
+              {['about', 'projects', 'galleria', 'system', 'blogs', 'journals', 'socials', 'messages', 'settings', 'access_logs'].map(tab => (
                 <button key={tab} onClick={() => setAdminTab(tab)} className={`font-mono font-bold uppercase px-6 py-3 border-[2px] border-[#111] transition-all ${adminTab === tab ? 'bg-[#111] text-white translate-y-[-2px] shadow-[4px_4px_0px_#ff5722]' : 'bg-white text-[#111] hover:bg-[#f4f4f0]'}`}>
                   {tab.replace('_', ' ')}
                 </button>
@@ -1717,6 +1727,7 @@ export default function App() {
 
             {/* GALLERIA MANAGER */}
             {adminTab === 'galleria' && (
+              <>
               <div className="bg-white p-8 border-[2px] border-[#111] shadow-[8px_8px_0px_#111] mb-8">
                 <div className="flex justify-between items-end border-b-[2px] border-[#111] pb-4 mb-6">
                   <div>
@@ -1754,16 +1765,39 @@ export default function App() {
                   ))}
                 </div>
               </div>
+
+              {/* PLAYLISTS MANAGER */}
+              <div className="bg-white p-8 border-[2px] border-[#111] shadow-[8px_8px_0px_#111]">
+                <div className="flex justify-between items-end border-b-[2px] border-[#111] pb-4 mb-6">
+                  <div>
+                     <h2 className="text-3xl font-serif text-[#111]">Manage Playlists</h2>
+                     <p className="font-mono text-xs text-gray-500 uppercase tracking-widest mt-2">Audio archives displayed below galleria.</p>
+                  </div>
+                  <button onClick={() => setEditingItem({ isPlaylist: true })} className="bg-[#111] text-[#dfff00] px-6 py-2 border-[2px] border-[#111] font-mono font-bold uppercase tracking-widest flex items-center gap-2 hover:bg-[#0000ff] hover:text-white transition-colors"><Plus size={18} /> ADD PLAYLIST</button>
+                </div>
+                <div className="space-y-3 font-mono">
+                  {playlists.map(pl => (
+                    <div key={pl.id} className="flex justify-between items-center bg-[#f4f4f0] p-4 border-[2px] border-[#111] hover:bg-white transition-colors">
+                      <span className="font-bold text-sm">{pl.title || 'UNTITLED_PLAYLIST'}</span>
+                      <div className="flex gap-3">
+                        <button onClick={() => setEditingItem({ ...pl, isPlaylist: true })} className="p-2 bg-[#dfff00] border-[2px] border-[#111] hover:bg-[#111] hover:text-white transition-colors"><Edit2 size={18} /></button>
+                        <button onClick={() => handleDeleteItem('playlists', pl.id)} className="p-2 bg-[#ff5722] text-white border-[2px] border-[#111] hover:bg-[#111] transition-colors"><Trash2 size={18} /></button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              </>
             )}
 
-            {(adminTab === 'projects' || adminTab === 'blogs' || adminTab === 'socials' || adminTab === 'journals' || adminTab === 'playlists') && (
+            {(adminTab === 'projects' || adminTab === 'blogs' || adminTab === 'socials' || adminTab === 'journals') && (
               <div className="bg-white p-8 border-[2px] border-[#111] shadow-[8px_8px_0px_#111]">
                 <div className="flex justify-between items-end border-b-[2px] border-[#111] pb-4 mb-6">
                   <h2 className="text-3xl font-serif capitalize">Manage {adminTab}</h2>
                   <button onClick={() => setEditingItem(adminTab === 'blogs' ? {blocks: [], type: 'regular'} : adminTab === 'journals' ? {logs: []} : {})} className="bg-[#111] text-[#dfff00] px-6 py-2 border-[2px] border-[#111] font-mono font-bold uppercase tracking-widest flex items-center gap-2 hover:bg-[#0000ff] hover:text-white transition-colors"><Plus size={18} /> INITIALIZE NEW</button>
                 </div>
                 <div className="space-y-3 font-mono">
-                  {(adminTab === 'projects' ? projects : adminTab === 'blogs' ? blogs : adminTab === 'journals' ? journalEntries : adminTab === 'playlists' ? playlists : socials).map(item => (
+                  {(adminTab === 'projects' ? projects : adminTab === 'blogs' ? blogs : adminTab === 'journals' ? journalEntries : socials).map(item => (
                     <div key={item.id} className="flex justify-between items-center bg-[#f4f4f0] p-4 border-[2px] border-[#111] hover:bg-white transition-colors">
                       <span className="font-bold text-sm">{item.title || item.name || item.date || 'UNTITLED_RECORD'}</span>
                       <div className="flex gap-3">
@@ -2197,7 +2231,7 @@ export default function App() {
               </main>
 
               {/* FOOTER BAR */}
-              <div className="absolute bottom-0 left-0 w-full p-4 md:p-6 flex justify-between items-end text-[#111] pointer-events-none bg-gradient-to-t from-white via-white/90 to-transparent pt-16 border-t border-[#111]/10">
+              <div className="absolute bottom-0 left-0 w-full p-4 md:p-6 flex justify-between items-end text-[#111] pointer-events-none bg-gradient-to-t from-white via-white/90 to-transparent pt-16 border-t border-[#111]/10 z-50">
                 <span className="font-mono font-bold tracking-widest text-[10px] uppercase bg-white/80 px-2 py-1 border-[2px] border-[#111] shadow-[2px_2px_0px_#111] backdrop-blur-sm pointer-events-auto">SYS_ARCHIVE // 2026</span>
                 <button onClick={() => setShowLogin(true)} className="pointer-events-auto font-mono text-[#111]/30 hover:text-[#ff5722] transition-colors flex items-center justify-center p-2 bg-white/80 backdrop-blur-sm rounded-full border-[2px] border-transparent hover:border-[#111]" title="Auth Override"><Lock size={14}/></button>
               </div>
