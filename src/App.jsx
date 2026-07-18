@@ -429,9 +429,8 @@ export default function App() {
   const handleBatchGalleriaUpload = (e) => {
     const files = Array.from(e.target.files);
     if (files.length === 0) return;
-    if (files.length > 30) { showToast("Please select max 30 images at a time."); return; }
     
-    showToast("Processing batch upload...");
+    showToast(`Processing batch upload of ${files.length} images...`);
     Promise.all(files.map(file => {
        return new Promise((resolve) => {
           const reader = new FileReader();
@@ -439,7 +438,7 @@ export default function App() {
              id: Date.now() + Math.random(),
              image: reader.result,
              date: new Date().toLocaleDateString(),
-             hasJournal: false // By default, bulk uploads don't have journals
+             hasJournal: false
           });
           reader.readAsDataURL(file);
        });
