@@ -1,11 +1,72 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Pin, X, Lock, Plus, Edit2, Trash2, Save, Image as ImageIcon, Type, ArrowLeft, LogOut, Upload, ChevronUp, ChevronDown, MessageSquare, Star, Send, Pencil, Activity, Heart, Thermometer, Droplets, Video, LayoutGrid, FileText, Search, Calendar, Cpu, Database, Network, Settings, GitBranch, Terminal, GripVertical, Quote, AlignLeft, Layers } from 'lucide-react';
+import React, { useState, useEffect, useRef, useMemo, useLayoutEffect, useCallback } from 'react';
+import { Pin, X, Lock, Plus, Edit2, Trash2, Save, Image as ImageIcon, Type, LogOut, Upload, Star, Send, Pencil, Activity, LayoutGrid, FileText, Search, Terminal, GripVertical, Quote, AlignLeft, Layers, Check, AlertTriangle, RotateCcw, Music, Disc3, ChevronLeft, ChevronRight, Eye, EyeOff, Copy, Database, Network, Thermometer, Cpu, Radio, Zap, Waves, Gauge, SlidersHorizontal, Power, CircleDot, Cable, Play } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
 // --- INITIALIZE SUPABASE ---
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supabase = (supabaseUrl && supabaseKey) ? createClient(supabaseUrl, supabaseKey) : null;
+
+// --- SHARED HELPERS -------------------------------------------------------
+// Deterministic pseudo-random from a string. Used for the fake process stats
+// in the boot sequence so a given interest always reports the same load.
+const hashPct = (str = '', min = 8, max = 94) => {
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return min + (Math.abs(h) % Math.max(1, (max - min)));
+};
+
+const ICON_MAP = {
+  Terminal, Database, Network, Thermometer, Cpu, Activity, Radio, Zap, Waves,
+  Gauge, SlidersHorizontal, Power, CircleDot, Cable, Music, Disc3, Star, Layers,
+};
+const NODE_ICONS = Object.keys(ICON_MAP);
+const RackIcon = ({ name, size = 14, className = '' }) => {
+  const C = ICON_MAP[name] || CircleDot;
+  return <C size={size} className={className} />;
+};
+
+const PATCH_COLORS = ['#ff5722', '#dfff00', '#0000ff', '#00ff88', '#ff2ea6', '#00d2ff'];
+
+// --- TYPEWRITER -----------------------------------------------------------
+// Reveals text over time. Long strings are typed in chunks so a 400 character
+// bio does not take forty seconds to appear.
+const Typewriter = ({ text = '', active = true, speed = 1, onDone, className = '', showCaret = true }) => {
+  const [n, setN] = useState(active ? 0 : text.length);
+  const doneRef = useRef(false);
+  const onDoneRef = useRef(onDone);
+  onDoneRef.current = onDone;
+
+  useEffect(() => {
+    if (!active) { setN(text.length); return; }
+    if (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      setN(text.length);
+      if (!doneRef.current) { doneRef.current = true; onDoneRef.current && onDoneRef.current(); }
+      return;
+    }
+    setN(0);
+    doneRef.current = false;
+    const step = Math.max(1, Math.round(text.length / 160));
+    const tick = Math.max(8, 26 / Math.max(0.25, speed));
+    let i = 0;
+    const id = setInterval(() => {
+      i += step;
+      setN(Math.min(i, text.length));
+      if (i >= text.length) {
+        clearInterval(id);
+        if (!doneRef.current) { doneRef.current = true; onDoneRef.current && onDoneRef.current(); }
+      }
+    }, tick);
+    return () => clearInterval(id);
+  }, [text, active, speed]);
+
+  return (
+    <span className={className}>
+      {text.slice(0, n)}
+      {showCaret && n < text.length && <span className="boot-caret">▊</span>}
+    </span>
+  );
+};
 
 // --- DRAGGABLE GALLERY IMAGE COMPONENT ---
 const DraggableImage = ({ item, updateImage, bringToFront, isAdmin }) => {
@@ -57,6 +118,398 @@ const DraggableImage = ({ item, updateImage, bringToFront, isAdmin }) => {
   );
 };
 
+
+// ==========================================================================
+// PATCH BAY — the System tab.
+// Each timeline column becomes a rack module; each node becomes a jack.
+// Cables are quadratic curves that sag under their own length and sway on a
+// requestAnimationFrame loop that mutates path attributes directly, so the
+// idle motion never triggers a React re-render.
+// ==========================================================================
+const Knob = ({ value = 50, label, color = '#ff5722', editable, onChange }) => {
+  const angle = -135 + (Math.max(0, Math.min(100, value)) * 2.7);
+  const dragging = useRef(false);
+  const startRef = useRef({ y: 0, v: 0 });
+
+  const onDown = (e) => {
+    if (!editable) return;
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    dragging.current = true;
+    startRef.current = { y: e.clientY, v: Number(value) || 0 };
+  };
+  const onMove = (e) => {
+    if (!dragging.current) return;
+    const delta = (startRef.current.y - e.clientY) * 0.6;
+    onChange && onChange(Math.round(Math.max(0, Math.min(100, startRef.current.v + delta))));
+  };
+  const onUp = (e) => {
+    if (!dragging.current) return;
+    dragging.current = false;
+    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch (_) {}
+  };
+
+  return (
+    <div className="flex flex-col items-center gap-1.5 select-none">
+      <div
+        onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}
+        role={editable ? 'slider' : undefined}
+        aria-label={label}
+        aria-valuenow={editable ? value : undefined}
+        className={`relative w-9 h-9 rounded-full bg-[#1a1a1a] border-[2px] border-[#3a3a3a] shadow-[inset_0_2px_4px_rgba(255,255,255,0.08),0_2px_4px_rgba(0,0,0,0.6)] ${editable ? 'cursor-ns-resize touch-none hover:border-[#666]' : ''} transition-colors`}
+        style={{ transform: `rotate(${angle}deg)`, transition: dragging.current ? 'none' : 'transform 520ms var(--ease-out-expo)' }}
+      >
+        <span className="absolute left-1/2 top-1 -translate-x-1/2 w-[2px] h-3 rounded-full" style={{ background: color }} />
+      </div>
+      <span className="font-mono text-[7px] uppercase tracking-[0.18em] text-white/40 leading-none text-center max-w-[52px] truncate">{label}</span>
+    </div>
+  );
+};
+
+const VuMeter = ({ label, value, unit, index = 0, color = '#dfff00' }) => {
+  // Values arrive as free text ("100/67", "36.8"). Take the first number.
+  const num = parseFloat(String(value ?? '').replace(/[^0-9.\-]/g, ' ').trim().split(/\s+/)[0]);
+  const pct = Number.isFinite(num) ? Math.max(4, Math.min(100, num > 100 ? (num % 100) : num)) : hashPct(String(label), 30, 88);
+  const segs = 14;
+  const lit = Math.round((pct / 100) * segs);
+
+  return (
+    <div className="flex-1 min-w-[132px] bg-[#141414] border-[2px] border-[#2e2e2e] px-3 py-2.5 anim-rise stagger-child" style={{ '--d': index }}>
+      <div className="flex justify-between items-baseline mb-2 gap-2">
+        <span className="font-mono text-[8px] uppercase tracking-[0.22em] text-white/45 truncate">{label}</span>
+        <span className="font-mono text-[11px] font-bold text-white whitespace-nowrap">{value}<span className="text-white/40 text-[8px] ml-0.5">{unit}</span></span>
+      </div>
+      <div className="flex gap-[2px] h-3 items-end">
+        {Array.from({ length: segs }).map((_, i) => {
+          const on = i < lit;
+          const segColor = i > segs - 3 ? '#ff2e2e' : i > segs - 6 ? '#ffb300' : color;
+          return (
+            <span
+              key={i}
+              className="flex-1 rounded-[1px]"
+              style={{
+                height: `${45 + (i / segs) * 55}%`,
+                background: on ? segColor : '#262626',
+                boxShadow: on ? `0 0 6px ${segColor}88` : 'none',
+                opacity: on ? 1 : 1,
+                animation: on ? `vuSettle 620ms var(--ease-out-expo) both` : 'none',
+                animationDelay: `${index * 90 + i * 26}ms`,
+              }}
+            />
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+const PatchBay = ({ data, isAdmin, onChange, onToast }) => {
+  const rackRef = useRef(null);
+  const jackEls = useRef({});
+  const pathEls = useRef({});
+  const [ports, setPorts] = useState({});
+  const [pending, setPending] = useState(null);   // { from, x, y } while dragging a new cable
+  const [hoverJack, setHoverJack] = useState(null);
+
+  const modules = data?.timeline || [];
+  const cables = data?.cables || [];
+  const stats = data?.stats || [];
+  const sagBase = Number(data?.cableSag ?? 34);
+
+  const allNodes = useMemo(
+    () => modules.flatMap(m => (m.nodes || []).map(n => ({ ...n, moduleId: m.id, moduleName: m.period }))),
+    [modules]
+  );
+
+  // --- measure every jack centre relative to the rack -------------------
+  const measure = useCallback(() => {
+    const rack = rackRef.current;
+    if (!rack) return;
+    const base = rack.getBoundingClientRect();
+    const next = {};
+    Object.entries(jackEls.current).forEach(([id, el]) => {
+      if (!el || !el.isConnected) { delete jackEls.current[id]; return; }
+      const r = el.getBoundingClientRect();
+      next[id] = { x: r.left - base.left + r.width / 2, y: r.top - base.top + r.height / 2 };
+    });
+    setPorts(next);
+  }, []);
+
+  useLayoutEffect(() => { measure(); }, [measure, modules, cables.length]);
+  useEffect(() => {
+    const rack = rackRef.current;
+    if (!rack) return;
+    const ro = new ResizeObserver(() => measure());
+    ro.observe(rack);
+    window.addEventListener('resize', measure);
+    const t = setTimeout(measure, 400); // after entrance animations settle
+    return () => { ro.disconnect(); window.removeEventListener('resize', measure); clearTimeout(t); };
+  }, [measure]);
+
+  const buildPath = (a, b, extraSag = 0) => {
+    if (!a || !b) return '';
+    const len = Math.hypot(b.x - a.x, b.y - a.y);
+    const droop = Math.min(190, sagBase + len * 0.28) + extraSag;
+    return `M ${a.x} ${a.y} Q ${(a.x + b.x) / 2} ${(a.y + b.y) / 2 + droop} ${b.x} ${b.y}`;
+  };
+
+  // --- idle sway, written straight to the DOM ---------------------------
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    let raf;
+    const loop = (t) => {
+      cables.forEach((c, i) => {
+        const el = pathEls.current[c.id];
+        const a = ports[c.from], b = ports[c.to];
+        if (!el || !a || !b) return;
+        el.setAttribute('d', buildPath(a, b, Math.sin(t / 900 + i * 1.3) * 4));
+      });
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [cables, ports, sagBase]);
+
+  // --- patching interactions (admin only) -------------------------------
+  const beginPatch = (nodeId, e) => {
+    if (!isAdmin) return;
+    e.preventDefault();
+    const base = rackRef.current.getBoundingClientRect();
+    setPending({ from: nodeId, x: e.clientX - base.left, y: e.clientY - base.top });
+  };
+  const movePatch = (e) => {
+    if (!pending) return;
+    const base = rackRef.current.getBoundingClientRect();
+    setPending(p => ({ ...p, x: e.clientX - base.left, y: e.clientY - base.top }));
+  };
+  const endPatch = (nodeId) => {
+    if (!pending) return;
+    if (nodeId && nodeId !== pending.from) {
+      const exists = cables.some(c =>
+        (c.from === pending.from && c.to === nodeId) || (c.from === nodeId && c.to === pending.from));
+      if (exists) {
+        onToast && onToast('Those jacks are already patched.', 'error');
+      } else {
+        onChange({
+          ...data,
+          cables: [...cables, {
+            id: `c${Date.now()}`,
+            from: pending.from,
+            to: nodeId,
+            color: PATCH_COLORS[cables.length % PATCH_COLORS.length],
+          }],
+        });
+        onToast && onToast('Cable patched.', 'success');
+      }
+    }
+    setPending(null);
+  };
+
+  const removeCable = (id) => {
+    onChange({ ...data, cables: cables.filter(c => c.id !== id) });
+    onToast && onToast('Cable pulled.', 'info');
+  };
+
+  const setKnob = (moduleId, knobId, value) => {
+    onChange({
+      ...data,
+      timeline: modules.map(m => m.id !== moduleId ? m : {
+        ...m, knobs: (m.knobs || []).map(k => k.id === knobId ? { ...k, value } : k),
+      }),
+    });
+  };
+
+  return (
+    <div
+      ref={rackRef}
+      onPointerMove={movePatch}
+      onPointerUp={() => endPatch(null)}
+      onPointerLeave={() => setPending(null)}
+      className="relative flex-1 overflow-auto hide-scrollbar p-5 md:p-8"
+      style={{
+        background: '#0d0d0d',
+        backgroundImage:
+          'linear-gradient(rgba(255,255,255,0.028) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.028) 1px, transparent 1px)',
+        backgroundSize: '22px 22px',
+      }}
+    >
+      {/* ---------- VU METER STRIP ---------- */}
+      <div className="flex flex-wrap gap-3 mb-6">
+        {stats.length === 0 ? (
+          <p className="font-mono text-[10px] uppercase tracking-[0.25em] text-white/30 py-4">No meters configured</p>
+        ) : stats.map((st, i) => (
+          <VuMeter key={st.id ?? i} index={i} label={st.label} value={st.value} unit={st.unit} color={data?.meterColor || '#dfff00'} />
+        ))}
+      </div>
+
+      {/* ---------- CABLE LAYER ---------- */}
+      <svg className="absolute inset-0 w-full h-full pointer-events-none z-30" style={{ overflow: 'visible' }}>
+        <defs>
+          <filter id="cableShadow" x="-30%" y="-30%" width="160%" height="180%">
+            <feDropShadow dx="0" dy="5" stdDeviation="4" floodColor="#000" floodOpacity="0.7" />
+          </filter>
+        </defs>
+        {cables.map((c) => {
+          const a = ports[c.from], b = ports[c.to];
+          if (!a || !b) return null;
+          return (
+            <g key={c.id} filter="url(#cableShadow)">
+              {/* fat dark casing */}
+              <path d={buildPath(a, b)} fill="none" stroke="#000" strokeWidth="9" strokeLinecap="round" opacity="0.85" />
+              {/* coloured jacket */}
+              <path
+                ref={el => { pathEls.current[c.id] = el; }}
+                d={buildPath(a, b)}
+                fill="none"
+                stroke={c.color || '#ff5722'}
+                strokeWidth="5"
+                strokeLinecap="round"
+                className="patch-cable"
+                style={{ pointerEvents: isAdmin ? 'stroke' : 'none', cursor: isAdmin ? 'pointer' : 'default' }}
+                onClick={() => isAdmin && removeCable(c.id)}
+              >
+                <title>{isAdmin ? 'Click to pull this cable' : ''}</title>
+              </path>
+              {/* specular highlight so the cable reads as rubber */}
+              <path d={buildPath(a, b)} fill="none" stroke="rgba(255,255,255,0.35)" strokeWidth="1.2" strokeLinecap="round" pointerEvents="none" />
+            </g>
+          );
+        })}
+
+        {/* ghost cable while dragging a new patch */}
+        {pending && ports[pending.from] && (
+          <path
+            d={buildPath(ports[pending.from], { x: pending.x, y: pending.y })}
+            fill="none" stroke="#fff" strokeWidth="3" strokeDasharray="7 6" strokeLinecap="round" opacity="0.8"
+          />
+        )}
+      </svg>
+
+      {/* ---------- MODULE RACK ---------- */}
+      <div className="relative z-20 flex gap-4 md:gap-5 min-w-min pb-4">
+        {modules.length === 0 && (
+          <p className="font-mono text-[11px] uppercase tracking-[0.25em] text-white/35 py-12">Rack is empty — add a module in Admin &gt; System.</p>
+        )}
+        {modules.map((mod, mi) => {
+          const color = mod.color || PATCH_COLORS[mi % PATCH_COLORS.length];
+          const knobs = mod.knobs || [];
+          return (
+            <div
+              key={mod.id}
+              style={{ '--d': mi }}
+              className="w-[224px] md:w-[248px] shrink-0 border-[2px] border-[#2e2e2e] bg-[#161616] flex flex-col anim-rise stagger-child"
+            >
+              {/* rack ears with screws */}
+              <div className="flex items-center justify-between px-2 py-2 border-b-[2px] border-[#2e2e2e] bg-[#101010]">
+                <span className="w-2 h-2 rounded-full bg-[#3a3a3a] shadow-[inset_0_1px_1px_rgba(255,255,255,0.25)]" />
+                <div className="text-center min-w-0 px-1">
+                  <p className="font-mono text-[10px] font-bold uppercase tracking-[0.18em] truncate" style={{ color }}>{mod.period}</p>
+                  <p className="font-mono text-[7px] uppercase tracking-[0.22em] text-white/35 truncate">{mod.subtitle}</p>
+                </div>
+                <span className="w-2 h-2 rounded-full bg-[#3a3a3a] shadow-[inset_0_1px_1px_rgba(255,255,255,0.25)]" />
+              </div>
+
+              {/* status LEDs */}
+              <div className="flex items-center gap-1.5 px-3 py-2 border-b border-[#242424]">
+                {[0, 1, 2].map(i => (
+                  <span
+                    key={i}
+                    className="w-1.5 h-1.5 rounded-full"
+                    style={{
+                      background: color,
+                      boxShadow: `0 0 7px ${color}`,
+                      animation: 'ledBlink 2.6s ease-in-out infinite',
+                      animationDelay: `${mi * 220 + i * 340}ms`,
+                    }}
+                  />
+                ))}
+                <span className="ml-auto font-mono text-[7px] uppercase tracking-[0.22em] text-white/30">{String(mi + 1).padStart(2, '0')}</span>
+              </div>
+
+              {/* knobs */}
+              {knobs.length > 0 && (
+                <div className="flex justify-around gap-2 px-3 py-4 border-b border-[#242424] bg-[#131313]">
+                  {knobs.map(k => (
+                    <Knob key={k.id} value={k.value} label={k.label} color={color} editable={isAdmin}
+                          onChange={(v) => setKnob(mod.id, k.id, v)} />
+                  ))}
+                </div>
+              )}
+
+              {/* jacks */}
+              <div className="p-3 flex flex-col gap-2.5 flex-1">
+                {(mod.nodes || []).map(node => {
+                  const patched = cables.some(c => c.from === node.id || c.to === node.id);
+                  const isHot = hoverJack === node.id || pending?.from === node.id;
+                  return (
+                    <div key={node.id} className="flex items-center gap-2.5 group">
+                      <button
+                        type="button"
+                        ref={el => { jackEls.current[node.id] = el; }}
+                        onPointerDown={(e) => beginPatch(node.id, e)}
+                        onPointerUp={(e) => { e.stopPropagation(); endPatch(node.id); }}
+                        onPointerEnter={() => setHoverJack(node.id)}
+                        onPointerLeave={() => setHoverJack(null)}
+                        title={isAdmin ? 'Drag to another jack to patch' : node.title}
+                        aria-label={`Jack ${node.title}`}
+                        className={`relative w-8 h-8 shrink-0 rounded-full border-[3px] flex items-center justify-center transition-all duration-300 ${isAdmin ? 'cursor-crosshair touch-none' : 'cursor-default'}`}
+                        style={{
+                          borderColor: isHot ? color : '#3a3a3a',
+                          background: 'radial-gradient(circle at 50% 35%, #2a2a2a 0%, #0a0a0a 70%)',
+                          boxShadow: isHot ? `0 0 0 3px ${color}33` : 'inset 0 2px 4px rgba(0,0,0,0.9)',
+                          transform: isHot ? 'scale(1.1)' : 'none',
+                        }}
+                      >
+                        <span
+                          className="w-3 h-3 rounded-full"
+                          style={{
+                            background: patched ? color : '#0a0a0a',
+                            boxShadow: patched ? `0 0 8px ${color}` : 'inset 0 1px 3px rgba(0,0,0,0.9)',
+                          }}
+                        />
+                      </button>
+
+                      <div className="min-w-0 flex-1">
+                        <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-white/75 truncate flex items-center gap-1.5">
+                          <RackIcon name={node.icon} size={10} className="shrink-0 opacity-60" />
+                          {node.title}
+                        </p>
+                        {(node.mainValue || node.value) && (
+                          <p className="font-mono text-[8px] text-white/35 truncate">{node.mainValue || node.value}{node.subValue ? ` · ${node.subValue}` : ''}</p>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+                {(mod.nodes || []).length === 0 && (
+                  <p className="font-mono text-[8px] uppercase tracking-[0.2em] text-white/25 py-4 text-center">No jacks</p>
+                )}
+              </div>
+
+              {/* vent slots at the bottom of the panel */}
+              <div className="h-4 border-t border-[#242424] flex items-center justify-center gap-[3px] bg-[#101010]">
+                {Array.from({ length: 12 }).map((_, i) => <span key={i} className="w-[2px] h-1.5 bg-[#232323]" />)}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {isAdmin && (
+        <div className="sticky bottom-0 mt-4 z-40 font-mono text-[9px] uppercase tracking-[0.2em] text-white/50 bg-[#0d0d0d]/90 backdrop-blur-sm border-[2px] border-[#2e2e2e] px-4 py-2.5 inline-flex items-center gap-3 flex-wrap">
+          <Cable size={13} style={{ color: '#dfff00' }} />
+          <span>Drag jack → jack to patch</span>
+          <span className="text-white/20">·</span>
+          <span>Click a cable to pull it</span>
+          <span className="text-white/20">·</span>
+          <span>Drag a knob vertically</span>
+        </div>
+      )}
+    </div>
+  );
+};
+
 // --- DEFAULT DATA ---
 const defaultProjects = [
   { id: 1, tabId: "94", title: "oil lamp", tabAlign: "center", type: "project", image: "https://images.unsplash.com/photo-1555066931-4365d14bab8c?w=400&q=80", content: "Main system architecture." },
@@ -102,6 +555,24 @@ const defaultBlogs = [
 ];
 
 const defaultAbout = {
+  // Terminal boot sequence config — fully editable from Admin > About.
+  boot: {
+    enabled: true,
+    replay: "session",      // 'session' | 'always' | 'never'
+    speed: 1,               // multiplier; higher = faster
+    accent: "#00ff88",
+    hostname: "iceyyy",
+    user: "guest",
+    shell: "~/about",
+    archivePath: "/archive/obsessions",
+    lines: [
+      "POST ............................. OK",
+      "MEM CHECK 16384K ................. OK",
+      "MOUNTING /dev/personality ........ OK",
+      "LOADING kernel/identity.sys ...... OK",
+      "NET LINK ESTABLISHED ............. OK"
+    ]
+  },
   appBackground: "https://images.unsplash.com/photo-1473448912268-2022ce9509d8?q=80&w=2041&auto=format&fit=crop",
   introText: "Hellooo, the name is Vinz!\n\nYou can call me Ice^^\n\nI am 16 years of age, born on April 16, 2008\n\nI am an Aries, and Intp-t (I don't believe fully in these)\n\nMy sexuality is AroAce (Not interested romantically or sexually)\n\n3 words about me?: Chaotic, Needy, Nerdy",
   introImage: "https://images.unsplash.com/photo-1614850523459-c2f4c699c52e?w=400&q=80",
@@ -134,8 +605,11 @@ const defaultAbout = {
 };
 
 const defaultSystem = {
-  title: "Concept Map",
-  navPills: ["Treatment Dynamics", "Visits", "Medications", "Labs", "Allergies"],
+  title: "Patch Bay",
+  rackLabel: "SYS-01 // MODULAR CORE",
+  meterColor: "#dfff00",
+  cableSag: 34,
+  navPills: ["Signal", "Routing", "Levels", "Clock", "Utility"],
   profile: { name: "System Core", role: "Primary Node", image: "https://images.unsplash.com/photo-1614850523459-c2f4c699c52e?w=400&q=80" },
   stats: [
     { id: 1, label: "Heart Rate", value: "89", unit: "bpm" },
@@ -145,7 +619,8 @@ const defaultSystem = {
   ],
   timeline: [
     {
-      id: "col1", period: "Phase 1", subtitle: "Initialization",
+      id: "col1", period: "Phase 1", subtitle: "Initialization", color: "#ff5722",
+      knobs: [ { id: "k1", label: "Gain", value: 62 }, { id: "k2", label: "Drift", value: 28 } ],
       nodes: [
         { id: "n1", type: "pill", title: "Boot Sequence", value: "x2", icon: "Terminal" },
         { id: "n2", type: "card", title: "Memory Allocation", mainValue: "160/90", subValue: "Average: 120", chartType: "bar", icon: "Database" },
@@ -153,12 +628,27 @@ const defaultSystem = {
       ]
     },
     {
-      id: "col2", period: "Phase 2", subtitle: "Execution",
+      id: "col2", period: "Phase 2", subtitle: "Execution", color: "#dfff00",
+      knobs: [ { id: "k3", label: "Rate", value: 74 }, { id: "k4", label: "Depth", value: 41 } ],
       nodes: [
         { id: "n4", type: "pill", title: "Routing", value: "x3", icon: "Network" },
         { id: "n5", type: "card", title: "Data Stream", mainValue: "135/92", subValue: "Average: 130", chartType: "bar", icon: "Activity" }
       ]
+    },
+    {
+      id: "col3", period: "Phase 3", subtitle: "Output", color: "#0000ff",
+      knobs: [ { id: "k5", label: "Level", value: 88 } ],
+      nodes: [
+        { id: "n6", type: "pill", title: "Master Out", value: "L/R", icon: "Waves" },
+        { id: "n7", type: "card", title: "Clock", mainValue: "120 BPM", subValue: "Locked", chartType: "pulse", icon: "Zap" }
+      ]
     }
+  ],
+  cables: [
+    { id: "c1", from: "n1", to: "n4", color: "#ff5722" },
+    { id: "c2", from: "n2", to: "n5", color: "#dfff00" },
+    { id: "c3", from: "n5", to: "n6", color: "#00d2ff" },
+    { id: "c4", from: "n3", to: "n7", color: "#ff2ea6" }
   ]
 };
 
@@ -231,15 +721,34 @@ const defaultPlaylists = [
   }
 ];
 
+const ADMIN_TABS = [
+  { id: 'about',       label: 'About' },
+  { id: 'projects',    label: 'Projects' },
+  { id: 'galleria',    label: 'Galleria' },
+  { id: 'system',      label: 'System' },
+  { id: 'blogs',       label: 'Blogs' },
+  { id: 'journals',    label: 'Journals' },
+  { id: 'socials',     label: 'Socials' },
+  { id: 'messages',    label: 'Messages' },
+  { id: 'settings',    label: 'Settings' },
+  { id: 'access_logs', label: 'Access Logs' },
+];
+
 const defaultSettings = {
   wip: { intro: false, portfolio: false, galleria: false, system: false, blog: false, socials: false, blank: false }
 };
+
+// Older saved payloads predate the boot/rack config, so merge defaults in on
+// load rather than scattering fallbacks through the render tree.
+const mergeAbout = (saved) => ({ ...defaultAbout, ...(saved || {}), boot: { ...defaultAbout.boot, ...((saved || {}).boot || {}) } });
+const mergeSystem = (saved) => ({ ...defaultSystem, ...(saved || {}), cables: (saved || {}).cables || defaultSystem.cables });
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('intro');
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [toastMessage, setToastMessage] = useState(null); 
+  const [toast, setToast] = useState(null); // { msg, type, id, leaving }
+  const toastTimers = useRef([]);
   
   const [projects, setProjects] = useState(defaultProjects);
   const [blogs, setBlogs] = useState(defaultBlogs);
@@ -272,8 +781,11 @@ export default function App() {
   const [showLogin, setShowLogin] = useState(false);
   const [emailInput, setEmailInput] = useState("");
   const [passwordInput, setPasswordInput] = useState("");
-  const [adminTab, setAdminTab] = useState('about'); 
-  const [editingItem, setEditingItem] = useState(null); 
+  const [adminTab, setAdminTab] = useState('about');
+  const [editingItem, setEditingItem] = useState(null);
+  const [adminSearch, setAdminSearch] = useState("");     // filter within a list
+  const [confirmDelete, setConfirmDelete] = useState(null); // { listType, id }
+  const [showPassword, setShowPassword] = useState(false);
 
   // === NEW: JOURNAL OVERLAY & TICKET STATE ===
   const [pendingJournal, setPendingJournal] = useState(null); 
@@ -301,10 +813,17 @@ export default function App() {
   const dragOverItem = useRef(null);
   const [galleriaPanX, setGalleriaPanX] = useState(0);
 
-  const showToast = (msg) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3000);
+  // Toast: single source of truth, timers tracked so rapid-fire calls can't
+  // leave a stale timeout that clears a newer message.
+  const showToast = (msg, type = 'info') => {
+    toastTimers.current.forEach(clearTimeout);
+    toastTimers.current = [];
+    const id = Date.now();
+    setToast({ msg, type, id, leaving: false });
+    toastTimers.current.push(setTimeout(() => setToast(t => (t && t.id === id ? { ...t, leaving: true } : t)), 3000));
+    toastTimers.current.push(setTimeout(() => setToast(t => (t && t.id === id ? null : t)), 3320));
   };
+  useEffect(() => () => toastTimers.current.forEach(clearTimeout), []);
 
   const handleSortAboutList = (listName, isRootState = false) => {
     if (dragItem.current === null || dragOverItem.current === null) return;
@@ -337,10 +856,10 @@ export default function App() {
             const parsed = JSON.parse(localData);
             if (parsed.projects) setProjects(parsed.projects);
             if (parsed.blogs) setBlogs(parsed.blogs);
-            if (parsed.about) setAboutData(parsed.about);
+            if (parsed.about) setAboutData(mergeAbout(parsed.about));
             if (parsed.socials) setSocials(parsed.socials);
             if (parsed.galleria) setGalleriaData(parsed.galleria);
-            if (parsed.system) setSystemData(parsed.system);
+            if (parsed.system) setSystemData(mergeSystem(parsed.system));
             if (parsed.settings) setSiteSettings(parsed.settings);
             if (parsed.journals) setJournalEntries(parsed.journals);
             if (parsed.playlists) setPlaylists(parsed.playlists);
@@ -370,10 +889,10 @@ export default function App() {
           
           if (p) setProjects(p.data);
           if (b) setBlogs(b.data);
-          if (a) setAboutData(a.data);
+          if (a) setAboutData(mergeAbout(a.data));
           if (s) setSocials(s.data);
           if (g) setGalleriaData(g.data);
-          if (sys && sys.data.timeline) setSystemData(sys.data);
+          if (sys && sys.data?.timeline) setSystemData(mergeSystem(sys.data));
           if (set && set.data.wip) setSiteSettings(set.data);
           if (j) setJournalEntries(j.data);
           if (pl) setPlaylists(pl.data);
@@ -408,7 +927,29 @@ export default function App() {
     }
   }, [playgroundMode]);
 
-  const startDrawing = (e) => { e.preventDefault(); setIsDrawing(true); draw(e); };
+  const clearCanvas = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#f4f4f0';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.beginPath();
+  };
+
+  const startDrawing = (e) => {
+    e.preventDefault();
+    setIsDrawing(true);
+    // Seed the path at the press point, otherwise the first stroke drags a
+    // line in from wherever the previous stroke ended.
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const rect = canvas.getBoundingClientRect();
+    const cx = e.touches ? e.touches[0].clientX : e.clientX;
+    const cy = e.touches ? e.touches[0].clientY : e.clientY;
+    ctx.beginPath();
+    ctx.moveTo(cx - rect.left, cy - rect.top);
+  };
   const draw = (e) => {
     if (!isDrawing) return;
     e.preventDefault();
@@ -513,7 +1054,8 @@ export default function App() {
         access_logs: accessLogs
       }));
       setIsSaving(false);
-      showToast("Successfully deployed changes to Local Storage!");
+      setIsDirty(false);
+      showToast("Deployed changes to Local Storage.", 'success');
       return;
     }
 
@@ -528,10 +1070,10 @@ export default function App() {
       { section: 'journals', data: journalEntries },
       { section: 'playlists', data: playlists }
     ];
-    const { error } = await supabase.from('site_data').upsert(updates);
+    const { error } = await supabase.from('site_data').upsert(updates, { onConflict: 'section' });
     setIsSaving(false);
-    if (error) showToast("Error saving: " + error.message);
-    else showToast("Successfully deployed all changes to the cloud!");
+    if (error) showToast("Error saving: " + error.message, 'error');
+    else { setIsDirty(false); showToast("Deployed all changes to the cloud.", 'success'); }
   };
 
   const handleListSave = (e, listType) => {
@@ -555,7 +1097,82 @@ export default function App() {
     setEditingItem(null);
   };
 
+  // Generic setter lookup so reorder/duplicate work across every list type.
+  const listRegistry = {
+    projects: [projects, setProjects],
+    blogs: [blogs, setBlogs],
+    socials: [socials, setSocials],
+    journals: [journalEntries, setJournalEntries],
+    playlists: [playlists, setPlaylists],
+  };
+
+  const moveListItem = (listType, index, dir) => {
+    const entry = listRegistry[listType];
+    if (!entry) return;
+    const [list, setter] = entry;
+    const target = index + dir;
+    if (target < 0 || target >= list.length) return;
+    const next = [...list];
+    [next[index], next[target]] = [next[target], next[index]];
+    setter(next);
+  };
+
+  const duplicateListItem = (listType, item) => {
+    const entry = listRegistry[listType];
+    if (!entry) return;
+    const [list, setter] = entry;
+    const copy = { ...item, id: Date.now(), title: item.title ? `${item.title} (copy)` : item.title };
+    setter([...list, copy]);
+    showToast("Record duplicated.", 'success');
+  };
+
+  // Boot config writer — keeps the nested object shape intact.
+  const setBoot = (patch) => setAboutData(a => ({ ...a, boot: { ...(a.boot || {}), ...patch } }));
+
+  // System / patch bay writers
+  const setRack = (patch) => setSystemData(sd => ({ ...sd, ...patch }));
+  const updateModule = (id, patch) => setSystemData(sd => ({
+    ...sd, timeline: (sd.timeline || []).map(m => m.id === id ? { ...m, ...patch } : m)
+  }));
+  const addModule = () => setSystemData(sd => ({
+    ...sd,
+    timeline: [...(sd.timeline || []), {
+      id: `col${Date.now()}`, period: "New Module", subtitle: "Untitled",
+      color: PATCH_COLORS[((sd.timeline || []).length) % PATCH_COLORS.length],
+      knobs: [{ id: `k${Date.now()}`, label: "Gain", value: 50 }],
+      nodes: [{ id: `n${Date.now()}`, type: "pill", title: "Jack 1", value: "", icon: "CircleDot" }],
+    }]
+  }));
+  const removeModule = (id) => setSystemData(sd => {
+    const mod = (sd.timeline || []).find(m => m.id === id);
+    const nodeIds = new Set((mod?.nodes || []).map(n => n.id));
+    return {
+      ...sd,
+      timeline: (sd.timeline || []).filter(m => m.id !== id),
+      // Pull any cable that pointed at a jack on the removed module.
+      cables: (sd.cables || []).filter(c => !nodeIds.has(c.from) && !nodeIds.has(c.to)),
+    };
+  });
+  const addNode = (moduleId) => setSystemData(sd => ({
+    ...sd,
+    timeline: (sd.timeline || []).map(m => m.id !== moduleId ? m : {
+      ...m, nodes: [...(m.nodes || []), { id: `n${Date.now()}`, type: "pill", title: "New Jack", value: "", icon: "CircleDot" }]
+    })
+  }));
+  const removeNode = (moduleId, nodeId) => setSystemData(sd => ({
+    ...sd,
+    timeline: (sd.timeline || []).map(m => m.id !== moduleId ? m : { ...m, nodes: (m.nodes || []).filter(n => n.id !== nodeId) }),
+    cables: (sd.cables || []).filter(c => c.from !== nodeId && c.to !== nodeId),
+  }));
+  const updateNode = (moduleId, nodeId, patch) => setSystemData(sd => ({
+    ...sd,
+    timeline: (sd.timeline || []).map(m => m.id !== moduleId ? m : {
+      ...m, nodes: (m.nodes || []).map(n => n.id === nodeId ? { ...n, ...patch } : n)
+    })
+  }));
+
   const handleDeleteItem = (listType, id) => {
+    setConfirmDelete(null);
     setEditingItem(null);
     if (listType === 'projects') setProjects(projects.filter(p => p.id !== id));
     if (listType === 'blogs') setBlogs(blogs.filter(b => b.id !== id));
@@ -621,6 +1238,14 @@ export default function App() {
     setIsSendingMessage(false);
   };
 
+  // Opening a journal should land the radial wheel on a matching entry rather
+  // than whatever index was left over from the last session.
+  const openJournal = (galleriaItem) => {
+    const match = journalEntries.findIndex(j => j.id === galleriaItem?.id);
+    setJournalIndex(match >= 0 ? match : 0);
+    setActiveJournal(galleriaItem);
+  };
+
   // --- NEW: TICKET GATE SUBMIT HANDLER ---
   const submitJournalAccess = async (e) => {
     e.preventDefault();
@@ -645,7 +1270,7 @@ export default function App() {
       
       // Artificial delay for aesthetic validation
       setTimeout(() => {
-        setActiveJournal(pendingJournal);
+        openJournal(pendingJournal);
         setPendingJournal(null);
         setVisitorName("");
         setIsTicketValidating(false);
@@ -666,10 +1291,125 @@ export default function App() {
        setAccessLogs([newLog, ...accessLogs]);
     }
     
-    setActiveJournal(pendingJournal);
+    openJournal(pendingJournal);
     setPendingJournal(null);
     setVisitorName("");
     setIsTicketValidating(false);
+  };
+
+  // ===================== TERMINAL BOOT ORCHESTRATION =====================
+  // bootStep gates which section of the intro has "come online" yet.
+  // 0 POST log · 1 identity · 2 circle · 3 processes · 4 archive · 5 ready
+  const BOOT_DONE = 5;
+  const bootCfg = aboutData?.boot || {};
+  const bootEnabled = bootCfg.enabled !== false;
+  const bootSpeed = Math.max(0.25, Number(bootCfg.speed) || 1);
+  const bootPostLines = useMemo(
+    () => (Array.isArray(bootCfg.lines) ? bootCfg.lines : []).filter(l => String(l).trim().length),
+    [bootCfg.lines]
+  );
+
+  const [bootStep, setBootStep] = useState(BOOT_DONE);
+  const [postIndex, setPostIndex] = useState(0);
+
+  const skipBoot = () => { setPostIndex(bootPostLines.length); setBootStep(BOOT_DONE); };
+  const restartBoot = () => {
+    try { sessionStorage.removeItem('iceyyy_boot_done'); } catch (_) {}
+    setPostIndex(0);
+    setBootStep(0);
+  };
+
+  // Decide whether this visit replays the sequence.
+  // useLayoutEffect, not useEffect: a passive effect would let one frame paint
+  // with bootStep still at DONE, flashing the whole page before it collapses
+  // back into the console.
+  useLayoutEffect(() => {
+    if (isLoading) return;
+    let seen = false;
+    try { seen = sessionStorage.getItem('iceyyy_boot_done') === '1'; } catch (_) {}
+    const mode = bootCfg.replay || 'session';
+    const reduced = typeof window !== 'undefined' && window.matchMedia
+      && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (!bootEnabled || mode === 'never' || reduced || (mode === 'session' && seen)) {
+      setPostIndex(bootPostLines.length);
+      setBootStep(BOOT_DONE);
+    } else {
+      setPostIndex(0);
+      setBootStep(0);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoading, bootEnabled, bootCfg.replay]);
+
+  // Advance the sequence: POST lines first, then one section at a time.
+  useEffect(() => {
+    if (activeTab !== 'intro' || bootStep >= BOOT_DONE) return;
+    if (postIndex < bootPostLines.length) {
+      const t = setTimeout(() => setPostIndex(i => i + 1), 190 / bootSpeed);
+      return () => clearTimeout(t);
+    }
+    const t = setTimeout(() => setBootStep(st => st + 1), (bootStep === 0 ? 460 : 700) / bootSpeed);
+    return () => clearTimeout(t);
+  }, [activeTab, bootStep, postIndex, bootPostLines.length, bootSpeed]);
+
+  useEffect(() => {
+    if (bootStep >= BOOT_DONE) {
+      try { sessionStorage.setItem('iceyyy_boot_done', '1'); } catch (_) {}
+    }
+  }, [bootStep]);
+
+  // --- QoL: track unsaved edits so the deploy button can signal state ---
+  const [isDirty, setIsDirty] = useState(false);
+  const hydrated = useRef(false);
+  useEffect(() => {
+    if (!hydrated.current) { hydrated.current = !isLoading; return; }
+    setIsDirty(true);
+  }, [aboutData, projects, blogs, socials, galleriaData, systemData, siteSettings, journalEntries, playlists, isLoading]);
+
+  // Warn before losing unsaved admin work
+  useEffect(() => {
+    if (!isDirty || !isAdmin) return;
+    const handler = (e) => { e.preventDefault(); e.returnValue = ''; };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [isDirty, isAdmin]);
+
+  // --- Global ESC handling for every layered surface, innermost first ---
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === 'Escape') {
+        if (showLogin) return setShowLogin(false);
+        if (selectedItem) return setSelectedItem(null);
+        if (pendingJournal) { setPendingJournal(null); setVisitorName(''); return; }
+        if (activeJournal) return setActiveJournal(null);
+        if (editingItem) return setEditingItem(null);
+      }
+      // Cmd/Ctrl+S deploys from anywhere in the admin panel
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's' && isAdmin) {
+        e.preventDefault();
+        saveAllToCloud(null);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
+
+  // --- Lock body scroll whenever an overlay owns the screen ---
+  useEffect(() => {
+    const locked = !!(selectedItem || showLogin || pendingJournal || activeJournal);
+    document.body.style.overflow = locked ? 'hidden' : '';
+    return () => { document.body.style.overflow = ''; };
+  }, [selectedItem, showLogin, pendingJournal, activeJournal]);
+
+  useEffect(() => { setAdminSearch(""); setConfirmDelete(null); }, [adminTab]);
+
+  const adminCounts = {
+    projects: projects.length,
+    galleria: galleriaData.length,
+    blogs: blogs.length,
+    journals: journalEntries.length,
+    socials: socials.length,
+    messages: guestMessages.length,
+    access_logs: accessLogs.length,
   };
 
   const tabs = [
@@ -685,110 +1425,288 @@ export default function App() {
 
   const renderContent = () => {
     if (isLoading && activeTab !== 'admin') {
-      return <div className="h-full flex items-center justify-center text-[#111] font-bold font-mono">Loading Core Systems...</div>;
+      // Skeleton beats a spinner: the page shape appears before the data does,
+      // so nothing jumps when content lands.
+      return (
+        <div className="min-h-full pb-16 anim-fade">
+          <div className="h-20 w-3/4 max-w-2xl skeleton border-[2px] border-[#111] mb-6" />
+          <div className="h-4 w-1/2 skeleton border-[2px] border-[#111] mb-3" />
+          <div className="h-4 w-2/5 skeleton border-[2px] border-[#111] mb-12" />
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {[0,1,2,3,4,5].map(i => (
+              <div key={i} className="h-56 skeleton border-[2px] border-[#111] shadow-[6px_6px_0px_rgba(17,17,17,0.15)]" style={{ animationDelay: `${i * 90}ms` }} />
+            ))}
+          </div>
+          <p className="mt-10 font-mono text-[10px] uppercase tracking-[0.3em] text-gray-500" style={{ animation: 'softPulse 1.6s ease-in-out infinite' }}>Loading core systems</p>
+        </div>
+      );
     }
 
     if (siteSettings?.wip?.[activeTab] && activeTab !== 'admin') {
       if (!isAdmin) {
         return (
           <div className="min-h-full flex flex-col items-center justify-center text-center pb-20">
-            <div className="w-24 h-24 mb-6 border-[3px] border-dashed border-[#111] rounded-full animate-[spin_3s_linear_infinite] flex items-center justify-center">
-               <div className="w-16 h-16 bg-[#111] rounded-full"></div>
+            <div className="w-24 h-24 mb-6 border-[3px] border-dashed border-[#111] rounded-full animate-[spin_6s_linear_infinite] flex items-center justify-center anim-stamp">
+               <div className="w-16 h-16 bg-[#111] rounded-full" style={{ animation: 'softPulse 2.4s ease-in-out infinite' }}></div>
             </div>
-            <h1 className="text-5xl md:text-6xl font-serif text-[#111] mb-4">Under Construction</h1>
-            <p className="font-mono text-gray-700 text-sm max-w-md">I am currently compiling this section. Please stand by for updates.</p>
+            <h1 className="text-5xl md:text-6xl font-serif text-[#111] mb-4 anim-rise stagger-child" style={{ '--d': 1 }}>Under Construction</h1>
+            <p className="font-mono text-gray-700 text-sm max-w-md anim-rise stagger-child" style={{ '--d': 2 }}>I am currently compiling this section. Please stand by for updates.</p>
           </div>
         );
       }
     }
 
     switch (activeTab) {
-      case 'intro':
+      case 'intro': {
+        // Defensive: cloud payloads have shipped without introText before.
+        const introLines = (aboutData?.introText || '').split('\n');
+        const circle = aboutData?.myspace || [];
+        const interests = aboutData?.interests || [];
+        const obsessions = aboutData?.obsessions || [];
+
+        const bootAccent = bootCfg.accent || '#00ff88';
+        const host = bootCfg.hostname || 'iceyyy';
+        const user = bootCfg.user || 'guest';
+        const shell = bootCfg.shell || '~/about';
+        const archive = bootCfg.archivePath || '/archive/obsessions';
+        const booting = bootStep < BOOT_DONE;
+
+        // A command prompt that heads each section as it comes online.
+        // NOTE: a plain function, not a component — declaring a component inside
+        // render gives it a new identity each pass and remounts its children.
+        const promptRow = (cmd, step, note) => (
+          <div className="font-mono text-[11px] md:text-xs mb-4 flex flex-wrap items-baseline gap-x-2 gap-y-1 anim-left">
+            <span style={{ color: bootAccent }}>{user}@{host}</span>
+            <span className="text-gray-400">:</span>
+            <span className="text-[#0000ff]">{shell}</span>
+            <span className="text-gray-400">$</span>
+            <span className="text-[#111] font-bold">
+              <Typewriter text={cmd} active={bootStep === step} speed={bootSpeed * 3} />
+            </span>
+            {note && <span className="text-gray-400 text-[10px]">{note}</span>}
+          </div>
+        );
+
         return (
           <div className="flex flex-col lg:flex-row gap-8 items-start min-h-full pb-16 relative">
-            <div className="flex-1 w-full space-y-16 min-w-0">
-              
-              {/* Intro Title & Description */}
-              <div className="border-b-[2px] border-[#111] pb-10">
-                <h1 className="text-6xl md:text-8xl font-serif text-[#111] mb-6 tracking-tight leading-none">
-                  Designed for Living, <br/><span className="italic text-gray-500">Built for You.</span>
-                </h1>
-                <div className="flex flex-col md:flex-row gap-8 items-start">
-                  <div className="whitespace-pre-wrap font-sans text-lg text-gray-800 flex-1 leading-relaxed border-l-4 border-[#ff5722] pl-6">
-                    {/* Applying brutalist highlighter effect */}
-                    <mark className="bg-[#dfff00] text-[#111] px-1">{aboutData.introText.split('\n')[0]}</mark>
-                    {'\n' + aboutData.introText.split('\n').slice(1).join('\n')}
+            <div className="flex-1 w-full space-y-14 min-w-0">
+
+              {/* ============ CONSOLE / POST LOG ============ */}
+              <div className="border-[2px] border-[#111] bg-[#0b0b0b] shadow-[8px_8px_0px_#111] relative overflow-hidden anim-rise">
+                <div className="crt-scanlines absolute inset-0 pointer-events-none z-10" />
+
+                <div className="flex items-center justify-between px-4 py-2 border-b-[2px] border-[#222] bg-[#111]">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-[#ff5722]" />
+                    <span className="w-2.5 h-2.5 rounded-full bg-[#dfff00]" />
+                    <span className="w-2.5 h-2.5 rounded-full" style={{ background: bootAccent }} />
+                    <span className="font-mono text-[9px] uppercase tracking-[0.28em] text-white/40 ml-3 truncate">
+                      {host}.core — tty0
+                    </span>
                   </div>
-                  {aboutData.introImage && (
-                    <div className="w-full md:w-64 shrink-0 shadow-[8px_8px_0px_#111] border-2 border-[#111] bg-white p-2">
-                      <img src={aboutData.introImage} alt="Intro" className="w-full grayscale hover:grayscale-0 transition-all duration-500" />
+                  <div className="flex gap-2">
+                    {booting ? (
+                      <button onClick={skipBoot} className="font-mono text-[9px] uppercase tracking-[0.2em] px-2.5 py-1 border border-white/25 text-white/60 hover:text-[#111] hover:bg-white transition-colors">
+                        Skip
+                      </button>
+                    ) : (
+                      <button onClick={restartBoot} title="Replay boot sequence" className="font-mono text-[9px] uppercase tracking-[0.2em] px-2.5 py-1 border border-white/25 text-white/60 hover:text-[#111] hover:bg-white transition-colors flex items-center gap-1.5">
+                        <Play size={9} /> Reboot
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="p-4 md:p-6 font-mono text-[10px] md:text-[11px] leading-relaxed min-h-[132px]">
+                  {bootPostLines.slice(0, postIndex).map((line, i) => (
+                    <div key={i} className="flex gap-3 anim-fade" style={{ color: bootAccent }}>
+                      <span className="text-white/25 shrink-0">{String(i + 1).padStart(2, '0')}</span>
+                      <span className="truncate">{line}</span>
+                    </div>
+                  ))}
+                  {postIndex >= bootPostLines.length && (
+                    <div className="mt-2 flex flex-wrap gap-x-6 gap-y-1 anim-fade">
+                      <span className="text-white/45">modules loaded: <span className="text-white">{interests.length}</span></span>
+                      <span className="text-white/45">nodes linked: <span className="text-white">{circle.length}</span></span>
+                      <span className="text-white/45">archives: <span className="text-white">{obsessions.length}</span></span>
+                      <span style={{ color: bootAccent }}>
+                        {booting ? 'initialising…' : 'system ready'}
+                        {!booting && <span className="boot-caret ml-1">▊</span>}
+                      </span>
                     </div>
                   )}
                 </div>
               </div>
 
-              {/* Myspace Box */}
-              <div className="bg-white border-[2px] border-[#111] shadow-[6px_6px_0px_#111] p-8 relative">
-                <div className="absolute -top-3 left-6 bg-[#ff5722] text-white font-mono text-xs font-bold px-3 py-1 border-[2px] border-[#111]">THE CIRCLE</div>
-                <h2 className="text-3xl font-serif text-[#111] mb-6">People I Like</h2>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-                  {aboutData.myspace.map((friend, i) => (
-                    <div key={friend.id} className="group flex flex-col items-center">
-                      <div className="w-full aspect-square border-[2px] border-[#111] overflow-hidden bg-gray-100 mb-3">
-                         <img src={friend.image} alt={friend.name} className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-300" />
+              {/* ============ IDENTITY ============ */}
+              {bootStep >= 1 && (
+                <div className="anim-rise">
+                  {promptRow("cat identity.txt", 1)}
+                  <div className="border-b-[2px] border-[#111] pb-10">
+                    <h1 className="text-5xl md:text-7xl font-serif text-[#111] mb-6 tracking-tight leading-none anim-wipe">
+                      Designed for Living, <br/><span className="italic text-gray-500">Built for You.</span>
+                    </h1>
+                    <div className="flex flex-col md:flex-row gap-8 items-start">
+                      <div className="whitespace-pre-wrap font-sans text-lg text-gray-800 flex-1 leading-relaxed border-l-4 border-[#ff5722] pl-6 anim-left stagger-child" style={{ '--d': 1 }}>
+                        <mark className="bg-[#dfff00] text-[#111] px-1">{introLines[0]}</mark>
+                        {introLines.length > 1 && (
+                          <Typewriter
+                            text={'\n' + introLines.slice(1).join('\n')}
+                            active={bootStep === 1}
+                            speed={bootSpeed}
+                            showCaret={false}
+                          />
+                        )}
                       </div>
-                      <p className="text-sm font-mono text-[#111] font-bold uppercase tracking-widest bg-[#dfff00] px-2">{friend.name}</p>
+                      {aboutData.introImage && (
+                        <div className="group w-full md:w-64 shrink-0 shadow-[8px_8px_0px_#111] border-2 border-[#111] bg-white p-2 slide-card anim-right stagger-child overflow-hidden" style={{ '--d': 2 }}>
+                          <img src={aboutData.introImage} alt="Intro" className="w-full grayscale img-reveal" />
+                        </div>
+                      )}
                     </div>
-                  ))}
+                  </div>
                 </div>
-              </div>
+              )}
 
-              {/* Interests Grid */}
-              <div>
-                <h2 className="text-4xl font-serif text-[#111] mb-8 border-b-[2px] border-[#111] pb-2">Technical Interests</h2>
-                <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6">
-                  {aboutData.interests.map((interest) => (
-                    <div key={interest.id} className="border-[2px] border-[#111] bg-white flex flex-col">
-                      <div className="border-b-[2px] border-[#111] p-3 bg-[#e5e5e5]">
-                        <h3 className="font-mono font-bold text-[#111] truncate text-sm uppercase">{interest.title}</h3>
-                      </div>
-                      <img src={interest.image} alt={interest.title} className="w-full aspect-video object-cover border-b-[2px] border-[#111]" />
-                      <div className="p-4 flex-1">
-                        <p className="text-xs text-gray-700 font-sans leading-relaxed whitespace-pre-wrap">{interest.desc}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
+              {/* ============ CIRCLE — nodes handshake, then resolve to photos ============ */}
+              {bootStep >= 2 && (
+                <div className="anim-rise">
+                  {promptRow("netstat --peers", 2, `// ${circle.length} nodes`)}
+                  <div className="bg-white border-[2px] border-[#111] shadow-[6px_6px_0px_#111] p-6 md:p-8 relative">
+                    <div className="absolute -top-3 left-6 bg-[#ff5722] text-white font-mono text-xs font-bold px-3 py-1 border-[2px] border-[#111] anim-stamp">THE CIRCLE</div>
+                    <h2 className="text-3xl font-serif text-[#111] mb-5 mt-2">People I Like</h2>
 
-              {/* Obsessions */}
-              <div>
-                <h2 className="text-4xl font-serif text-[#111] mb-8 flex items-center gap-4">
-                  Obsessions <span className="bg-[#111] text-[#dfff00] text-xs font-mono px-3 py-1 uppercase tracking-widest">Top 10s</span>
-                </h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {aboutData.obsessions.map((obs, index) => (
-                    <div key={obs.id} className="bg-[#ff5722] border-[2px] border-[#111] shadow-[6px_6px_0px_#111] p-6 text-[#111]">
-                      <div className="flex justify-between items-start border-b-[2px] border-[#111] pb-3 mb-4">
-                        <h3 className="font-bold font-serif text-2xl leading-tight">{obs.category}</h3>
-                        <span className="font-mono text-sm font-bold opacity-50">{String(index + 1).padStart(2, '0')}</span>
-                      </div>
-                      <ol className="list-decimal list-inside text-sm font-mono font-bold text-[#111]/90">
-                        {obs.items.map((item, i) => (
-                          <li key={i} className="leading-tight break-words mb-2 last:mb-0 border-0 outline-none decoration-transparent ring-0">{item}</li>
-                        ))}
-                      </ol>
+                    {/* connection log */}
+                    <div className="font-mono text-[10px] leading-relaxed mb-6 bg-[#0b0b0b] border-[2px] border-[#111] p-3 md:p-4 overflow-x-auto">
+                      {circle.map((friend, i) => (
+                        <div key={friend.id ?? i} className="flex gap-3 whitespace-nowrap anim-fade stagger-child" style={{ '--d': i }}>
+                          <span style={{ color: bootAccent }}>[OK]</span>
+                          <span className="text-white/85">NODE_{String(friend.name || 'UNKNOWN').toUpperCase().replace(/\s+/g, '_')}</span>
+                          <span className="text-white/25 hidden sm:inline">…………………</span>
+                          <span className="text-white/45">connected</span>
+                        </div>
+                      ))}
+                      {circle.length === 0 && <span className="text-white/40">no peers configured</span>}
                     </div>
-                  ))}
+
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+                      {circle.map((friend, i) => (
+                        <div key={friend.id ?? i} className="group flex flex-col items-center anim-rise stagger-child" style={{ '--d': 3 + i }}>
+                          <div className="w-full aspect-square border-[2px] border-[#111] overflow-hidden bg-gray-100 mb-3 slide-card relative">
+                            <img src={friend.image} alt={friend.name} className="w-full h-full object-cover grayscale img-reveal" />
+                            <span className="absolute top-1 right-1 w-2 h-2 rounded-full" style={{ background: bootAccent, boxShadow: `0 0 6px ${bootAccent}`, animation: 'ledBlink 3s ease-in-out infinite', animationDelay: `${i * 400}ms` }} />
+                          </div>
+                          <p className="text-sm font-mono text-[#111] font-bold uppercase tracking-widest bg-[#dfff00] px-2 transition-transform duration-300 group-hover:-translate-y-0.5">{friend.name}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
-              </div>
+              )}
+
+              {/* ============ INTERESTS AS RUNNING PROCESSES ============ */}
+              {bootStep >= 3 && (
+                <div className="anim-rise">
+                  {promptRow("ps aux --sort=-%cpu", 3)}
+                  <div className="border-[2px] border-[#111] bg-white shadow-[6px_6px_0px_#111]">
+                    {/* table header */}
+                    <div className="hidden md:grid grid-cols-[64px_1fr_92px_72px] gap-3 px-4 py-2 bg-[#111] text-white font-mono text-[9px] uppercase tracking-[0.2em]">
+                      <span>PID</span><span>Process</span><span>%CPU</span><span>State</span>
+                    </div>
+                    <div className="divide-y-[2px] divide-[#111]">
+                      {interests.map((interest, i) => {
+                        const cpu = hashPct(String(interest.title || i), 11, 96);
+                        const pid = 1000 + hashPct(String(interest.title || i), 100, 999);
+                        return (
+                          <div key={interest.id ?? i} className="group anim-rise stagger-child" style={{ '--d': i }}>
+                            <div className="grid grid-cols-1 md:grid-cols-[64px_1fr_92px_72px] gap-3 px-4 py-3 items-center hover:bg-[#f4f4f0] transition-colors">
+                              <span className="font-mono text-[10px] text-gray-400 hidden md:block">{pid}</span>
+                              <span className="font-mono text-xs font-bold uppercase tracking-widest text-[#111] truncate">{interest.title}</span>
+                              <div className="flex items-center gap-2">
+                                <div className="flex-1 h-2 bg-[#e5e5e5] border border-[#111] overflow-hidden">
+                                  <div
+                                    className="h-full origin-left"
+                                    style={{
+                                      width: `${cpu}%`,
+                                      background: cpu > 80 ? '#ff5722' : cpu > 45 ? '#dfff00' : '#0000ff',
+                                      animation: 'barFill 900ms var(--ease-out-expo) both',
+                                      animationDelay: `${i * 110}ms`,
+                                    }}
+                                  />
+                                </div>
+                                <span className="font-mono text-[10px] font-bold w-8 text-right">{cpu}</span>
+                              </div>
+                              <span className="font-mono text-[9px] uppercase tracking-widest text-[#111] bg-[#dfff00] border border-[#111] px-1.5 py-0.5 w-fit">running</span>
+                            </div>
+
+                            {/* expanded detail — the original card content, preserved */}
+                            <div className="grid md:grid-cols-[200px_1fr] gap-4 px-4 pb-4 items-start">
+                              <div className="overflow-hidden border-[2px] border-[#111]">
+                                <img src={interest.image} alt={interest.title} className="w-full aspect-video object-cover grayscale img-reveal" />
+                              </div>
+                              <p className="text-xs text-gray-700 font-sans leading-relaxed whitespace-pre-wrap pt-1">{interest.desc}</p>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ============ TOP 10s AS DIRECTORY LISTINGS ============ */}
+              {bootStep >= 4 && (
+                <div className="anim-rise">
+                  {promptRow(`ls -la ${archive}`, 4)}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {obsessions.map((obs, index) => {
+                      const slug = String(obs.category || 'list').toLowerCase().replace(/[^a-z0-9]+/g, '_');
+                      const items = obs.items || [];
+                      return (
+                        <div key={obs.id ?? index} className="border-[2px] border-[#111] bg-[#0b0b0b] shadow-[6px_6px_0px_#111] overflow-hidden slide-card anim-rise stagger-child" style={{ '--d': index }}>
+                          <div className="flex justify-between items-center px-4 py-2 bg-[#111] border-b-[2px] border-[#222] gap-3">
+                            <span className="font-mono text-[10px] uppercase tracking-[0.2em] truncate" style={{ color: bootAccent }}>
+                              {archive}/{slug}/
+                            </span>
+                            <span className="font-mono text-[9px] text-white/35 whitespace-nowrap">{items.length} items</span>
+                          </div>
+                          <div className="p-3 md:p-4 font-mono text-[10px] md:text-[11px] overflow-x-auto">
+                            <p className="text-white/30 mb-2 whitespace-nowrap">total {items.length * 4}</p>
+                            {items.map((item, i) => (
+                              <div key={i} className="flex gap-3 items-baseline whitespace-nowrap hover:bg-white/5 px-1 -mx-1 transition-colors group">
+                                <span className="text-white/25 hidden sm:inline">-rw-r--r--</span>
+                                <span className="text-white/25 hidden md:inline w-8 text-right">{4 + i}k</span>
+                                <span className="text-white/40 w-6 text-right shrink-0">{String(i + 1).padStart(2, '0')}</span>
+                                <span className="text-white/90 truncate group-hover:text-[#dfff00] transition-colors">{item}</span>
+                              </div>
+                            ))}
+                            {items.length === 0 && <span className="text-white/30">empty directory</span>}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* ============ READY PROMPT ============ */}
+              {bootStep >= BOOT_DONE && (
+                <div className="font-mono text-[11px] md:text-xs flex items-center gap-2 anim-fade pt-2">
+                  <span style={{ color: bootAccent }}>{user}@{host}</span>
+                  <span className="text-gray-400">:</span>
+                  <span className="text-[#0000ff]">{shell}</span>
+                  <span className="text-gray-400">$</span>
+                  <span className="boot-caret text-[#111]">▊</span>
+                </div>
+              )}
             </div>
 
             {/* Right Side Memo & Mood Checker */}
+            {bootStep >= 2 && (
             <div className="w-full lg:w-72 shrink-0 mt-8 lg:mt-0 flex flex-col gap-8 lg:sticky lg:top-8 self-start z-20">
-              
-              <div className="bg-[#dfff00] p-6 border-[2px] border-[#111] shadow-[8px_8px_0px_#111] relative">
-                <div className="absolute -top-3 -right-3 w-8 h-8 bg-[#0000ff] rounded-full border-[2px] border-[#111] flex items-center justify-center text-white shadow-sm"><Pin size={16}/></div>
+
+              <div className="bg-[#dfff00] p-6 border-[2px] border-[#111] shadow-[8px_8px_0px_#111] relative anim-right stagger-child" style={{ '--d': 2 }}>
+                <div className="absolute -top-3 -right-3 w-8 h-8 bg-[#0000ff] rounded-full border-[2px] border-[#111] flex items-center justify-center text-white shadow-sm anim-stamp"><Pin size={16}/></div>
                 <p className="font-mono text-xs font-bold uppercase tracking-widest text-[#111] mb-4 border-b-[2px] border-[#111] pb-2">System Memo</p>
                 <p className="font-sans text-[#111] leading-relaxed text-sm">
                   {aboutData.notepadText || "No active memos."}
@@ -796,24 +1714,22 @@ export default function App() {
               </div>
 
               {/* MOOD CHECKER COMPONENT */}
-              <div className="w-full border-[2px] border-[#111] shadow-[8px_8px_0px_#111] rounded-xl overflow-hidden flex flex-col bg-white select-none">
+              <div className="w-full border-[2px] border-[#111] shadow-[8px_8px_0px_#111] rounded-xl overflow-hidden flex flex-col bg-white select-none anim-right stagger-child" style={{ '--d': 3 }}>
                  {/* Top Row */}
                  <div className="flex h-16 border-b-[2px] border-[#111]">
                     <div className="flex-1 bg-[#f4f4f0] flex items-center px-5">
                        <span className="font-sans text-3xl font-semibold tracking-tighter text-[#111]">Mood<span className="text-[#ff5722]">.</span></span>
                     </div>
-                    <div className="w-16 shrink-0 border-l-[2px] border-[#111] relative overflow-hidden" 
+                    <div className="w-16 shrink-0 border-l-[2px] border-[#111] relative overflow-hidden"
                          style={{ background: 'conic-gradient(from 145deg at 50% 50%, #d1d5db 0deg, #f9fafb 90deg, #9ca3af 180deg, #f9fafb 270deg, #d1d5db 360deg)' }}>
-                         {/* Metallic Sheen Overlay */}
                          <div className="absolute inset-0 opacity-40" style={{ backgroundImage: 'linear-gradient(45deg, transparent 40%, rgba(255,255,255,0.9) 50%, transparent 60%)' }}></div>
                     </div>
                  </div>
-                 
+
                  {/* Bottom Row */}
                  <div className="flex h-[13rem]">
-                    {/* Left Column (Orange) */}
                     <div className="w-[35%] bg-[#ff5722] flex flex-col border-r-[2px] border-[#111]">
-                       <div className="h-16 border-b-[2px] border-[#111] bg-[#111]" 
+                       <div className="h-16 border-b-[2px] border-[#111] bg-[#111]"
                             style={{ backgroundImage: 'repeating-linear-gradient(45deg, #111, #111 3px, #ff5722 3px, #ff5722 4px)' }}>
                        </div>
                        <div className="flex-1 flex flex-col items-center justify-center relative">
@@ -823,15 +1739,14 @@ export default function App() {
                           </div>
                        </div>
                     </div>
-                    
-                    {/* Right Column (White) */}
+
                     <div className="flex-1 bg-[#f4f4f0] flex flex-col p-5 relative">
                        <div className="flex justify-between items-center font-mono text-[10px] text-[#111] uppercase tracking-widest mb-auto">
                           <span className="cursor-pointer hover:opacity-50 transition-opacity">&larr;</span>
                           <span>status: {aboutData.mood?.status || "OPTIMAL"}</span>
                           <span className="cursor-pointer hover:opacity-50 transition-opacity">&rarr;</span>
                        </div>
-                       
+
                        <div className="mt-auto">
                           <h3 className="font-sans text-[#111] font-semibold text-2xl leading-[1.1] tracking-tight mb-2 whitespace-pre-wrap">{aboutData.mood?.title || "System\nStability"}</h3>
                           <p className="font-sans text-[11px] text-gray-500 leading-snug whitespace-pre-wrap">{aboutData.mood?.desc || "Performance score and\nemotional statistics for Q3."}</p>
@@ -841,17 +1756,19 @@ export default function App() {
               </div>
 
             </div>
+            )}
           </div>
         );
+      }
 
-      case 'portfolio':
+      case 'portfolio': {
         const containerHeightRem = 6 + projects.length * 1.6;
         return (
           <div className="min-h-full pb-16 flex flex-col items-center">
             
             <div className="w-full text-center border-b-[2px] border-[#111] pb-8 mb-12">
-               <h1 className="text-5xl md:text-7xl font-serif text-[#111] tracking-tight uppercase mb-2">Project Index</h1>
-               <p className="font-mono text-gray-500 text-sm">A complete repository of engineering and design deliverables.</p>
+               <h1 className="text-5xl md:text-7xl font-serif text-[#111] tracking-tight uppercase mb-2 anim-wipe">Project Index</h1>
+               <p className="font-mono text-gray-500 text-sm anim-rise stagger-child" style={{ '--d': 1 }}>A complete repository of engineering and design deliverables.</p>
             </div>
 
             <div className="w-full max-w-4xl flex flex-col items-center relative z-20">
@@ -890,19 +1807,19 @@ export default function App() {
                     <div 
                       key={item.id} 
                       onClick={() => openModal(item, 'project')}
-                      className="absolute transition-transform duration-300 hover:-translate-y-2 cursor-pointer group select-none"
-                      style={{ top: `${topPos}rem`, left: `${leftPercent}%`, width: `${widthPercent}%`, zIndex: zIndex }}
+                      className="absolute cursor-pointer group select-none anim-left stagger-child hover:-translate-y-3 hover:drop-shadow-[0_12px_0_rgba(17,17,17,0.18)]"
+                      style={{ top: `${topPos}rem`, left: `${leftPercent}%`, width: `${widthPercent}%`, zIndex: zIndex, '--d': i, transition: 'transform 420ms var(--ease-out-expo), filter 420ms ease' }}
                     >
                       <div 
                         className={`absolute -top-[1.75rem] h-[2rem] w-[22%] min-w-[50px] ${folderBg} border-[2px] ${borderColor} border-b-0 rounded-t-sm flex items-center justify-between px-2 z-20`}
                         style={{ left: `${leftOffset}%` }}
                       >
                         <span className={`font-mono text-[9px] md:text-[11px] font-bold ${textColor}`}>
-                          {isBlack ? item.title.charAt(0).toUpperCase() : (i+94).toString().padStart(3, '0')}
+                          {isBlack ? (item.title || '?').charAt(0).toUpperCase() : (i+94).toString().padStart(3, '0')}
                         </span>
                         <div className={`w-[1px] h-[50%] ${isBlack ? 'bg-white/20' : 'bg-[#111]/30'} mx-1 md:mx-2`}></div>
                         <span className={`font-mono text-[9px] md:text-[11px] font-bold truncate ${textColor} uppercase tracking-wider`}>
-                          {isBlack ? (i+3).toString().padStart(3, '0') : item.title.split(' ')[0]}
+                          {isBlack ? (i+3).toString().padStart(3, '0') : (item.title || 'UNTITLED').split(' ')[0]}
                         </span>
                       </div>
                       <div 
@@ -928,12 +1845,18 @@ export default function App() {
             </div>
           </div>
         );
+      }
 
       case 'galleria':
         return (
           <div className="w-full flex flex-col gap-12 pb-16">
-            <div className="w-full h-[70vh] min-h-[500px] relative overflow-hidden bg-blueprint bg-[#e5e5e5] border-[2px] border-[#111] shadow-[8px_8px_0px_#111] flex items-center justify-center shrink-0" 
-                 onWheel={(e) => setGalleriaPanX(p => p - e.deltaY * 2.5)}>
+            <div className="w-full h-[70vh] min-h-[500px] relative overflow-hidden bg-blueprint bg-[#e5e5e5] border-[2px] border-[#111] shadow-[8px_8px_0px_#111] flex items-center justify-center shrink-0 anim-rise"
+                 onWheel={(e) => {
+                   // Clamp: previously you could scroll indefinitely past the
+                   // last image and end up staring at empty blueprint.
+                   const span = Math.max(0, galleriaData.length - 1) * 55 + 600;
+                   setGalleriaPanX(p => Math.min(span, Math.max(-span, p - e.deltaY * 2.5)));
+                 }}>
               
               <div className="absolute top-8 left-8 font-mono text-[10px] font-bold tracking-widest uppercase text-[#111] bg-[#dfff00] px-3 py-1 border-[2px] border-[#111] z-20 shadow-[2px_2px_0px_#111]">
                  Timeline : Infinite
@@ -960,12 +1883,12 @@ export default function App() {
                             <img src={img.image} className="h-full w-auto max-w-none grayscale group-hover:grayscale-0 transition-all duration-[600ms] block" alt="galleria" />
                             
                             {/* Hover Tag */}
-                            <div className="absolute bottom-3 left-3 p-1.5 bg-[#dfff00] border-[2px] border-[#111] opacity-0 group-hover:opacity-100 transition-opacity duration-500 shadow-[4px_4px_0px_#111] flex items-center gap-2">
+                            <div className="absolute bottom-3 left-3 p-1.5 bg-[#dfff00] border-[2px] border-[#111] opacity-0 translate-y-3 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] shadow-[4px_4px_0px_#111] flex items-center gap-2">
                                <p className="text-[#111] font-mono font-bold tracking-widest uppercase text-[10px] whitespace-nowrap">{img.date}</p>
                                
                                {/* VISUAL CUE: Only shows up if this specific photo has a journal entry */}
                                {img.hasJournal && (
-                                  <span className="bg-[#ff5722] text-white px-1.5 py-0.5 text-[8px] tracking-widest shadow-sm">MEMO ATTACHED ↗</span>
+                                  <span className="bg-[#ff5722] text-white px-1.5 py-0.5 text-[8px] tracking-widest shadow-sm" style={{ animation: 'softPulse 2s ease-in-out infinite' }}>MEMO ATTACHED ↗</span>
                                )}
                             </div>
                             
@@ -995,8 +1918,8 @@ export default function App() {
                 <p className="font-mono text-gray-500 text-sm">No playlists configured.</p>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                   {playlists.map((pl) => (
-                      <div key={pl.id} style={{ backgroundColor: pl.color || '#333' }} className="rounded-[2.5rem] overflow-hidden shadow-[8px_8px_0px_rgba(17,17,17,0.3)] flex flex-col text-white transform transition-transform hover:-translate-y-2 border-[2px] border-transparent hover:border-[#111] group relative">
+                   {playlists.map((pl, plIdx) => ({ ...pl, __i: plIdx })).map((pl) => (
+                      <div key={pl.id} style={{ backgroundColor: pl.color || '#333', '--d': pl.__i }} className="rounded-[2.5rem] overflow-hidden shadow-[8px_8px_0px_rgba(17,17,17,0.3)] flex flex-col text-white border-[2px] border-transparent hover:border-[#111] group relative anim-rise stagger-child slide-card">
                          
                          {/* Image & Gradient Fade Area */}
                          <div className="w-full h-56 relative shrink-0 bg-[#111]">
@@ -1038,7 +1961,7 @@ export default function App() {
       case 'system': {
         return (
           <div className="min-h-full pb-16 relative z-30 font-sans">
-            <div className="bg-[#f4f4f0] border-[2px] border-[#111] shadow-[12px_12px_0px_#111] relative w-full overflow-hidden flex flex-col h-[80vh] min-h-[700px]">
+            <div className="bg-[#f4f4f0] border-[2px] border-[#111] shadow-[12px_12px_0px_#111] relative w-full overflow-hidden flex flex-col h-[80vh] min-h-[700px] anim-sheet">
               <div className="bg-[#111] text-[#f4f4f0] px-5 py-4 flex justify-between items-center border-b-[2px] border-[#111] shrink-0 z-20 relative">
                  <div className="flex gap-3">
                     <div className="w-3 h-3 rounded-full bg-[#ff5722]"></div>
@@ -1048,32 +1971,45 @@ export default function App() {
                  <h1 className="text-xl font-mono font-bold tracking-[0.2em] uppercase absolute left-1/2 -translate-x-1/2">{systemData?.title || 'System Core'}</h1>
                  <div className="flex gap-2">
                     {(systemData?.navPills || []).slice(0, 2).map((nav, i) => (
-                       <div key={i} className="hidden md:block bg-transparent border border-white/30 text-white px-3 py-1 font-mono text-[10px] uppercase tracking-widest">
+                       <div key={i} style={{ '--d': i }} className="hidden md:block bg-transparent border border-white/30 text-white px-3 py-1 font-mono text-[10px] uppercase tracking-widest anim-right stagger-child">
                           {nav}
                        </div>
                     ))}
                  </div>
               </div>
-              <div className="flex-1 bg-blueprint p-8 flex items-center justify-center">
-                 <p className="font-mono text-[#111] bg-[#dfff00] px-4 py-2 border-[2px] border-[#111] font-bold shadow-[4px_4px_0px_#111]">SYSTEM VISUALIZATION MOVED TO COMPONENT MODULE</p>
+              {/* Rack label strip between the window chrome and the bay */}
+              <div className="bg-[#0d0d0d] border-b-[2px] border-[#2e2e2e] px-5 py-2 flex items-center justify-between gap-4 shrink-0">
+                 <span className="font-mono text-[9px] uppercase tracking-[0.3em] text-white/45 truncate">{systemData?.rackLabel || 'RACK'}</span>
+                 <span className="font-mono text-[9px] uppercase tracking-[0.25em] text-white/30 whitespace-nowrap flex items-center gap-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#00ff88]" style={{ boxShadow: '0 0 8px #00ff88', animation: 'ledBlink 2s ease-in-out infinite' }} />
+                    {(systemData?.cables || []).length} patched
+                 </span>
               </div>
+
+              <PatchBay
+                data={systemData}
+                isAdmin={isAdmin}
+                onChange={setSystemData}
+                onToast={showToast}
+              />
             </div>
           </div>
         );
       }
 
-      case 'blog':
+      case 'blog': {
         const filteredBlogs = (blogs || []).filter(b => (b.blogCategory || 'anime') === blogCategoryFilter);
 
         return (
           <div className="min-h-full pb-16 max-w-7xl mx-auto flex flex-col relative items-start">
             
             <div className="w-full flex flex-col md:flex-row justify-between items-end border-b-[2px] border-[#111] pb-4 mb-10 pt-6">
-               <h1 className="text-5xl md:text-6xl font-serif text-[#111] tracking-tight">Transmission Log</h1>
+               <h1 className="text-5xl md:text-6xl font-serif text-[#111] tracking-tight anim-wipe">Transmission Log</h1>
                <div className="flex gap-2 mt-4 md:mt-0">
                   {['anime', 'manhwa', 'shows'].map(cat => (
-                     <button key={cat} onClick={() => setBlogCategoryFilter(cat)} className={`font-mono text-[10px] md:text-xs font-bold uppercase px-4 py-2 border-[2px] border-[#111] transition-all ${blogCategoryFilter === cat ? 'bg-[#111] text-[#dfff00] shadow-[2px_2px_0px_#ff5722] translate-y-[-2px]' : 'bg-white text-[#111] hover:bg-[#f4f4f0]'}`}>
+                     <button key={cat} onClick={() => setBlogCategoryFilter(cat)} className={`relative font-mono text-[10px] md:text-xs font-bold uppercase px-4 py-2 border-[2px] border-[#111] slide-press overflow-hidden ${blogCategoryFilter === cat ? 'bg-[#111] text-[#dfff00] shadow-[2px_2px_0px_#ff5722] -translate-y-[2px]' : 'bg-white text-[#111] hover:bg-[#dfff00]'}`}>
                         {cat}
+                        {blogCategoryFilter === cat && <span className="absolute left-0 bottom-0 h-[3px] w-full bg-[#ff5722] origin-left" style={{ animation: 'barFill 420ms var(--ease-out-expo) both' }} />}
                      </button>
                   ))}
                </div>
@@ -1087,11 +2023,11 @@ export default function App() {
                      <div className="flex flex-col lg:flex-row gap-8 w-full">
                         <div className="flex-1 w-full min-w-0">
                            <div className="space-y-8">
-                             {filteredBlogs.filter(b => b.type !== 'album').map((post) => (
-                               <div key={post.id} onClick={() => openModal(post, 'blog')} className="bg-white flex flex-col md:flex-row border-[2px] border-[#111] shadow-[6px_6px_0px_#111] hover:translate-y-1 hover:shadow-[2px_2px_0px_#111] transition-all cursor-pointer group">
+                             {filteredBlogs.filter(b => b.type !== 'album').map((p, bi) => ({ ...p, __i: bi })).map((post) => (
+                               <div key={post.id} onClick={() => openModal(post, 'blog')} style={{ '--d': post.__i }} className="bg-white flex flex-col md:flex-row border-[2px] border-[#111] shadow-[6px_6px_0px_#111] slide-card cursor-pointer group anim-rise stagger-child overflow-hidden">
                                  {post.coverImage && (
                                    <div className="w-full md:w-[35%] h-64 md:h-auto shrink-0 overflow-hidden border-b-[2px] md:border-b-0 md:border-r-[2px] border-[#111]">
-                                     <img src={post.coverImage} className={`w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-500 ${post.imageEffect === 'duotone' || post.imageEffect === 'both' ? 'img-duotone' : ''}`} alt="cover"/>
+                                     <img src={post.coverImage} className={`w-full h-full object-cover grayscale img-reveal ${post.imageEffect === 'duotone' || post.imageEffect === 'both' ? 'img-duotone' : ''}`} alt="cover"/>
                                      {(post.imageEffect === 'ascii' || post.imageEffect === 'both') && <div className="effect-ascii-overlay"></div>}
                                    </div>
                                  )}
@@ -1122,8 +2058,8 @@ export default function App() {
                           </div>
                           <div className="bg-[#111] p-6 rounded-sm shadow-[8px_8px_0px_rgba(17,17,17,0.2)] flex flex-col-reverse gap-1.5 min-h-[400px] border-[2px] border-[#111] relative overflow-hidden">
                               <div className="absolute inset-0 opacity-10 pointer-events-none" style={{ backgroundImage: 'linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)', backgroundSize: '10px 10px' }}></div>
-                              {filteredBlogs.filter(b => b.type === 'album').map(album => (
-                                  <div key={album.id} onClick={() => openModal(album, 'blog')} className="h-12 bg-white border border-[#333] cursor-pointer hover:-translate-x-6 transition-transform flex items-center px-4 relative group">
+                              {filteredBlogs.filter(b => b.type === 'album').map((a, ai) => ({ ...a, __i: ai })).map(album => (
+                                  <div key={album.id} onClick={() => openModal(album, 'blog')} className="spine h-12 bg-white border border-[#333] cursor-pointer hover:bg-[#dfff00] flex items-center px-4 relative group anim-right stagger-child" style={{ '--d': album.__i }}>
                                      <div className="w-2 h-full bg-[#e5e5e5] absolute left-0 top-0 border-r border-[#ccc]"></div>
                                      <span className="font-mono text-xs font-bold uppercase tracking-widest text-[#111] truncate w-full pl-3 group-hover:text-[#ff5722] transition-colors">{album.title}</span>
                                      <div className="absolute right-0 top-0 h-full w-10 bg-[#111] opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-10 border-l border-black/20" 
@@ -1138,8 +2074,8 @@ export default function App() {
 
                   {blogCategoryFilter === 'manhwa' && (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 w-full">
-                       {filteredBlogs.map(post => (
-                          <div key={post.id} onClick={() => openModal(post, 'blog')} className="relative w-full min-h-[480px] bg-[#111] rounded-[24px] overflow-hidden shadow-[8px_8px_0px_#111] border-[2px] border-[#111] cursor-pointer group flex flex-col justify-end p-8 hover:-translate-y-2 transition-transform pb-6">
+                       {filteredBlogs.map((p, mi) => ({ ...p, __i: mi })).map(post => (
+                          <div key={post.id} onClick={() => openModal(post, 'blog')} style={{ '--d': post.__i }} className="relative w-full min-h-[480px] bg-[#111] rounded-[24px] overflow-hidden shadow-[8px_8px_0px_#111] border-[2px] border-[#111] cursor-pointer group flex flex-col justify-end p-8 slide-card pb-6 anim-rise stagger-child">
                              <div className="absolute inset-0 z-0 bg-[#111]">
                                 <img src={post.coverImage} className={`w-full h-[60%] object-cover transition-transform duration-700 group-hover:scale-105 ${post.imageEffect === 'duotone' || post.imageEffect === 'both' ? 'img-duotone opacity-80' : ''}`} alt={post.title} />
                                 {(post.imageEffect === 'ascii' || post.imageEffect === 'both') && <div className="effect-ascii-overlay mix-blend-color-dodge opacity-60"></div>}
@@ -1152,7 +2088,7 @@ export default function App() {
                                 <h2 className="text-4xl font-serif text-white leading-tight">{post.title}</h2>
                                 <p className="font-sans text-white/70 text-sm line-clamp-3">{post.excerpt}</p>
                                 <div className="flex mt-2">
-                                   <span className="border-[2px] border-white/20 rounded-full px-5 py-2 text-white font-bold hover:bg-white hover:text-[#111] transition-colors shadow-sm text-sm">Read entry</span>
+                                   <span className="border-[2px] border-white/20 rounded-full px-5 py-2 text-white font-bold group-hover:bg-white group-hover:text-[#111] group-hover:border-white transition-all duration-300 shadow-sm text-sm inline-flex items-center gap-2">Read entry <ChevronRight size={14} className="transition-transform duration-300 group-hover:translate-x-1" /></span>
                                 </div>
                              </div>
                              
@@ -1167,8 +2103,8 @@ export default function App() {
 
                   {blogCategoryFilter === 'shows' && (
                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-8 w-full">
-                       {filteredBlogs.map(post => (
-                          <div key={post.id} onClick={() => openModal(post, 'blog')} className="bg-[#111] p-6 md:p-8 border-[2px] border-[#333] cursor-pointer group hover:-translate-y-2 transition-transform flex flex-col">
+                       {filteredBlogs.map((p, si) => ({ ...p, __i: si })).map(post => (
+                          <div key={post.id} onClick={() => openModal(post, 'blog')} style={{ '--d': post.__i }} className="bg-[#111] p-6 md:p-8 border-[2px] border-[#333] cursor-pointer group hover:-translate-y-2 hover:border-[#ff5722] transition-all duration-[380ms] ease-[cubic-bezier(0.16,1,0.3,1)] flex flex-col anim-rise stagger-child">
                              <div className="relative w-full aspect-[4/3] bg-[#ff5722] mb-8 overflow-hidden border-[2px] border-[#333]">
                                  <img src={post.coverImage} className={`w-full h-full object-cover transition-transform duration-700 group-hover:scale-105 ${post.imageEffect === 'duotone' || post.imageEffect === 'both' ? 'mix-blend-multiply grayscale contrast-[1.2]' : ''}`} alt={post.title} />
                                  {(post.imageEffect === 'ascii' || post.imageEffect === 'both') && <div className="effect-ascii-overlay mix-blend-color-dodge opacity-80"></div>}
@@ -1194,19 +2130,20 @@ export default function App() {
             )}
           </div>
         );
+      }
 
       case 'blank':
         return (
           <div className="min-h-full pb-16 flex flex-col items-center justify-center relative">
-            <div className="border-[2px] border-[#111] p-8 md:p-12 w-full max-w-2xl bg-white shadow-[8px_8px_0px_#111]">
+            <div className="border-[2px] border-[#111] p-8 md:p-12 w-full max-w-2xl bg-white shadow-[8px_8px_0px_#111] anim-sheet">
               <div className="border-b-[2px] border-[#111] pb-6 mb-8 text-center">
                  <h1 className="text-5xl font-serif text-[#111] mb-2">Public Sandbox</h1>
                  <p className="text-gray-600 font-mono text-xs uppercase tracking-widest">End-to-End Encryption Disabled</p>
               </div>
               
               <div className="flex gap-2 mb-6 justify-center">
-                <button onClick={() => setPlaygroundMode('text')} className={`flex items-center gap-2 px-6 py-2 border-[2px] border-[#111] font-mono text-sm font-bold transition-all ${playgroundMode === 'text' ? 'bg-[#dfff00] shadow-[2px_2px_0px_#111] translate-y-[-2px]' : 'bg-white hover:bg-gray-100'}`}><Type size={16}/> TEXT</button>
-                <button onClick={() => setPlaygroundMode('draw')} className={`flex items-center gap-2 px-6 py-2 border-[2px] border-[#111] font-mono text-sm font-bold transition-all ${playgroundMode === 'draw' ? 'bg-[#dfff00] shadow-[2px_2px_0px_#111] translate-y-[-2px]' : 'bg-white hover:bg-gray-100'}`}><Pencil size={16}/> SKETCH</button>
+                <button type="button" onClick={() => setPlaygroundMode('text')} className={`flex items-center gap-2 px-6 py-2 border-[2px] border-[#111] font-mono text-sm font-bold slide-press ${playgroundMode === 'text' ? 'bg-[#dfff00] shadow-[2px_2px_0px_#111] -translate-y-[2px]' : 'bg-white hover:bg-gray-100'}`}><Type size={16}/> TEXT</button>
+                <button type="button" onClick={() => setPlaygroundMode('draw')} className={`flex items-center gap-2 px-6 py-2 border-[2px] border-[#111] font-mono text-sm font-bold slide-press ${playgroundMode === 'draw' ? 'bg-[#dfff00] shadow-[2px_2px_0px_#111] -translate-y-[2px]' : 'bg-white hover:bg-gray-100'}`}><Pencil size={16}/> SKETCH</button>
               </div>
 
               <form onSubmit={sendAnonymousMessage}>
@@ -1217,9 +2154,14 @@ export default function App() {
                     <canvas ref={canvasRef} onMouseDown={startDrawing} onMouseMove={draw} onMouseUp={stopDrawing} onMouseLeave={stopDrawing} onTouchStart={startDrawing} onTouchMove={draw} onTouchEnd={stopDrawing} className="w-full h-64 cursor-crosshair relative z-10" />
                   </div>
                 )}
-                <button disabled={isSendingMessage} type="submit" className="w-full bg-[#111] text-[#f4f4f0] font-mono font-bold uppercase tracking-widest py-4 border-[2px] border-[#111] hover:bg-white hover:text-[#111] transition-colors flex items-center justify-center gap-3">
-                  {isSendingMessage ? 'UPLOADING...' : <><Send size={18}/> SUBMIT LOG</>}
-                </button>
+                <div className="flex gap-3">
+                  {playgroundMode === 'draw' && (
+                    <button type="button" onClick={clearCanvas} className="px-5 py-4 bg-white text-[#111] border-[2px] border-[#111] font-mono font-bold uppercase tracking-widest slide-press flex items-center gap-2 shrink-0"><RotateCcw size={16}/> CLEAR</button>
+                  )}
+                  <button disabled={isSendingMessage} type="submit" className="flex-1 bg-[#111] text-[#f4f4f0] font-mono font-bold uppercase tracking-widest py-4 border-[2px] border-[#111] hover:bg-[#dfff00] hover:text-[#111] transition-colors flex items-center justify-center gap-3 disabled:opacity-50">
+                    {isSendingMessage ? <span style={{ animation: 'softPulse 1.2s ease-in-out infinite' }}>UPLOADING...</span> : <><Send size={18}/> SUBMIT LOG</>}
+                  </button>
+                </div>
               </form>
             </div>
           </div>
@@ -1228,15 +2170,15 @@ export default function App() {
       case 'socials':
         return (
           <div className="min-h-full pb-16 flex flex-col items-center justify-center">
-            <h1 className="text-5xl md:text-7xl font-serif text-[#111] mb-12 tracking-tight border-b-[2px] border-[#111] pb-4">External Links</h1>
+            <h1 className="text-5xl md:text-7xl font-serif text-[#111] mb-12 tracking-tight border-b-[2px] border-[#111] pb-4 anim-wipe">External Links</h1>
             {socials.length === 0 ? (
               <p className="text-xl font-mono text-gray-500 text-center">Awaiting configuration.</p>
             ) : (
               <div className="flex gap-6 flex-wrap justify-center">
-                {socials.map((social) => (
-                  <a key={social.id} href={social.url} target="_blank" rel="noopener noreferrer" className="bg-white p-4 border-[2px] border-[#111] shadow-[6px_6px_0px_#111] hover:translate-y-1 hover:shadow-[2px_2px_0px_#111] transition-all cursor-pointer w-48 text-center group block">
+                {socials.map((social, i) => (
+                  <a key={social.id} href={social.url} target="_blank" rel="noopener noreferrer" className="bg-white p-4 border-[2px] border-[#111] shadow-[6px_6px_0px_#111] slide-card cursor-pointer w-48 text-center group block anim-rise stagger-child" style={{ '--d': i }}>
                     <div className="w-full h-32 bg-[#f4f4f0] border-[2px] border-[#111] mb-4 overflow-hidden flex items-center justify-center">
-                      {social.image ? <img src={social.image} alt={social.name} className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-colors" /> : <span className="font-mono text-[#111] text-xs font-bold">MISSING_IMG</span>}
+                      {social.image ? <img src={social.image} alt={social.name} className="w-full h-full object-cover grayscale img-reveal" /> : <span className="font-mono text-[#111] text-xs font-bold">MISSING_IMG</span>}
                     </div>
                     <span className="font-mono font-bold text-sm uppercase tracking-widest text-[#111] bg-[#dfff00] px-2 py-1">{social.name}</span>
                   </a>
@@ -1251,9 +2193,16 @@ export default function App() {
         
         if (editingItem) {
           return (
-            <div className="max-w-5xl mx-auto bg-white p-8 border-[2px] border-[#111] shadow-[8px_8px_0px_#111] mb-16 relative">
-              <button onClick={() => setEditingItem(null)} className="absolute top-4 right-4 text-[#111] hover:bg-[#111] hover:text-white p-2 border-[2px] border-transparent hover:border-[#111] transition-colors"><X size={24}/></button>
-              <h2 className="text-3xl font-serif border-b-[2px] border-[#111] pb-4 mb-8">Edit Record</h2>
+            <div className="max-w-5xl mx-auto bg-white p-8 border-[2px] border-[#111] shadow-[8px_8px_0px_#111] mb-16 relative anim-sheet">
+              <button aria-label="Close editor" onClick={() => setEditingItem(null)} className="absolute top-4 right-4 text-[#111] hover:bg-[#111] hover:text-white p-2 border-[2px] border-transparent hover:border-[#111] transition-colors"><X size={24}/></button>
+
+              <button type="button" onClick={() => setEditingItem(null)} className="font-mono text-[10px] uppercase tracking-[0.2em] text-gray-500 hover:text-[#ff5722] transition-colors flex items-center gap-1 mb-3">
+                <ChevronLeft size={14}/> Back to {adminTab.replace('_',' ')}
+              </button>
+              <h2 className="text-3xl font-serif border-b-[2px] border-[#111] pb-4 mb-2">
+                {editingItem.id ? 'Edit Record' : 'New Record'}
+              </h2>
+              <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-gray-500 mb-8">Esc to cancel · changes apply on commit</p>
               
               <form onSubmit={(e) => handleListSave(e, adminTab)} className="space-y-6 font-mono text-sm">
                 
@@ -1547,9 +2496,104 @@ export default function App() {
                   </>
                 )}
                 
-                <button type="submit" className="w-full bg-[#111] text-[#f4f4f0] p-4 text-xl font-bold uppercase tracking-widest border-[2px] border-[#111] hover:bg-[#dfff00] hover:text-[#111] transition-colors mt-8 flex justify-center items-center gap-3">
-                  <Save size={24}/> COMMIT CHANGES
-                </button>
+                {/* --- SOCIALS: this form did not exist, so the editor opened blank --- */}
+                {adminTab === 'socials' && !editingItem.isPlaylist && (
+                  <div className="space-y-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block font-bold uppercase mb-2">Display Name</label>
+                        <input required value={editingItem.name || ''} onChange={e => setEditingItem({...editingItem, name: e.target.value})} className="w-full p-3 border-[2px] border-[#111] outline-none focus:bg-[#dfff00]" placeholder="GitHub" />
+                      </div>
+                      <div>
+                        <label className="block font-bold uppercase mb-2">URL</label>
+                        <input required type="url" value={editingItem.url || ''} onChange={e => setEditingItem({...editingItem, url: e.target.value})} className="w-full p-3 border-[2px] border-[#111] outline-none focus:bg-[#dfff00]" placeholder="https://" />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block font-bold uppercase mb-2">Tile Image</label>
+                      <div className="flex gap-2">
+                        <input value={editingItem.image || ''} onChange={e => setEditingItem({...editingItem, image: e.target.value})} className="flex-1 p-3 border-[2px] border-[#111] outline-none focus:bg-[#dfff00]" placeholder="https://" />
+                        <label className="cursor-pointer bg-[#111] text-white px-6 font-bold flex items-center gap-2 hover:bg-[#ff5722] transition-colors border-[2px] border-[#111]">
+                          <Upload size={16}/> UPLOAD <input type="file" className="hidden" accept="image/*" onChange={(e) => handleImageUpload(e, (b) => setEditingItem({...editingItem, image: b}))} />
+                        </label>
+                      </div>
+                    </div>
+                    {editingItem.image && (
+                      <div className="w-40 p-3 bg-[#f4f4f0] border-[2px] border-[#111] anim-fade">
+                        <img src={editingItem.image} alt="preview" className="w-full h-28 object-cover border-[2px] border-[#111] grayscale" />
+                        <p className="font-mono text-[9px] uppercase tracking-widest text-center mt-2">Live preview</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* --- JOURNALS: also previously missing --- */}
+                {adminTab === 'journals' && !editingItem.isPlaylist && (
+                  <div className="space-y-6">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <div>
+                        <label className="block font-bold uppercase mb-2">Date</label>
+                        <input required value={editingItem.date || ''} onChange={e => setEditingItem({...editingItem, date: e.target.value})} className="w-full p-3 border-[2px] border-[#111] outline-none focus:bg-[#dfff00]" placeholder="Jul 15" />
+                      </div>
+                      <div>
+                        <label className="block font-bold uppercase mb-2">Year</label>
+                        <input value={editingItem.year || ''} onChange={e => setEditingItem({...editingItem, year: e.target.value})} className="w-full p-3 border-[2px] border-[#111] outline-none focus:bg-[#dfff00]" placeholder="2026" />
+                      </div>
+                      <div>
+                        <label className="block font-bold uppercase mb-2">Short Date</label>
+                        <input value={editingItem.shortDate || ''} onChange={e => setEditingItem({...editingItem, shortDate: e.target.value})} className="w-full p-3 border-[2px] border-[#111] outline-none focus:bg-[#dfff00]" placeholder="WED . 15" />
+                      </div>
+                      <div>
+                        <label className="block font-bold uppercase mb-2">Ticket Class</label>
+                        <select value={editingItem.ticketClass || 'COACH'} onChange={e => setEditingItem({...editingItem, ticketClass: e.target.value})} className="w-full p-3 border-[2px] border-[#111] outline-none bg-white">
+                          <option value="COACH">COACH</option><option value="FIRST">FIRST</option><option value="OMNI">OMNI</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block font-bold uppercase mb-2">Time Span</label>
+                        <input value={editingItem.timeSpan || ''} onChange={e => setEditingItem({...editingItem, timeSpan: e.target.value})} className="w-full p-3 border-[2px] border-[#111] outline-none focus:bg-[#dfff00]" placeholder="7 15 - 8 15" />
+                      </div>
+                      <div>
+                        <label className="block font-bold uppercase mb-2">Banner Image</label>
+                        <div className="flex gap-2">
+                          <input value={editingItem.image || ''} onChange={e => setEditingItem({...editingItem, image: e.target.value})} className="flex-1 p-3 border-[2px] border-[#111] outline-none focus:bg-[#dfff00]" placeholder="https://" />
+                          <label className="cursor-pointer bg-[#111] text-white px-5 font-bold flex items-center gap-2 hover:bg-[#ff5722] transition-colors border-[2px] border-[#111]">
+                            <Upload size={16}/> <input type="file" className="hidden" accept="image/*" onChange={(e) => handleImageUpload(e, (b) => setEditingItem({...editingItem, image: b}))} />
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block font-bold uppercase mb-2">Entry Log <span className="normal-case font-normal text-gray-500">(one bullet per line)</span></label>
+                      <textarea value={(editingItem.logs || []).join('\n')} onChange={e => setEditingItem({...editingItem, logs: e.target.value.split('\n')})} className="w-full p-4 border-[2px] border-[#111] h-40 outline-none focus:bg-[#dfff00] leading-relaxed" placeholder={'System boot.\nDiagnostics clear.'} />
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-[140px_1fr] gap-4">
+                      <div>
+                        <label className="block font-bold uppercase mb-2">History Year</label>
+                        <input value={editingItem.historyYear || ''} onChange={e => setEditingItem({...editingItem, historyYear: e.target.value})} className="w-full p-3 border-[2px] border-[#111] outline-none focus:bg-[#dfff00]" placeholder="1969" />
+                      </div>
+                      <div>
+                        <label className="block font-bold uppercase mb-2">History Text</label>
+                        <input value={editingItem.historyText || ''} onChange={e => setEditingItem({...editingItem, historyText: e.target.value})} className="w-full p-3 border-[2px] border-[#111] outline-none focus:bg-[#dfff00]" placeholder="Apollo 11 lands on the Moon." />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Sticky action bar so Commit is always reachable in long forms */}
+                <div className="sticky bottom-0 -mx-8 px-8 pt-6 pb-2 bg-gradient-to-t from-white via-white to-transparent flex flex-col sm:flex-row gap-3 mt-8">
+                  <button type="button" onClick={() => setEditingItem(null)} className="sm:w-48 bg-white text-[#111] p-4 font-bold uppercase tracking-widest border-[2px] border-[#111] slide-press">
+                    Cancel
+                  </button>
+                  <button type="submit" className="flex-1 bg-[#111] text-[#f4f4f0] p-4 text-xl font-bold uppercase tracking-widest border-[2px] border-[#111] hover:bg-[#dfff00] hover:text-[#111] transition-colors flex justify-center items-center gap-3">
+                    <Save size={24}/> COMMIT CHANGES
+                  </button>
+                </div>
               </form>
             </div>
           );
@@ -1557,26 +2601,56 @@ export default function App() {
 
         return (
           <div className="min-h-full pb-32 relative text-[#111]">
-            <div className="flex justify-between items-end border-b-[4px] border-[#111] pb-6 mb-10">
-              <h1 className="text-6xl font-serif tracking-tight">Admin Override</h1>
-              <button onClick={handleLogout} className="flex items-center gap-2 bg-[#ff5722] text-white px-4 py-2 border-[2px] border-[#111] font-mono font-bold uppercase hover:bg-[#111] transition-colors shadow-[4px_4px_0px_#111]"><LogOut size={16}/> DISCONNECT</button>
+            <div className="flex flex-col md:flex-row justify-between md:items-end border-b-[4px] border-[#111] pb-6 mb-6 gap-4">
+              <div>
+                <h1 className="text-5xl md:text-6xl font-serif tracking-tight anim-wipe">Admin Override</h1>
+                <p className="font-mono text-[10px] uppercase tracking-[0.25em] text-gray-500 mt-2 flex items-center gap-2">
+                   {supabase ? 'Cloud session' : 'Local storage session'}
+                   <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#00a000]" />
+                   {isDirty
+                     ? <span className="text-[#ff5722] font-bold">Unsaved changes</span>
+                     : <span className="text-gray-400">All changes deployed</span>}
+                </p>
+              </div>
+              <button onClick={handleLogout} className="flex items-center gap-2 bg-[#ff5722] text-white px-4 py-2 border-[2px] border-[#111] font-mono font-bold uppercase hover:bg-[#111] transition-colors shadow-[4px_4px_0px_#111] slide-press self-start md:self-auto"><LogOut size={16}/> DISCONNECT</button>
             </div>
-            
-            <div className="flex flex-wrap gap-2 mb-10 border-b-[2px] border-[#111] pb-2">
-              {['about', 'projects', 'galleria', 'system', 'blogs', 'journals', 'socials', 'messages', 'settings', 'access_logs'].map(tab => (
-                <button key={tab} onClick={() => setAdminTab(tab)} className={`font-mono font-bold uppercase px-6 py-3 border-[2px] border-[#111] transition-all ${adminTab === tab ? 'bg-[#111] text-white translate-y-[-2px] shadow-[4px_4px_0px_#ff5722]' : 'bg-white text-[#111] hover:bg-[#f4f4f0]'}`}>
-                  {tab.replace('_', ' ')}
-                </button>
-              ))}
+
+            {/* Sticky sub-nav with live record counts so you always know where you are */}
+            <div className="sticky top-0 z-40 -mx-4 md:-mx-8 px-4 md:px-8 py-3 mb-10 bg-[#f4f4f0]/95 backdrop-blur-sm border-b-[2px] border-[#111]">
+              <div className="flex flex-wrap gap-2">
+                {ADMIN_TABS.map((tab, i) => {
+                  const count = adminCounts[tab.id];
+                  const active = adminTab === tab.id;
+                  return (
+                    <button key={tab.id} onClick={() => setAdminTab(tab.id)}
+                            aria-current={active ? 'page' : undefined}
+                            className={`relative font-mono text-[10px] md:text-xs font-bold uppercase px-4 py-2.5 border-[2px] border-[#111] slide-press flex items-center gap-2 anim-rise stagger-child ${active ? 'bg-[#111] text-white shadow-[4px_4px_0px_#ff5722] -translate-y-[2px]' : 'bg-white text-[#111] hover:bg-[#dfff00]'}`}
+                            style={{ '--d': i }}>
+                      {tab.label}
+                      {typeof count === 'number' && (
+                        <span className={`px-1.5 py-0.5 text-[9px] leading-none border ${active ? 'bg-[#dfff00] text-[#111] border-[#dfff00]' : 'bg-[#f4f4f0] text-[#111] border-[#111]'}`}>{count}</span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
             {/* ACCESS LOGS (NEW) */}
             {adminTab === 'access_logs' && (
               <div className="bg-white p-8 border-[2px] border-[#111] shadow-[8px_8px_0px_#111]">
-                 <h2 className="text-3xl font-serif mb-6 border-b-[2px] border-[#111] pb-4">Journal Access Logs</h2>
-                 <div className="space-y-4">
-                    {accessLogs.length === 0 ? <p className="text-sm font-mono text-gray-500 uppercase">No visitors logged.</p> : accessLogs.map((log, i) => (
-                       <div key={log.id || i} className="bg-[#f4f4f0] p-4 border-[2px] border-[#111] shadow-[4px_4px_0px_rgba(17,17,17,0.2)] flex justify-between items-center">
+                 <div className="flex justify-between items-end border-b-[2px] border-[#111] pb-4 mb-6">
+                   <h2 className="text-3xl font-serif">Journal Access Logs</h2>
+                   <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-gray-500">{accessLogs.length} entr{accessLogs.length === 1 ? 'y' : 'ies'}</span>
+                 </div>
+                 <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-2">
+                    {accessLogs.length === 0 ? (
+                      <div className="border-[2px] border-dashed border-[#111]/40 p-12 text-center">
+                        <p className="font-serif text-2xl mb-1">No visitors logged</p>
+                        <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-gray-500">Access records appear here once someone validates a ticket.</p>
+                      </div>
+                    ) : accessLogs.map((log, i) => (
+                       <div key={log.id || i} style={{ '--d': Math.min(i, 10) }} className="bg-[#f4f4f0] p-4 border-[2px] border-[#111] shadow-[4px_4px_0px_rgba(17,17,17,0.2)] flex justify-between items-center gap-4 anim-rise stagger-child">
                           <div>
                             <p className="text-[10px] text-gray-500 font-bold tracking-widest font-mono uppercase mb-1">{new Date(log.created_at).toLocaleString()}</p>
                             <p className="font-mono text-sm font-bold uppercase text-[#111]">{log.visitor_name}</p>
@@ -1591,15 +2665,22 @@ export default function App() {
             {/* SETTINGS (WIP) */}
             {adminTab === 'settings' && (
               <div className="bg-white p-8 border-[2px] border-[#111] shadow-[8px_8px_0px_#111] space-y-8">
-                <div className="border-b-[2px] border-[#111] pb-4">
-                   <h3 className="font-serif text-3xl mb-2">Access Control (WIP Toggles)</h3>
-                   <p className="font-mono text-sm text-gray-600">Restrict public access to specific modules. Admin maintains full visibility.</p>
+                <div className="border-b-[2px] border-[#111] pb-4 flex flex-col md:flex-row md:justify-between md:items-end gap-3">
+                   <div>
+                     <h3 className="font-serif text-3xl mb-2">Access Control (WIP Toggles)</h3>
+                     <p className="font-mono text-sm text-gray-600">Restrict public access to specific modules. Admin maintains full visibility.</p>
+                   </div>
+                   <div className="flex gap-2">
+                     <button onClick={() => setSiteSettings({ ...siteSettings, wip: Object.fromEntries(['intro','portfolio','galleria','system','blog','socials','blank'].map(t => [t, true])) })} className="font-mono text-[10px] font-bold uppercase tracking-widest px-4 py-2.5 bg-white border-[2px] border-[#111] slide-press">Hide all</button>
+                     <button onClick={() => setSiteSettings({ ...siteSettings, wip: {} })} className="font-mono text-[10px] font-bold uppercase tracking-widest px-4 py-2.5 bg-white border-[2px] border-[#111] slide-press">Show all</button>
+                   </div>
                 </div>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
                    {['intro', 'portfolio', 'galleria', 'system', 'blog', 'socials', 'blank'].map(tab => (
-                     <label key={tab} className={`flex items-center gap-3 cursor-pointer p-4 border-[2px] border-[#111] transition-all ${siteSettings.wip?.[tab] ? 'bg-[#ff5722] text-white shadow-[4px_4px_0px_#111] translate-y-[-2px]' : 'bg-[#f4f4f0] text-[#111] hover:bg-white'}`}>
+                     <label key={tab} className={`flex items-center gap-3 cursor-pointer p-4 border-[2px] border-[#111] slide-press ${siteSettings.wip?.[tab] ? 'bg-[#ff5722] text-white shadow-[4px_4px_0px_#111] -translate-y-[2px]' : 'bg-[#f4f4f0] text-[#111] hover:bg-white'}`}>
                         <input type="checkbox" checked={!!siteSettings.wip?.[tab]} onChange={e => setSiteSettings({ ...siteSettings, wip: { ...siteSettings.wip, [tab]: e.target.checked } })} className="w-6 h-6 border-[2px] border-[#111] accent-[#111]" />
-                        <span className="font-mono font-bold uppercase tracking-widest">{tab === 'blank' ? 'Sandbox' : tab}</span>
+                        <span className="font-mono font-bold uppercase tracking-widest flex-1">{tab === 'blank' ? 'Sandbox' : tab}</span>
+                        {siteSettings.wip?.[tab] ? <EyeOff size={16}/> : <Eye size={16} className="opacity-40"/>}
                      </label>
                    ))}
                 </div>
@@ -1608,19 +2689,226 @@ export default function App() {
 
             {/* SYSTEM SETTINGS */}
             {adminTab === 'system' && (
-              <div className="bg-white p-8 border-[2px] border-[#111] shadow-[8px_8px_0px_#111] space-y-8">
-                <div>
-                  <h3 className="font-serif text-3xl mb-6 border-b-[2px] border-[#111] pb-2">1. System Settings</h3>
+              <div className="space-y-10">
+
+                {/* ---------- RACK CHROME ---------- */}
+                <div className="bg-white p-6 md:p-8 border-[2px] border-[#111] shadow-[8px_8px_0px_#111] anim-rise">
+                  <h3 className="font-serif text-3xl mb-1">Rack Chrome</h3>
+                  <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-gray-500 mb-6 border-b-[2px] border-[#111] pb-4">Window title, rack label and global cable behaviour.</p>
                   <div className="grid md:grid-cols-2 gap-6">
                      <div>
-                        <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">System Title</label>
-                        <input value={systemData.title} onChange={e => setSystemData({...systemData, title: e.target.value})} className="w-full p-4 border-[2px] border-[#111] font-mono outline-none focus:bg-[#dfff00]" />
+                        <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Window Title</label>
+                        <input value={systemData.title || ''} onChange={e => setRack({ title: e.target.value })} className="w-full p-3 border-[2px] border-[#111] font-mono outline-none focus:bg-[#dfff00]" />
                      </div>
                      <div>
+                        <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Rack Label Strip</label>
+                        <input value={systemData.rackLabel || ''} onChange={e => setRack({ rackLabel: e.target.value })} className="w-full p-3 border-[2px] border-[#111] font-mono outline-none focus:bg-[#dfff00]" placeholder="SYS-01 // MODULAR CORE" />
+                     </div>
+                     <div className="md:col-span-2">
                         <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Nav Pills (Comma Separated)</label>
-                        <input value={systemData.navPills.join(', ')} onChange={e => setSystemData({...systemData, navPills: e.target.value.split(',').map(s=>s.trim())})} className="w-full p-4 border-[2px] border-[#111] font-mono outline-none focus:bg-[#dfff00]" />
+                        <input value={(systemData.navPills || []).join(', ')} onChange={e => setRack({ navPills: e.target.value.split(',').map(v => v.trim()) })} className="w-full p-3 border-[2px] border-[#111] font-mono outline-none focus:bg-[#dfff00]" />
+                     </div>
+                     <div>
+                        <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Meter Colour</label>
+                        <div className="flex gap-2">
+                          <input type="color" value={systemData.meterColor || '#dfff00'} onChange={e => setRack({ meterColor: e.target.value })} className="w-16 h-12 p-1 border-[2px] border-[#111] cursor-pointer" />
+                          <input value={systemData.meterColor || ''} onChange={e => setRack({ meterColor: e.target.value })} className="flex-1 p-3 border-[2px] border-[#111] font-mono uppercase outline-none" />
+                        </div>
+                     </div>
+                     <div>
+                        <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Cable Sag — {systemData.cableSag ?? 34}px</label>
+                        <input type="range" min="0" max="140" value={systemData.cableSag ?? 34} onChange={e => setRack({ cableSag: Number(e.target.value) })} className="w-full accent-[#ff5722] h-12" />
+                        <p className="font-mono text-[9px] uppercase tracking-widest text-gray-400">How heavily the patch cables droop.</p>
                      </div>
                   </div>
+                </div>
+
+                {/* ---------- VU METERS ---------- */}
+                <div className="bg-white p-6 md:p-8 border-[2px] border-[#111] shadow-[8px_8px_0px_#111] anim-rise">
+                  <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end border-b-[2px] border-[#111] pb-4 mb-6 gap-3">
+                    <div>
+                      <h3 className="font-serif text-3xl">VU Meters</h3>
+                      <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-gray-500 mt-1">The readout strip above the rack. Numeric values drive the bar height.</p>
+                    </div>
+                    <button onClick={() => setRack({ stats: [...(systemData.stats || []), { id: Date.now(), label: "New Meter", value: "50", unit: "" }] })} className="bg-[#111] text-[#dfff00] px-5 py-2.5 border-[2px] border-[#111] font-mono font-bold uppercase tracking-widest text-xs flex items-center gap-2 slide-press shrink-0"><Plus size={16}/> Add Meter</button>
+                  </div>
+                  <div className="grid md:grid-cols-2 gap-4">
+                    {(systemData.stats || []).map((st, idx) => (
+                      <div key={st.id ?? idx} style={{ '--d': idx }} className="bg-[#f4f4f0] p-4 border-[2px] border-[#111] flex gap-3 items-end anim-rise stagger-child">
+                        <div className="flex-1 min-w-0">
+                          <label className="block font-mono text-[9px] font-bold uppercase tracking-widest mb-1">Label</label>
+                          <input value={st.label || ''} onChange={e => setRack({ stats: systemData.stats.map((x, i) => i === idx ? { ...x, label: e.target.value } : x) })} className="w-full p-2 border-[2px] border-[#111] font-mono text-xs outline-none focus:bg-[#dfff00]" />
+                        </div>
+                        <div className="w-24">
+                          <label className="block font-mono text-[9px] font-bold uppercase tracking-widest mb-1">Value</label>
+                          <input value={st.value || ''} onChange={e => setRack({ stats: systemData.stats.map((x, i) => i === idx ? { ...x, value: e.target.value } : x) })} className="w-full p-2 border-[2px] border-[#111] font-mono text-xs outline-none focus:bg-[#dfff00]" />
+                        </div>
+                        <div className="w-16">
+                          <label className="block font-mono text-[9px] font-bold uppercase tracking-widest mb-1">Unit</label>
+                          <input value={st.unit || ''} onChange={e => setRack({ stats: systemData.stats.map((x, i) => i === idx ? { ...x, unit: e.target.value } : x) })} className="w-full p-2 border-[2px] border-[#111] font-mono text-xs outline-none focus:bg-[#dfff00]" />
+                        </div>
+                        <button onClick={() => setRack({ stats: systemData.stats.filter((_, i) => i !== idx) })} className="p-2.5 bg-[#ff5722] text-white border-[2px] border-[#111] hover:bg-[#111] transition-colors shrink-0"><Trash2 size={16}/></button>
+                      </div>
+                    ))}
+                    {(systemData.stats || []).length === 0 && (
+                      <p className="md:col-span-2 border-[2px] border-dashed border-[#111]/40 p-8 text-center font-mono text-[10px] uppercase tracking-[0.2em] text-gray-500">No meters configured.</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* ---------- MODULES + JACKS ---------- */}
+                <div className="bg-white p-6 md:p-8 border-[2px] border-[#111] shadow-[8px_8px_0px_#111] anim-rise">
+                  <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end border-b-[2px] border-[#111] pb-4 mb-6 gap-3">
+                    <div>
+                      <h3 className="font-serif text-3xl">Modules</h3>
+                      <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-gray-500 mt-1">{(systemData.timeline || []).length} module(s) · each jack is patchable</p>
+                    </div>
+                    <button onClick={addModule} className="bg-[#111] text-[#dfff00] px-5 py-2.5 border-[2px] border-[#111] font-mono font-bold uppercase tracking-widest text-xs flex items-center gap-2 slide-press shrink-0"><Plus size={16}/> Add Module</button>
+                  </div>
+
+                  <div className="space-y-6">
+                    {(systemData.timeline || []).map((mod, mi) => (
+                      <div key={mod.id} style={{ '--d': mi, borderColor: mod.color || '#111' }} className="bg-[#f4f4f0] p-5 border-[3px] anim-rise stagger-child">
+                        <div className="flex flex-wrap gap-3 items-end mb-5">
+                          <div className="flex-1 min-w-[140px]">
+                            <label className="block font-mono text-[9px] font-bold uppercase tracking-widest mb-1">Module Name</label>
+                            <input value={mod.period || ''} onChange={e => updateModule(mod.id, { period: e.target.value })} className="w-full p-2.5 border-[2px] border-[#111] font-mono text-sm font-bold outline-none focus:bg-[#dfff00]" />
+                          </div>
+                          <div className="flex-1 min-w-[140px]">
+                            <label className="block font-mono text-[9px] font-bold uppercase tracking-widest mb-1">Subtitle</label>
+                            <input value={mod.subtitle || ''} onChange={e => updateModule(mod.id, { subtitle: e.target.value })} className="w-full p-2.5 border-[2px] border-[#111] font-mono text-sm outline-none focus:bg-[#dfff00]" />
+                          </div>
+                          <div>
+                            <label className="block font-mono text-[9px] font-bold uppercase tracking-widest mb-1">Colour</label>
+                            <input type="color" value={mod.color || '#ff5722'} onChange={e => updateModule(mod.id, { color: e.target.value })} className="w-16 h-[42px] p-1 border-[2px] border-[#111] cursor-pointer" />
+                          </div>
+                          <button onClick={() => removeModule(mod.id)} title="Remove module and its cables" className="p-2.5 bg-[#ff5722] text-white border-[2px] border-[#111] hover:bg-[#111] transition-colors"><Trash2 size={18}/></button>
+                        </div>
+
+                        {/* knobs */}
+                        <div className="mb-5">
+                          <div className="flex justify-between items-center mb-2">
+                            <span className="font-mono text-[9px] font-bold uppercase tracking-[0.2em]">Knobs</span>
+                            <button onClick={() => updateModule(mod.id, { knobs: [...(mod.knobs || []), { id: `k${Date.now()}`, label: "Knob", value: 50 }] })} className="font-mono text-[9px] font-bold uppercase tracking-widest px-3 py-1.5 bg-white border-[2px] border-[#111] slide-press flex items-center gap-1.5"><Plus size={12}/> Knob</button>
+                          </div>
+                          <div className="flex flex-wrap gap-3">
+                            {(mod.knobs || []).map((k, ki) => (
+                              <div key={k.id} className="bg-white border-[2px] border-[#111] p-2.5 flex items-end gap-2">
+                                <div className="w-24">
+                                  <label className="block font-mono text-[8px] uppercase tracking-widest mb-1 text-gray-500">Label</label>
+                                  <input value={k.label || ''} onChange={e => updateModule(mod.id, { knobs: mod.knobs.map((x, i) => i === ki ? { ...x, label: e.target.value } : x) })} className="w-full p-1.5 border-[2px] border-[#111] font-mono text-[11px] outline-none focus:bg-[#dfff00]" />
+                                </div>
+                                <div className="w-28">
+                                  <label className="block font-mono text-[8px] uppercase tracking-widest mb-1 text-gray-500">Value {k.value}</label>
+                                  <input type="range" min="0" max="100" value={k.value ?? 50} onChange={e => updateModule(mod.id, { knobs: mod.knobs.map((x, i) => i === ki ? { ...x, value: Number(e.target.value) } : x) })} className="w-full accent-[#ff5722]" />
+                                </div>
+                                <button onClick={() => updateModule(mod.id, { knobs: mod.knobs.filter((_, i) => i !== ki) })} className="p-1.5 bg-[#ff5722] text-white border-[2px] border-[#111] hover:bg-[#111] transition-colors"><Trash2 size={13}/></button>
+                              </div>
+                            ))}
+                            {(mod.knobs || []).length === 0 && <span className="font-mono text-[9px] uppercase tracking-widest text-gray-400 py-3">No knobs on this module.</span>}
+                          </div>
+                        </div>
+
+                        {/* jacks */}
+                        <div>
+                          <div className="flex justify-between items-center mb-2">
+                            <span className="font-mono text-[9px] font-bold uppercase tracking-[0.2em]">Jacks</span>
+                            <button onClick={() => addNode(mod.id)} className="font-mono text-[9px] font-bold uppercase tracking-widest px-3 py-1.5 bg-white border-[2px] border-[#111] slide-press flex items-center gap-1.5"><Plus size={12}/> Jack</button>
+                          </div>
+                          <div className="space-y-2">
+                            {(mod.nodes || []).map(node => (
+                              <div key={node.id} className="bg-white border-[2px] border-[#111] p-2.5 flex flex-wrap gap-2 items-end">
+                                <div className="flex-1 min-w-[130px]">
+                                  <label className="block font-mono text-[8px] uppercase tracking-widest mb-1 text-gray-500">Title</label>
+                                  <input value={node.title || ''} onChange={e => updateNode(mod.id, node.id, { title: e.target.value })} className="w-full p-2 border-[2px] border-[#111] font-mono text-xs outline-none focus:bg-[#dfff00]" />
+                                </div>
+                                <div className="w-28">
+                                  <label className="block font-mono text-[8px] uppercase tracking-widest mb-1 text-gray-500">Readout</label>
+                                  <input value={node.mainValue ?? node.value ?? ''} onChange={e => updateNode(mod.id, node.id, { mainValue: e.target.value, value: e.target.value })} className="w-full p-2 border-[2px] border-[#111] font-mono text-xs outline-none focus:bg-[#dfff00]" />
+                                </div>
+                                <div className="w-32">
+                                  <label className="block font-mono text-[8px] uppercase tracking-widest mb-1 text-gray-500">Icon</label>
+                                  <select value={node.icon || 'CircleDot'} onChange={e => updateNode(mod.id, node.id, { icon: e.target.value })} className="w-full p-2 border-[2px] border-[#111] font-mono text-xs outline-none bg-white">
+                                    {NODE_ICONS.map(n => <option key={n} value={n}>{n}</option>)}
+                                  </select>
+                                </div>
+                                <span className="font-mono text-[8px] uppercase tracking-widest text-gray-400 px-1 pb-2.5">{node.id}</span>
+                                <button onClick={() => removeNode(mod.id, node.id)} className="p-2 bg-[#ff5722] text-white border-[2px] border-[#111] hover:bg-[#111] transition-colors"><Trash2 size={14}/></button>
+                              </div>
+                            ))}
+                            {(mod.nodes || []).length === 0 && <p className="font-mono text-[9px] uppercase tracking-widest text-gray-400 py-3">No jacks — this module has nothing to patch.</p>}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                    {(systemData.timeline || []).length === 0 && (
+                      <div className="border-[2px] border-dashed border-[#111]/40 p-12 text-center">
+                        <p className="font-serif text-2xl mb-1">Empty rack</p>
+                        <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-gray-500 mb-6">Add a module to start building the patch bay.</p>
+                        <button onClick={addModule} className="bg-[#111] text-[#dfff00] px-6 py-3 border-[2px] border-[#111] font-mono font-bold uppercase tracking-widest inline-flex items-center gap-2 slide-press"><Plus size={16}/> Add Module</button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* ---------- CABLES ---------- */}
+                <div className="bg-white p-6 md:p-8 border-[2px] border-[#111] shadow-[8px_8px_0px_#111] anim-rise">
+                  <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end border-b-[2px] border-[#111] pb-4 mb-6 gap-3">
+                    <div>
+                      <h3 className="font-serif text-3xl">Patch Cables</h3>
+                      <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-gray-500 mt-1">
+                        {(systemData.cables || []).length} patched · you can also drag jack&nbsp;→&nbsp;jack directly on the System tab
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        const nodes = (systemData.timeline || []).flatMap(m => m.nodes || []);
+                        if (nodes.length < 2) return showToast("Need at least two jacks to patch.", 'error');
+                        setRack({ cables: [...(systemData.cables || []), { id: `c${Date.now()}`, from: nodes[0].id, to: nodes[1].id, color: PATCH_COLORS[(systemData.cables || []).length % PATCH_COLORS.length] }] });
+                      }}
+                      className="bg-[#111] text-[#dfff00] px-5 py-2.5 border-[2px] border-[#111] font-mono font-bold uppercase tracking-widest text-xs flex items-center gap-2 slide-press shrink-0"><Plus size={16}/> Add Cable</button>
+                  </div>
+
+                  {(() => {
+                    const allJacks = (systemData.timeline || []).flatMap(m => (m.nodes || []).map(n => ({ ...n, mod: m.period })));
+                    const jackLabel = (id) => {
+                      const j = allJacks.find(x => x.id === id);
+                      return j ? `${j.mod} · ${j.title}` : `${id} (missing)`;
+                    };
+                    return (
+                      <div className="space-y-3">
+                        {(systemData.cables || []).map((c, ci) => {
+                          const broken = !allJacks.some(j => j.id === c.from) || !allJacks.some(j => j.id === c.to);
+                          return (
+                            <div key={c.id} style={{ '--d': ci }} className={`p-3 border-[2px] flex flex-wrap gap-3 items-end anim-rise stagger-child ${broken ? 'border-[#ff5722] bg-[#ff5722]/10' : 'border-[#111] bg-[#f4f4f0]'}`}>
+                              <div className="flex-1 min-w-[160px]">
+                                <label className="block font-mono text-[8px] uppercase tracking-widest mb-1 text-gray-500">From</label>
+                                <select value={c.from} onChange={e => setRack({ cables: systemData.cables.map((x, i) => i === ci ? { ...x, from: e.target.value } : x) })} className="w-full p-2 border-[2px] border-[#111] font-mono text-xs outline-none bg-white">
+                                  {allJacks.map(j => <option key={j.id} value={j.id}>{jackLabel(j.id)}</option>)}
+                                </select>
+                              </div>
+                              <span className="font-mono text-lg pb-1.5">→</span>
+                              <div className="flex-1 min-w-[160px]">
+                                <label className="block font-mono text-[8px] uppercase tracking-widest mb-1 text-gray-500">To</label>
+                                <select value={c.to} onChange={e => setRack({ cables: systemData.cables.map((x, i) => i === ci ? { ...x, to: e.target.value } : x) })} className="w-full p-2 border-[2px] border-[#111] font-mono text-xs outline-none bg-white">
+                                  {allJacks.map(j => <option key={j.id} value={j.id}>{jackLabel(j.id)}</option>)}
+                                </select>
+                              </div>
+                              <div>
+                                <label className="block font-mono text-[8px] uppercase tracking-widest mb-1 text-gray-500">Colour</label>
+                                <input type="color" value={c.color || '#ff5722'} onChange={e => setRack({ cables: systemData.cables.map((x, i) => i === ci ? { ...x, color: e.target.value } : x) })} className="w-14 h-[38px] p-1 border-[2px] border-[#111] cursor-pointer" />
+                              </div>
+                              <button onClick={() => setRack({ cables: systemData.cables.filter((_, i) => i !== ci) })} className="p-2.5 bg-[#ff5722] text-white border-[2px] border-[#111] hover:bg-[#111] transition-colors"><Trash2 size={16}/></button>
+                              {broken && <p className="w-full font-mono text-[9px] uppercase tracking-widest text-[#ff5722] font-bold">Dangling cable — one end points at a jack that no longer exists.</p>}
+                            </div>
+                          );
+                        })}
+                        {(systemData.cables || []).length === 0 && (
+                          <p className="border-[2px] border-dashed border-[#111]/40 p-8 text-center font-mono text-[10px] uppercase tracking-[0.2em] text-gray-500">Nothing patched yet.</p>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             )}
@@ -1630,16 +2918,99 @@ export default function App() {
               <div className="space-y-12">
                 <div className="bg-white p-8 border-[2px] border-[#111] shadow-[8px_8px_0px_#111]">
                   <h3 className="font-serif text-3xl mb-6 border-b-[2px] border-[#111] pb-2">Global Content</h3>
-                  <textarea value={aboutData.introText} onChange={e => setAboutData({...aboutData, introText: e.target.value})} className="w-full p-4 border-[2px] border-[#111] h-32 font-mono text-sm mb-4 outline-none focus:bg-[#dfff00]" placeholder="Intro Text" />
+                  <textarea value={aboutData.introText || ''} onChange={e => setAboutData({...aboutData, introText: e.target.value})} className="w-full p-4 border-[2px] border-[#111] h-32 font-mono text-sm mb-4 outline-none focus:bg-[#dfff00]" placeholder="Intro Text" />
                   <div className="flex gap-2 mb-4">
-                    <input value={aboutData.introImage} onChange={e => setAboutData({...aboutData, introImage: e.target.value})} className="flex-1 p-3 border-[2px] border-[#111] font-mono text-sm outline-none" placeholder="Intro Image URL" />
+                    <input value={aboutData.introImage || ''} onChange={e => setAboutData({...aboutData, introImage: e.target.value})} className="flex-1 p-3 border-[2px] border-[#111] font-mono text-sm outline-none" placeholder="Intro Image URL" />
                     <label className="cursor-pointer bg-[#111] text-white px-6 flex items-center font-bold font-mono hover:bg-[#ff5722] transition-colors"><Upload size={16} className="mr-2"/> UPLOAD <input type="file" className="hidden" accept="image/*" onChange={e => handleImageUpload(e, b => setAboutData({...aboutData, introImage: b}))} /></label>
                   </div>
                   <div className="flex gap-2 mb-4">
-                    <input value={aboutData.appBackground} onChange={e => setAboutData({...aboutData, appBackground: e.target.value})} className="flex-1 p-3 border-[2px] border-[#111] font-mono text-sm outline-none" placeholder="App Background Image URL" />
+                    <input value={aboutData.appBackground || ''} onChange={e => setAboutData({...aboutData, appBackground: e.target.value})} className="flex-1 p-3 border-[2px] border-[#111] font-mono text-sm outline-none" placeholder="App Background Image URL" />
                     <label className="cursor-pointer bg-[#111] text-white px-6 flex items-center font-bold font-mono hover:bg-[#ff5722] transition-colors"><Upload size={16} className="mr-2"/> UPLOAD <input type="file" className="hidden" accept="image/*" onChange={e => handleImageUpload(e, b => setAboutData({...aboutData, appBackground: b}))} /></label>
                   </div>
-                  <textarea value={aboutData.notepadText} onChange={e => setAboutData({...aboutData, notepadText: e.target.value})} maxLength={120} className="w-full p-4 border-[2px] border-[#111] h-24 font-mono text-sm outline-none focus:bg-[#dfff00]" placeholder="System Memo Text (Max 120 chars)" />
+                  <textarea value={aboutData.notepadText || ''} onChange={e => setAboutData({...aboutData, notepadText: e.target.value})} maxLength={120} className="w-full p-4 border-[2px] border-[#111] h-24 font-mono text-sm outline-none focus:bg-[#dfff00]" placeholder="System Memo Text (Max 120 chars)" />
+                  <div className="flex justify-end mt-1">
+                    <span className={`font-mono text-[10px] uppercase tracking-widest ${(aboutData.notepadText || '').length > 110 ? 'text-[#ff5722] font-bold' : 'text-gray-400'}`}>
+                      {(aboutData.notepadText || '').length} / 120
+                    </span>
+                  </div>
+                </div>
+
+                {/* ---------- TERMINAL BOOT SEQUENCE ---------- */}
+                <div className="bg-white p-6 md:p-8 border-[2px] border-[#111] shadow-[8px_8px_0px_#111] anim-rise">
+                  <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end border-b-[2px] border-[#111] pb-4 mb-6 gap-3">
+                    <div>
+                      <h3 className="font-serif text-3xl">Terminal Boot</h3>
+                      <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-gray-500 mt-1">Controls the intro tab's start-up sequence.</p>
+                    </div>
+                    <button onClick={() => { restartBoot(); setActiveTab('intro'); }} className="bg-[#0000ff] text-white px-5 py-2.5 border-[2px] border-[#111] font-mono font-bold uppercase tracking-widest text-xs flex items-center gap-2 slide-press shrink-0">
+                      <Play size={14}/> Preview Boot
+                    </button>
+                  </div>
+
+                  <div className="grid md:grid-cols-2 gap-6 mb-6">
+                    <label className={`flex items-center gap-3 cursor-pointer p-4 border-[2px] border-[#111] slide-press ${aboutData.boot?.enabled !== false ? 'bg-[#dfff00]' : 'bg-[#f4f4f0]'}`}>
+                      <input type="checkbox" checked={aboutData.boot?.enabled !== false} onChange={e => setBoot({ enabled: e.target.checked })} className="w-6 h-6 border-[2px] border-[#111] accent-[#111]" />
+                      <span className="font-mono font-bold uppercase tracking-widest flex-1">Boot sequence enabled</span>
+                      {aboutData.boot?.enabled !== false ? <Eye size={16}/> : <EyeOff size={16} className="opacity-40"/>}
+                    </label>
+
+                    <div>
+                      <label className="block font-mono text-[10px] font-bold uppercase tracking-widest mb-2">Replay Behaviour</label>
+                      <select value={aboutData.boot?.replay || 'session'} onChange={e => setBoot({ replay: e.target.value })} className="w-full p-3 border-[2px] border-[#111] font-mono text-sm outline-none bg-white focus:bg-[#dfff00]">
+                        <option value="session">Once per session (recommended)</option>
+                        <option value="always">Every visit to the intro tab</option>
+                        <option value="never">Never — show content immediately</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block font-mono text-[10px] font-bold uppercase tracking-widest mb-2">Speed — {Number(aboutData.boot?.speed || 1).toFixed(2)}×</label>
+                      <input type="range" min="0.25" max="4" step="0.25" value={aboutData.boot?.speed ?? 1} onChange={e => setBoot({ speed: Number(e.target.value) })} className="w-full accent-[#ff5722] h-10" />
+                      <p className="font-mono text-[9px] uppercase tracking-widest text-gray-400">Higher is faster. Affects typing and section timing.</p>
+                    </div>
+
+                    <div>
+                      <label className="block font-mono text-[10px] font-bold uppercase tracking-widest mb-2">Console Accent</label>
+                      <div className="flex gap-2">
+                        <input type="color" value={aboutData.boot?.accent || '#00ff88'} onChange={e => setBoot({ accent: e.target.value })} className="w-16 h-12 p-1 border-[2px] border-[#111] cursor-pointer" />
+                        <input value={aboutData.boot?.accent || ''} onChange={e => setBoot({ accent: e.target.value })} className="flex-1 p-3 border-[2px] border-[#111] font-mono uppercase outline-none focus:bg-[#dfff00]" />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                    <div>
+                      <label className="block font-mono text-[10px] font-bold uppercase tracking-widest mb-2">Hostname</label>
+                      <input value={aboutData.boot?.hostname || ''} onChange={e => setBoot({ hostname: e.target.value })} className="w-full p-3 border-[2px] border-[#111] font-mono text-sm outline-none focus:bg-[#dfff00]" placeholder="iceyyy" />
+                    </div>
+                    <div>
+                      <label className="block font-mono text-[10px] font-bold uppercase tracking-widest mb-2">User</label>
+                      <input value={aboutData.boot?.user || ''} onChange={e => setBoot({ user: e.target.value })} className="w-full p-3 border-[2px] border-[#111] font-mono text-sm outline-none focus:bg-[#dfff00]" placeholder="guest" />
+                    </div>
+                    <div>
+                      <label className="block font-mono text-[10px] font-bold uppercase tracking-widest mb-2">Shell Path</label>
+                      <input value={aboutData.boot?.shell || ''} onChange={e => setBoot({ shell: e.target.value })} className="w-full p-3 border-[2px] border-[#111] font-mono text-sm outline-none focus:bg-[#dfff00]" placeholder="~/about" />
+                    </div>
+                    <div>
+                      <label className="block font-mono text-[10px] font-bold uppercase tracking-widest mb-2">Archive Path</label>
+                      <input value={aboutData.boot?.archivePath || ''} onChange={e => setBoot({ archivePath: e.target.value })} className="w-full p-3 border-[2px] border-[#111] font-mono text-sm outline-none focus:bg-[#dfff00]" placeholder="/archive/obsessions" />
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="flex justify-between items-center mb-2">
+                      <label className="font-mono text-[10px] font-bold uppercase tracking-widest">POST Lines <span className="normal-case font-normal text-gray-500">(one per line)</span></label>
+                      <span className="font-mono text-[9px] uppercase tracking-widest text-gray-400">{(aboutData.boot?.lines || []).filter(l => String(l).trim()).length} lines</span>
+                    </div>
+                    <textarea
+                      value={(aboutData.boot?.lines || []).join('\n')}
+                      onChange={e => setBoot({ lines: e.target.value.split('\n') })}
+                      className="w-full p-4 border-[2px] border-[#111] bg-[#0b0b0b] h-44 font-mono text-xs outline-none leading-relaxed"
+                      style={{ color: aboutData.boot?.accent || '#00ff88' }}
+                      placeholder={'POST ............................. OK\nMEM CHECK 16384K ................. OK'}
+                    />
+                    <p className="font-mono text-[9px] uppercase tracking-widest text-gray-400 mt-2">These scroll one at a time before the identity block appears.</p>
+                  </div>
                 </div>
 
                 <div className="bg-white p-8 border-[2px] border-[#111] shadow-[8px_8px_0px_#111]">
@@ -1667,7 +3038,7 @@ export default function App() {
                 <div className="bg-white p-8 border-[2px] border-[#111] shadow-[8px_8px_0px_#111]">
                   <h3 className="font-serif text-3xl mb-6 border-b-[2px] border-[#111] pb-2">The Circle (Myspace)</h3>
                   <div className="grid md:grid-cols-2 gap-6 mb-6">
-                    {aboutData.myspace.map((friend, idx) => (
+                    {(aboutData.myspace || []).map((friend, idx) => (
                       <div key={friend.id} draggable onDragStart={() => dragItem.current = idx} onDragEnter={() => dragOverItem.current = idx} onDragEnd={() => handleSortAboutList('myspace')} onDragOver={(e) => e.preventDefault()} className="bg-[#f4f4f0] p-4 border-[2px] border-[#111] flex gap-4 items-center hover:bg-white transition-colors shadow-[4px_4px_0px_rgba(17,17,17,0.2)]">
                         <div className="cursor-grab text-[#111] p-1 border-[2px] border-[#111] bg-white"><GripVertical size={20}/></div>
                         <img src={friend.image || 'https://placehold.co/100x100'} className="w-16 h-16 border-[2px] border-[#111] object-cover grayscale" alt="prev"/>
@@ -1688,7 +3059,7 @@ export default function App() {
                 <div className="bg-white p-8 border-[2px] border-[#111] shadow-[8px_8px_0px_#111]">
                   <h3 className="font-serif text-3xl mb-6 border-b-[2px] border-[#111] pb-2">Technical Interests</h3>
                   <div className="space-y-6 mb-6">
-                    {aboutData.interests.map((interest, idx) => (
+                    {(aboutData.interests || []).map((interest, idx) => (
                       <div key={interest.id} draggable onDragStart={() => dragItem.current = idx} onDragEnter={() => dragOverItem.current = idx} onDragEnd={() => handleSortAboutList('interests')} onDragOver={(e) => e.preventDefault()} className="bg-[#f4f4f0] p-6 border-[2px] border-[#111] flex flex-col md:flex-row gap-6 shadow-[4px_4px_0px_rgba(17,17,17,0.2)]">
                         <div className="cursor-grab text-[#111] p-2 border-[2px] border-[#111] bg-white h-fit"><GripVertical size={24}/></div>
                         <img src={interest.image || 'https://placehold.co/300x200'} className="w-full md:w-48 h-32 object-cover border-[2px] border-[#111]" alt="prev"/>
@@ -1710,13 +3081,13 @@ export default function App() {
                 <div className="bg-white p-8 border-[2px] border-[#111] shadow-[8px_8px_0px_#111]">
                   <h3 className="font-serif text-3xl mb-6 border-b-[2px] border-[#111] pb-2">Obsessions Data</h3>
                   <div className="grid md:grid-cols-2 gap-6 mb-6">
-                    {aboutData.obsessions.map((obs, idx) => (
+                    {(aboutData.obsessions || []).map((obs, idx) => (
                       <div key={obs.id} draggable onDragStart={() => dragItem.current = idx} onDragEnter={() => dragOverItem.current = idx} onDragEnd={() => handleSortAboutList('obsessions')} onDragOver={(e) => e.preventDefault()} className="bg-[#f4f4f0] p-6 border-[2px] border-[#111] relative shadow-[4px_4px_0px_rgba(17,17,17,0.2)]">
                         <div className="absolute top-4 left-4 cursor-grab text-[#111] bg-white border-[2px] border-[#111] p-1"><GripVertical size={16}/></div>
                         <button type="button" onClick={() => setAboutData({...aboutData, obsessions: aboutData.obsessions.filter((_, i) => i !== idx)})} className="absolute top-4 right-4 bg-[#ff5722] text-white border-[2px] border-[#111] p-2 hover:bg-[#111]"><Trash2 size={16}/></button>
                         
                         <input value={obs.category} onChange={(e) => { const n = [...aboutData.obsessions]; n[idx].category = e.target.value; setAboutData({...aboutData, obsessions: n}); }} className="w-full mt-10 mb-4 p-3 border-[2px] border-[#111] font-mono font-bold outline-none focus:bg-[#dfff00] text-center uppercase tracking-widest" />
-                        <textarea value={obs.items.join('\n')} onChange={(e) => { const n = [...aboutData.obsessions]; n[idx].items = e.target.value.split('\n'); setAboutData({...aboutData, obsessions: n}); }} className="w-full p-4 border-[2px] border-[#111] h-48 font-mono text-sm outline-none whitespace-pre-wrap leading-relaxed bg-white" placeholder="Enter items, one per line..." />
+                        <textarea value={(obs.items || []).join('\n')} onChange={(e) => { const n = [...aboutData.obsessions]; n[idx].items = e.target.value.split('\n'); setAboutData({...aboutData, obsessions: n}); }} className="w-full p-4 border-[2px] border-[#111] h-48 font-mono text-sm outline-none whitespace-pre-wrap leading-relaxed bg-white" placeholder="Enter items, one per line..." />
                       </div>
                     ))}
                   </div>
@@ -1732,7 +3103,7 @@ export default function App() {
                 <div className="flex justify-between items-end border-b-[2px] border-[#111] pb-4 mb-6">
                   <div>
                      <h2 className="text-3xl font-serif text-[#111]">Manage Galleria</h2>
-                     <p className="font-mono text-xs text-gray-500 uppercase tracking-widest mt-2">Batch ingestion active. Drag to reorder.</p>
+                     <p className="font-mono text-xs text-gray-500 uppercase tracking-widest mt-2">{galleriaData.length} image{galleriaData.length === 1 ? '' : 's'} · drag to reorder</p>
                   </div>
                   <label className="bg-[#0000ff] text-white px-6 py-2 border-[2px] border-[#111] font-mono font-bold uppercase tracking-widest flex items-center gap-2 cursor-pointer shadow-[4px_4px_0px_#111] hover:translate-y-[2px] hover:shadow-[2px_2px_0px_#111] transition-all">
                      <Layers size={18} /> BATCH UPLOAD
@@ -1740,6 +3111,12 @@ export default function App() {
                   </label>
                 </div>
                 
+                {galleriaData.length === 0 && (
+                  <div className="border-[2px] border-dashed border-[#111]/40 p-12 text-center mb-6">
+                    <p className="font-serif text-2xl mb-1">No images ingested</p>
+                    <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-gray-500">Use batch upload to populate the timeline.</p>
+                  </div>
+                )}
                 <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-6">
                   {galleriaData.map((item, idx) => (
                     <div 
@@ -1749,7 +3126,8 @@ export default function App() {
                         onDragEnter={() => dragOverItem.current = idx}
                         onDragEnd={() => handleSortAboutList('galleria', true)}
                         onDragOver={(e) => e.preventDefault()}
-                        className="bg-[#f4f4f0] p-2 border-[2px] border-[#111] group relative hover:-translate-y-1 transition-transform shadow-[4px_4px_0px_rgba(17,17,17,0.2)]"
+                        style={{ '--d': Math.min(idx, 12) }}
+                        className="bg-[#f4f4f0] p-2 border-[2px] border-[#111] group relative slide-card shadow-[4px_4px_0px_rgba(17,17,17,0.2)] anim-rise stagger-child"
                     >
                        <div className="absolute top-1 left-1 bg-[#111] text-[#dfff00] p-1 border-[2px] border-[#111] cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity z-10"><GripVertical size={16}/></div>
                        <button onClick={() => setGalleriaData(galleriaData.filter(g => g.id !== item.id))} className="absolute top-1 right-1 bg-[#ff5722] text-white p-1 border-[2px] border-[#111] opacity-0 group-hover:opacity-100 transition-opacity z-10 hover:bg-[#111]"><Trash2 size={16}/></button>
@@ -1776,51 +3154,161 @@ export default function App() {
                   <button onClick={() => setEditingItem({ isPlaylist: true })} className="bg-[#111] text-[#dfff00] px-6 py-2 border-[2px] border-[#111] font-mono font-bold uppercase tracking-widest flex items-center gap-2 hover:bg-[#0000ff] hover:text-white transition-colors"><Plus size={18} /> ADD PLAYLIST</button>
                 </div>
                 <div className="space-y-3 font-mono">
-                  {playlists.map(pl => (
-                    <div key={pl.id} className="flex justify-between items-center bg-[#f4f4f0] p-4 border-[2px] border-[#111] hover:bg-white transition-colors">
-                      <span className="font-bold text-sm">{pl.title || 'UNTITLED_PLAYLIST'}</span>
-                      <div className="flex gap-3">
-                        <button onClick={() => setEditingItem({ ...pl, isPlaylist: true })} className="p-2 bg-[#dfff00] border-[2px] border-[#111] hover:bg-[#111] hover:text-white transition-colors"><Edit2 size={18} /></button>
-                        <button onClick={() => handleDeleteItem('playlists', pl.id)} className="p-2 bg-[#ff5722] text-white border-[2px] border-[#111] hover:bg-[#111] transition-colors"><Trash2 size={18} /></button>
+                  {playlists.length === 0 && (
+                    <div className="border-[2px] border-dashed border-[#111]/40 p-8 text-center font-mono text-[10px] uppercase tracking-[0.2em] text-gray-500">No playlists configured.</div>
+                  )}
+                  {playlists.map((pl, idx) => {
+                    const pendingDelete = confirmDelete && confirmDelete.listType === 'playlists' && confirmDelete.id === pl.id;
+                    return (
+                    <div key={pl.id} style={{ '--d': idx }} className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 bg-[#f4f4f0] p-3 border-[2px] border-[#111] hover:bg-white transition-colors anim-rise stagger-child">
+                      <div className="flex items-center gap-4 min-w-0">
+                        <div className="flex flex-col shrink-0">
+                          <button aria-label="Move up" disabled={idx === 0} onClick={() => moveListItem('playlists', idx, -1)} className="px-1.5 py-0.5 border-[2px] border-[#111] bg-white hover:bg-[#dfff00] disabled:opacity-25 transition-colors leading-none text-[10px]">▲</button>
+                          <button aria-label="Move down" disabled={idx === playlists.length - 1} onClick={() => moveListItem('playlists', idx, 1)} className="px-1.5 py-0.5 border-[2px] border-t-0 border-[#111] bg-white hover:bg-[#dfff00] disabled:opacity-25 transition-colors leading-none text-[10px]">▼</button>
+                        </div>
+                        <div className="w-10 h-10 border-[2px] border-[#111] shrink-0" style={{ backgroundColor: pl.color || '#333' }} />
+                        {pl.image
+                          ? <img src={pl.image} alt="" className="w-10 h-10 object-cover border-[2px] border-[#111] grayscale shrink-0" />
+                          : <div className="w-10 h-10 border-[2px] border-dashed border-[#111]/40 shrink-0 flex items-center justify-center"><Music size={14} className="text-gray-400"/></div>}
+                        <div className="min-w-0">
+                          <p className="font-bold text-sm truncate">{pl.title || 'UNTITLED_PLAYLIST'}</p>
+                          <p className="text-[10px] uppercase tracking-widest text-gray-500 truncate">{pl.genre || '—'}</p>
+                        </div>
+                      </div>
+                      <div className="flex gap-2 shrink-0 self-end sm:self-auto">
+                        <button title="Duplicate" onClick={() => duplicateListItem('playlists', pl)} className="p-2 bg-white border-[2px] border-[#111] hover:bg-[#0000ff] hover:text-white transition-colors"><Copy size={16} /></button>
+                        <button title="Edit" onClick={() => setEditingItem({ ...pl, isPlaylist: true })} className="p-2 bg-[#dfff00] border-[2px] border-[#111] hover:bg-[#111] hover:text-white transition-colors"><Edit2 size={16} /></button>
+                        {pendingDelete ? (
+                          <div className="flex gap-1 anim-fade">
+                            <button onClick={() => handleDeleteItem('playlists', pl.id)} className="px-3 py-2 bg-[#ff5722] text-white border-[2px] border-[#111] font-bold text-[10px] uppercase tracking-widest hover:bg-[#111]">Confirm</button>
+                            <button onClick={() => setConfirmDelete(null)} className="px-3 py-2 bg-white border-[2px] border-[#111] font-bold text-[10px] uppercase tracking-widest">Keep</button>
+                          </div>
+                        ) : (
+                          <button title="Delete" onClick={() => setConfirmDelete({ listType: 'playlists', id: pl.id })} className="p-2 bg-[#ff5722] text-white border-[2px] border-[#111] hover:bg-[#111] transition-colors"><Trash2 size={16} /></button>
+                        )}
                       </div>
                     </div>
-                  ))}
+                  );})}
                 </div>
               </div>
               </>
             )}
 
-            {(adminTab === 'projects' || adminTab === 'blogs' || adminTab === 'socials' || adminTab === 'journals') && (
-              <div className="bg-white p-8 border-[2px] border-[#111] shadow-[8px_8px_0px_#111]">
-                <div className="flex justify-between items-end border-b-[2px] border-[#111] pb-4 mb-6">
-                  <h2 className="text-3xl font-serif capitalize">Manage {adminTab}</h2>
-                  <button onClick={() => setEditingItem(adminTab === 'blogs' ? {blocks: [], type: 'regular'} : adminTab === 'journals' ? {logs: []} : {})} className="bg-[#111] text-[#dfff00] px-6 py-2 border-[2px] border-[#111] font-mono font-bold uppercase tracking-widest flex items-center gap-2 hover:bg-[#0000ff] hover:text-white transition-colors"><Plus size={18} /> INITIALIZE NEW</button>
+            {(adminTab === 'projects' || adminTab === 'blogs' || adminTab === 'socials' || adminTab === 'journals') && (() => {
+              const source = adminTab === 'projects' ? projects
+                           : adminTab === 'blogs'    ? blogs
+                           : adminTab === 'journals' ? journalEntries
+                           : socials;
+              const label = (it) => it.title || it.name || it.date || 'UNTITLED_RECORD';
+              const q = adminSearch.trim().toLowerCase();
+              const rows = source
+                .map((item, idx) => ({ item, idx }))
+                .filter(({ item }) => !q || label(item).toLowerCase().includes(q) || (item.category || '').toLowerCase().includes(q) || (item.tags || '').toString().toLowerCase().includes(q));
+
+              return (
+              <div className="bg-white p-6 md:p-8 border-[2px] border-[#111] shadow-[8px_8px_0px_#111] anim-rise">
+                <div className="flex flex-col lg:flex-row lg:justify-between lg:items-end border-b-[2px] border-[#111] pb-4 mb-6 gap-4">
+                  <div>
+                    <h2 className="text-3xl font-serif capitalize">Manage {adminTab}</h2>
+                    <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-gray-500 mt-1">
+                      {rows.length} of {source.length} record{source.length === 1 ? '' : 's'}
+                    </p>
+                  </div>
+                  <div className="flex flex-col sm:flex-row gap-3">
+                    {/* Search: long lists were previously unnavigable */}
+                    <div className="relative">
+                      <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                      <input value={adminSearch} onChange={e => setAdminSearch(e.target.value)} placeholder="FILTER RECORDS" className="w-full sm:w-64 pl-10 pr-9 py-2.5 border-[2px] border-[#111] font-mono text-xs uppercase tracking-widest outline-none focus:bg-[#dfff00] transition-colors" />
+                      {adminSearch && (
+                        <button aria-label="Clear filter" onClick={() => setAdminSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:text-[#ff5722]"><X size={14}/></button>
+                      )}
+                    </div>
+                    <button onClick={() => setEditingItem(adminTab === 'blogs' ? { blocks: [], type: 'regular' } : adminTab === 'journals' ? { logs: [] } : {})} className="bg-[#111] text-[#dfff00] px-6 py-2.5 border-[2px] border-[#111] font-mono font-bold uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-[#0000ff] hover:text-white transition-colors slide-press shrink-0"><Plus size={18} /> INITIALIZE NEW</button>
+                  </div>
                 </div>
+
+                {source.length === 0 ? (
+                  <div className="border-[2px] border-dashed border-[#111]/40 p-12 text-center anim-fade">
+                    <p className="font-serif text-2xl text-[#111] mb-2">Nothing here yet</p>
+                    <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-gray-500 mb-6">This collection is empty. Create the first record to populate the public view.</p>
+                    <button onClick={() => setEditingItem(adminTab === 'blogs' ? { blocks: [], type: 'regular' } : adminTab === 'journals' ? { logs: [] } : {})} className="bg-[#111] text-[#dfff00] px-6 py-3 border-[2px] border-[#111] font-mono font-bold uppercase tracking-widest inline-flex items-center gap-2 slide-press"><Plus size={16}/> Create record</button>
+                  </div>
+                ) : rows.length === 0 ? (
+                  <div className="border-[2px] border-dashed border-[#111]/40 p-10 text-center font-mono text-xs uppercase tracking-[0.2em] text-gray-500 anim-fade">
+                    No records match “{adminSearch}”.
+                  </div>
+                ) : (
                 <div className="space-y-3 font-mono">
-                  {(adminTab === 'projects' ? projects : adminTab === 'blogs' ? blogs : adminTab === 'journals' ? journalEntries : socials).map(item => (
-                    <div key={item.id} className="flex justify-between items-center bg-[#f4f4f0] p-4 border-[2px] border-[#111] hover:bg-white transition-colors">
-                      <span className="font-bold text-sm">{item.title || item.name || item.date || 'UNTITLED_RECORD'}</span>
-                      <div className="flex gap-3">
-                        <button onClick={() => setEditingItem({ ...item, type: item.type || (adminTab === 'blogs' ? 'regular' : adminTab === 'journals' ? undefined : 'project') })} className="p-2 bg-[#dfff00] border-[2px] border-[#111] hover:bg-[#111] hover:text-white transition-colors"><Edit2 size={18} /></button>
-                        <button onClick={() => handleDeleteItem(adminTab, item.id)} className="p-2 bg-[#ff5722] text-white border-[2px] border-[#111] hover:bg-[#111] transition-colors"><Trash2 size={18} /></button>
+                  {rows.map(({ item, idx }, i) => {
+                    const thumb = item.coverImage || item.image;
+                    const pendingDelete = confirmDelete && confirmDelete.listType === adminTab && confirmDelete.id === item.id;
+                    return (
+                    <div key={item.id} style={{ '--d': i }} className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 bg-[#f4f4f0] p-3 md:p-4 border-[2px] border-[#111] hover:bg-white transition-colors anim-rise stagger-child">
+                      <div className="flex items-center gap-4 min-w-0">
+                        {/* Reorder handles — ordering drives the public layout */}
+                        <div className="flex flex-col shrink-0">
+                          <button aria-label="Move up" disabled={idx === 0 || !!q} onClick={() => moveListItem(adminTab, idx, -1)} className="px-1.5 py-0.5 border-[2px] border-[#111] bg-white hover:bg-[#dfff00] disabled:opacity-25 disabled:cursor-not-allowed transition-colors leading-none text-[10px]">▲</button>
+                          <button aria-label="Move down" disabled={idx === source.length - 1 || !!q} onClick={() => moveListItem(adminTab, idx, 1)} className="px-1.5 py-0.5 border-[2px] border-t-0 border-[#111] bg-white hover:bg-[#dfff00] disabled:opacity-25 disabled:cursor-not-allowed transition-colors leading-none text-[10px]">▼</button>
+                        </div>
+                        <span className="font-mono text-[10px] text-gray-400 w-6 shrink-0">{String(idx + 1).padStart(2, '0')}</span>
+                        {thumb
+                          ? <img src={thumb} alt="" className="w-12 h-12 object-cover border-[2px] border-[#111] grayscale shrink-0" />
+                          : <div className="w-12 h-12 border-[2px] border-dashed border-[#111]/40 shrink-0 flex items-center justify-center text-[8px] text-gray-400">NONE</div>}
+                        <div className="min-w-0">
+                          <p className="font-bold text-sm truncate">{label(item)}</p>
+                          <p className="text-[10px] uppercase tracking-widest text-gray-500 truncate">
+                            {item.type || item.blogCategory || item.ticketClass || '—'}
+                            {item.blogCategory && item.type ? ` · ${item.blogCategory}` : ''}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex gap-2 shrink-0 self-end sm:self-auto">
+                        <button title="Duplicate" onClick={() => duplicateListItem(adminTab, item)} className="p-2 bg-white border-[2px] border-[#111] hover:bg-[#0000ff] hover:text-white transition-colors"><Copy size={16} /></button>
+                        <button title="Edit" onClick={() => setEditingItem({ ...item, type: item.type || (adminTab === 'blogs' ? 'regular' : adminTab === 'journals' ? undefined : 'project') })} className="p-2 bg-[#dfff00] border-[2px] border-[#111] hover:bg-[#111] hover:text-white transition-colors"><Edit2 size={16} /></button>
+                        {/* Two-step delete: destructive actions should never be one click */}
+                        {pendingDelete ? (
+                          <div className="flex gap-1 anim-fade">
+                            <button onClick={() => handleDeleteItem(adminTab, item.id)} className="px-3 py-2 bg-[#ff5722] text-white border-[2px] border-[#111] font-bold text-[10px] uppercase tracking-widest hover:bg-[#111]">Confirm</button>
+                            <button onClick={() => setConfirmDelete(null)} className="px-3 py-2 bg-white border-[2px] border-[#111] font-bold text-[10px] uppercase tracking-widest hover:bg-[#f4f4f0]">Keep</button>
+                          </div>
+                        ) : (
+                          <button title="Delete" onClick={() => setConfirmDelete({ listType: adminTab, id: item.id })} className="p-2 bg-[#ff5722] text-white border-[2px] border-[#111] hover:bg-[#111] transition-colors"><Trash2 size={16} /></button>
+                        )}
                       </div>
                     </div>
-                  ))}
+                  );})}
                 </div>
+                )}
+                {q && <p className="mt-4 font-mono text-[9px] uppercase tracking-[0.2em] text-gray-400">Reordering is disabled while a filter is active.</p>}
               </div>
-            )}
+            );})()}
 
             {adminTab === 'messages' && (
               <div className="bg-white p-8 border-[2px] border-[#111] shadow-[8px_8px_0px_#111]">
-                 <h2 className="text-3xl font-serif mb-6 border-b-[2px] border-[#111] pb-4">Received Intercepts</h2>
+                 <div className="flex justify-between items-end border-b-[2px] border-[#111] pb-4 mb-6">
+                   <h2 className="text-3xl font-serif">Received Intercepts</h2>
+                   <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-gray-500">{guestMessages.length} total</span>
+                 </div>
                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                    {guestMessages.length === 0 ? <p className="text-sm font-mono text-gray-500 uppercase">No transmissions found.</p> : guestMessages.map(msg => (
-                       <div key={msg.id} className="bg-[#f4f4f0] p-6 border-[2px] border-[#111] shadow-[4px_4px_0px_rgba(17,17,17,0.2)]">
+                    {guestMessages.length === 0 ? (
+                      <div className="sm:col-span-2 border-[2px] border-dashed border-[#111]/40 p-12 text-center">
+                        <p className="font-serif text-2xl mb-1">Inbox clear</p>
+                        <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-gray-500">No transmissions received yet.</p>
+                      </div>
+                    ) : guestMessages.map((msg, mi) => (
+                       <div key={msg.id} style={{ '--d': mi }} className="bg-[#f4f4f0] p-6 border-[2px] border-[#111] shadow-[4px_4px_0px_rgba(17,17,17,0.2)] anim-rise stagger-child relative group">
                           <p className="text-[10px] text-[#111] mb-4 uppercase font-bold tracking-widest bg-[#dfff00] w-fit px-2 border border-[#111]">{new Date(msg.created_at).toLocaleString()}</p>
                           {msg.message.startsWith('data:image') ? (
                              <img src={msg.message} alt="drawing" className="w-full border-[2px] border-[#111]" />
                           ) : (
-                             <p className="font-mono text-sm leading-relaxed whitespace-pre-wrap">{msg.message}</p>
+                             <>
+                               <p className="font-mono text-sm leading-relaxed whitespace-pre-wrap">{msg.message}</p>
+                               <button
+                                 onClick={() => { navigator.clipboard?.writeText(msg.message); showToast("Message copied.", 'success'); }}
+                                 className="absolute top-4 right-4 p-2 bg-white border-[2px] border-[#111] opacity-0 group-hover:opacity-100 transition-opacity hover:bg-[#dfff00]"
+                                 title="Copy text"><Copy size={14}/></button>
+                             </>
                           )}
                        </div>
                     ))}
@@ -1828,9 +3316,26 @@ export default function App() {
               </div>
             )}
             
-            <div className="fixed bottom-8 right-8 z-50">
-              <button disabled={isSaving} onClick={() => saveAllToCloud(null)} className="bg-[#111] text-[#dfff00] px-8 py-4 border-[2px] border-[#111] shadow-[8px_8px_0px_rgba(17,17,17,1)] hover:translate-y-[-2px] hover:shadow-[10px_10px_0px_rgba(17,17,17,1)] flex items-center gap-3 font-mono font-bold text-lg tracking-widest transition-all disabled:opacity-50">
-                <Save size={24}/> {isSaving ? 'UPLOADING...' : 'DEPLOY CHANGES'}
+            <div className="fixed bottom-8 right-8 z-50 flex flex-col items-end gap-2">
+              {isDirty && !isSaving && (
+                <span className="font-mono text-[9px] font-bold uppercase tracking-[0.2em] bg-[#ff5722] text-white px-3 py-1.5 border-[2px] border-[#111] shadow-[3px_3px_0px_#111] anim-right">
+                  Unsaved changes
+                </span>
+              )}
+              <button
+                disabled={isSaving}
+                onClick={() => saveAllToCloud(null)}
+                title="Deploy (Ctrl/Cmd + S)"
+                className={`px-8 py-4 border-[2px] border-[#111] shadow-[8px_8px_0px_rgba(17,17,17,1)] hover:-translate-y-[2px] hover:shadow-[10px_10px_0px_rgba(17,17,17,1)] active:translate-y-[2px] active:shadow-[4px_4px_0px_rgba(17,17,17,1)] flex items-center gap-3 font-mono font-bold text-base md:text-lg tracking-widest transition-all duration-[220ms] ease-[cubic-bezier(0.16,1,0.3,1)] disabled:opacity-60 ${
+                  isDirty ? 'bg-[#111] text-[#dfff00]' : 'bg-[#f4f4f0] text-[#111]'
+                }`}
+              >
+                {isSaving
+                  ? <><Save size={24} className="animate-[spin_1.2s_linear_infinite]"/> <span>UPLOADING…</span></>
+                  : isDirty
+                    ? <><Save size={24}/> <span>DEPLOY CHANGES</span></>
+                    : <><Check size={24}/> <span>ALL DEPLOYED</span></>}
+                <kbd className="hidden md:inline font-mono text-[9px] font-normal opacity-60 border border-current px-1.5 py-0.5 ml-1">⌘S</kbd>
               </button>
             </div>
           </div>
@@ -1845,7 +3350,78 @@ export default function App() {
         .font-serif { font-family: 'Instrument Serif', serif; }
         .font-mono { font-family: 'Space Mono', monospace; }
         .font-sans { font-family: 'Inter', sans-serif; }
-        
+
+        /* ============================================================
+           MOTION SYSTEM
+           One shared easing vocabulary so every surface moves alike.
+           ============================================================ */
+        :root {
+          --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+          --ease-spring:   cubic-bezier(0.34, 1.4, 0.5, 1);
+          --ease-mech:     cubic-bezier(0.65, 0, 0.35, 1);
+          --dur-fast: 180ms;
+          --dur-base: 380ms;
+          --dur-slow: 720ms;
+        }
+
+        @keyframes riseIn      { from { opacity:0; transform: translateY(22px); } to { opacity:1; transform:none; } }
+        @keyframes slideInL    { from { opacity:0; transform: translateX(-32px); } to { opacity:1; transform:none; } }
+        @keyframes slideInR    { from { opacity:0; transform: translateX(32px); } to { opacity:1; transform:none; } }
+        @keyframes fadeIn      { from { opacity:0; } to { opacity:1; } }
+        @keyframes wipeUp      { from { opacity:0; clip-path: inset(100% 0 0 0); transform: translateY(10px);} to { opacity:1; clip-path: inset(0 0 0 0); transform:none; } }
+        @keyframes stampIn     { 0% { opacity:0; transform: scale(1.25) rotate(-4deg); } 60% { opacity:1; transform: scale(0.97) rotate(1deg); } 100% { opacity:1; transform: none; } }
+        @keyframes toastIn     { 0% { opacity:0; transform: translate(-50%, -140%); } 70% { opacity:1; transform: translate(-50%, 6%); } 100% { opacity:1; transform: translate(-50%, 0); } }
+        @keyframes toastOut    { from { opacity:1; transform: translate(-50%, 0); } to { opacity:0; transform: translate(-50%, -140%); } }
+        @keyframes backdropIn  { from { opacity:0; backdrop-filter: blur(0px); } to { opacity:1; } }
+        @keyframes sheetIn     { 0% { opacity:0; transform: translateY(40px) scale(0.97); } 100% { opacity:1; transform:none; } }
+        @keyframes ticketIn    { 0% { opacity:0; transform: translateY(60px) rotate(-6deg) scale(0.94); } 100% { opacity:1; transform:none; } }
+        @keyframes barFill     { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+        @keyframes softPulse   { 0%,100% { opacity:1; } 50% { opacity:0.45; } }
+        @keyframes shimmer     { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+        @keyframes underlineIn { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+
+        /* Utility classes ------------------------------------------------ */
+        .anim-rise    { animation: riseIn   var(--dur-slow) var(--ease-out-expo) both; }
+        .anim-left    { animation: slideInL var(--dur-slow) var(--ease-out-expo) both; }
+        .anim-right   { animation: slideInR var(--dur-slow) var(--ease-out-expo) both; }
+        .anim-fade    { animation: fadeIn   var(--dur-base) ease-out both; }
+        .anim-wipe    { animation: wipeUp   var(--dur-slow) var(--ease-out-expo) both; }
+        .anim-stamp   { animation: stampIn  520ms var(--ease-spring) both; }
+        .anim-sheet   { animation: sheetIn  var(--dur-slow) var(--ease-out-expo) both; }
+
+        /* Stagger: set style={{'--d': i}} on the child */
+        .stagger-child { animation-delay: calc(var(--d, 0) * 70ms); }
+
+        /* The whole tab panel re-enters on every tab change (keyed remount) */
+        .tab-enter { animation: riseIn 520ms var(--ease-out-expo) both; }
+
+        /* --- Interaction primitives ------------------------------------ */
+        /* Replaces the old jumpy "pop" hovers with a directional slide      */
+        .slide-card {
+          transition: transform var(--dur-base) var(--ease-out-expo),
+                      box-shadow var(--dur-base) var(--ease-out-expo),
+                      background-color var(--dur-fast) ease;
+          will-change: transform;
+        }
+        .slide-card:hover { transform: translate(-3px, -3px); box-shadow: 10px 10px 0 #111; }
+        .slide-card:active { transform: translate(2px, 2px); box-shadow: 2px 2px 0 #111; transition-duration: 90ms; }
+
+        .slide-press {
+          transition: transform var(--dur-fast) var(--ease-out-expo), box-shadow var(--dur-fast) var(--ease-out-expo), background-color var(--dur-fast) ease, color var(--dur-fast) ease;
+        }
+        .slide-press:hover  { transform: translate(-2px, -2px); box-shadow: 4px 4px 0 #111; }
+        .slide-press:active { transform: translate(1px, 1px);  box-shadow: 0 0 0 #111; transition-duration: 80ms; }
+
+        /* Animated underline for section headings */
+        .rule-grow::after {
+          content: ''; display: block; height: 2px; background: #111; margin-top: 0.5rem;
+          transform-origin: left; animation: underlineIn 900ms var(--ease-out-expo) both; animation-delay: 120ms;
+        }
+
+        /* Image reveal: grayscale lifts and the frame settles */
+        .img-reveal { transition: filter 700ms var(--ease-out-expo), transform 900ms var(--ease-out-expo); }
+        .group:hover .img-reveal { filter: grayscale(0); transform: scale(1.04); }
+
         .bg-blueprint {
           background-image: linear-gradient(rgba(17,17,17,0.08) 1px, transparent 1px),
                             linear-gradient(90deg, rgba(17,17,17,0.08) 1px, transparent 1px);
@@ -1855,90 +3431,188 @@ export default function App() {
         .hide-scrollbar::-webkit-scrollbar { display: none; }
         .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
-        /* === TRUE 3D DOMINO ENGINE === */
-        .gal-viewport {
-            perspective: 2500px;
-            transform-style: preserve-3d;
+        /* Focus ring that matches the brutalist language */
+        .focus-brut:focus-visible { outline: 3px solid #0000ff; outline-offset: 2px; }
+        button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+          outline: 3px solid #0000ff; outline-offset: 2px;
         }
+
+        /* Skeleton shimmer for the loading state */
+        .skeleton {
+          background: linear-gradient(90deg, #e5e5e5 25%, #f4f4f0 50%, #e5e5e5 75%);
+          background-size: 200% 100%;
+          animation: shimmer 1.4s linear infinite;
+        }
+
+        /* === TRUE 3D DOMINO ENGINE (galleria) === */
+        .gal-viewport { perspective: 2500px; transform-style: preserve-3d; }
         .gal-scene {
             transform-style: preserve-3d;
-            transition: transform 0.1s linear;
+            /* was 0.1s linear -> now eased so flick-scrolling glides instead of snapping */
+            transition: transform 620ms var(--ease-out-expo);
         }
         .gal-item {
             position: absolute;
-            left: 50%; 
+            left: 50%;
             top: 0;
-            height: 260px; 
-            width: max-content; 
+            height: 260px;
+            width: max-content;
             transform-origin: bottom center;
             transform-style: preserve-3d;
-            
-            /* BASE SPACING (-10px) controls how tightly packed they are at rest */
             transform: translate(-50%, calc(var(--i) * -10px)) rotateX(-90deg);
-            transition: transform 0.4s cubic-bezier(0.25, 1, 0.5, 1), box-shadow 0.4s ease;
-            
+            transition: transform 560ms var(--ease-out-expo), box-shadow 460ms ease;
             background: transparent;
-            border-radius: 12px; /* MAKES CORNERS ROUND */
-            /* border: 3px solid #fff;  <-- REMOVED BORDER */
+            border-radius: 12px;
             box-shadow: 0px 0px 10px rgba(0,0,0,0.3);
             cursor: pointer;
             z-index: 1;
+            animation: fadeIn 600ms ease-out both;
+            animation-delay: calc(var(--i) * 45ms);
         }
-        
-        /* Forces the image inside to respect the rounded corners for any ratio */
-        .gal-item img {
-            border-radius: 12px;
-        }
-        
-        /* 1. ENLARGE THE HOVERED CARD */
+        .gal-item img { border-radius: 12px; }
         .gal-item:hover {
             transform: translate(-50%, calc(var(--i) * -55px)) rotateX(-90deg) scale(1.4);
             box-shadow: 0px -20px 40px rgba(0,0,0,0.6);
             z-index: 50;
         }
-        
-        /* 2. PUSH PREVIOUS CARDS FORWARD (+Y) */
         .gal-scene:has(.gal-item:hover) .gal-item:has(~ .gal-item:hover) {
-            /* HOVER SPACING (+200px) pushes cards away to reveal the tag */
             transform: translate(-50%, calc(var(--i) * -55px + 400px)) rotateX(-90deg);
         }
-
-        /* 3. PUSH SUBSEQUENT CARDS BACKWARD (-Y) */
         .gal-item:hover ~ .gal-item {
-            /* HOVER SPACING (-200px) pushes cards away to reveal the tag */
             transform: translate(-50%, calc(var(--i) * -55px - 400px)) rotateX(-90deg);
         }
 
-        @keyframes slideOutVinyl { 0% { transform: translateX(0); } 100% { transform: translateX(45%); } }
-        .animate-slide-vinyl { animation: slideOutVinyl 1.2s cubic-bezier(0.2, 0.8, 0.2, 1) forwards; }
-        
-        /* === NEW IMAGE EFFECTS === */
-        .img-duotone {
-           mix-blend-mode: multiply;
-           filter: grayscale(100%) contrast(150%);
+        /* ============================================================
+           VINYL SEQUENCE
+           sleeve slides in -> record pulls out of the sleeve -> tonearm
+           drops -> platter spins. Each stage is its own keyframe so the
+           timing reads mechanical rather than instant.
+           ============================================================ */
+        @keyframes sleeveIn {
+          0%   { opacity: 0; transform: translateX(-70px) rotate(-3deg); }
+          100% { opacity: 1; transform: none; }
         }
+        @keyframes vinylPullOut {
+          0%   { transform: translateX(-6%) scale(0.94); opacity: 0; }
+          18%  { opacity: 1; }
+          70%  { transform: translateX(48%) scale(1.01); }
+          100% { transform: translateX(45%) scale(1); opacity: 1; }
+        }
+        @keyframes platterSpin { to { transform: rotate(360deg); } }
+        @keyframes spinUp {
+          0%   { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+        @keyframes tonearmDrop {
+          0%   { transform: rotate(-32deg); }
+          65%  { transform: rotate(4deg); }
+          100% { transform: rotate(0deg); }
+        }
+        @keyframes needleGlow { 0%,100% { opacity: .35; } 50% { opacity: 1; } }
+
+        .vinyl-sleeve { animation: sleeveIn 820ms var(--ease-out-expo) both; }
+        .vinyl-disc   { animation: vinylPullOut 1400ms var(--ease-out-expo) both; animation-delay: 240ms; }
+        /* Two nested spins: a slow start-up, then constant rotation */
+        .vinyl-platter {
+          animation: spinUp 2.4s var(--ease-mech) 900ms 1 both,
+                     platterSpin 3.4s linear 3.3s infinite;
+        }
+        .vinyl-tonearm { transform-origin: 88% 12%; animation: tonearmDrop 1100ms var(--ease-out-expo) both; animation-delay: 1500ms; }
+        .vinyl-needle-led { animation: needleGlow 1.8s ease-in-out infinite; animation-delay: 2.4s; }
+        .vinyl-shine {
+          background: conic-gradient(from 0deg, transparent 0deg, rgba(255,255,255,0.22) 40deg, transparent 90deg, transparent 180deg, rgba(255,255,255,0.14) 220deg, transparent 280deg);
+        }
+
+        /* Vinyl spine list in the blog sidebar: slides out like a record being pulled */
+        .spine {
+          transition: transform 420ms var(--ease-out-expo), background-color 260ms ease, box-shadow 420ms ease;
+        }
+        .spine:hover { transform: translateX(-26px); box-shadow: -8px 0 18px rgba(0,0,0,0.35); }
+        .spine:active { transform: translateX(-14px); transition-duration: 110ms; }
+
+        /* ============================================================
+           TERMINAL BOOT
+           ============================================================ */
+        @keyframes caretBlink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+        .boot-caret { animation: caretBlink 1s steps(1) infinite; }
+
+        /* Faint CRT scanlines over the console panel */
+        .crt-scanlines {
+          background-image: repeating-linear-gradient(
+            to bottom,
+            rgba(255,255,255,0.05) 0px,
+            rgba(255,255,255,0.05) 1px,
+            transparent 1px,
+            transparent 3px
+          );
+          opacity: 0.55;
+        }
+
+        /* ============================================================
+           PATCH BAY
+           ============================================================ */
+        @keyframes ledBlink { 0%, 100% { opacity: 1; } 45% { opacity: 0.22; } }
+        @keyframes vuSettle {
+          0%   { transform: scaleY(0.1); opacity: 0; }
+          70%  { transform: scaleY(1.12); opacity: 1; }
+          100% { transform: scaleY(1); opacity: 1; }
+        }
+        .patch-cable {
+          transition: stroke-width 200ms var(--ease-out-expo), filter 200ms ease;
+        }
+        .patch-cable:hover { stroke-width: 7; filter: brightness(1.35); }
+
+        /* === IMAGE EFFECTS === */
+        .img-duotone { mix-blend-mode: multiply; filter: grayscale(100%) contrast(150%); }
         .effect-ascii-overlay {
-           position: absolute;
-           inset: 0;
+           position: absolute; inset: 0;
            background-image: radial-gradient(circle, #ff5722 1px, transparent 1px);
            background-size: 4px 4px;
            pointer-events: none;
+        }
+
+        /* ============================================================
+           RESPECT THE USER'S SYSTEM PREFERENCE
+           ============================================================ */
+        @media (prefers-reduced-motion: reduce) {
+          *, *::before, *::after {
+            animation-duration: 0.001ms !important;
+            animation-iteration-count: 1 !important;
+            transition-duration: 0.001ms !important;
+            scroll-behavior: auto !important;
+          }
+          .slide-card:hover, .slide-press:hover, .spine:hover { transform: none; }
+          .boot-caret { opacity: 1; }
         }
       `}} />
 
       <div className="min-h-screen bg-[#e8e8e3] p-4 md:p-8 flex items-center justify-center relative transition-all duration-1000">
         
         {/* GLOBAL TOAST NOTIFICATION */}
-        {toastMessage && (
-          <div className="fixed top-8 left-1/2 -translate-x-1/2 z-[100] bg-[#111] text-[#00ff00] px-8 py-4 border-[4px] border-[#00ff00] shadow-[6px_6px_0px_#000] font-mono font-bold uppercase tracking-widest flex items-center gap-3 animate-bounce">
-            <Terminal size={20}/> {toastMessage}
+        {toast && (
+          <div
+            key={toast.id}
+            role="status"
+            aria-live="polite"
+            className={`fixed top-8 left-1/2 z-[100] px-8 py-4 border-[4px] shadow-[6px_6px_0px_#000] font-mono font-bold uppercase tracking-widest text-xs md:text-sm flex items-center gap-3 max-w-[90vw] ${
+              toast.type === 'error'   ? 'bg-[#111] text-[#ff5722] border-[#ff5722]' :
+              toast.type === 'success' ? 'bg-[#111] text-[#dfff00] border-[#dfff00]' :
+                                         'bg-[#111] text-[#00ff00] border-[#00ff00]'
+            }`}
+            style={{ animation: `${toast.leaving ? 'toastOut 300ms var(--ease-mech) forwards' : 'toastIn 620ms var(--ease-out-expo) both'}` }}
+          >
+            {toast.type === 'error' ? <AlertTriangle size={20}/> : toast.type === 'success' ? <Check size={20}/> : <Terminal size={20}/>}
+            <span>{toast.msg}</span>
           </div>
         )}
 
        {/* === NEW: TICKET GATE OVERLAY === */}
        {pendingJournal && (
-          <div className="fixed inset-0 z-[70] bg-[#111]/80 backdrop-blur-md flex items-center justify-center p-4">
-             <div className="w-[300px] h-[580px] bg-[#ff5722] rounded-[20px] p-4 flex flex-col relative shadow-[16px_16px_0px_rgba(0,0,0,0.5)] border-[2px] border-[#111]">
+          <div className="fixed inset-0 z-[70] bg-[#111]/80 backdrop-blur-md flex items-center justify-center p-4"
+               style={{ animation: 'backdropIn 300ms ease-out both' }}
+               onClick={(e) => { if (e.target === e.currentTarget) { setPendingJournal(null); setVisitorName(''); } }}>
+             <div className="w-[300px] h-[580px] bg-[#ff5722] rounded-[20px] p-4 flex flex-col relative shadow-[16px_16px_0px_rgba(0,0,0,0.5)] border-[2px] border-[#111]"
+                  style={{ animation: 'ticketIn 720ms var(--ease-out-expo) both' }}>
                 
                 <button onClick={() => {setPendingJournal(null); setIsTicketValidating(false); setVisitorName('');}} className="absolute top-2 right-2 text-white hover:text-[#111] z-50 p-2"><X size={20}/></button>
 
@@ -2029,10 +3703,16 @@ export default function App() {
                <div className="absolute bottom-[28px] right-2 md:right-8 flex gap-3 overflow-x-auto hide-scrollbar max-w-[calc(100vw-120px)] md:max-w-none pl-4 pb-3 pt-2">
                   {tabs.map((tab) => (
                     <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-                            className={`px-5 py-2 rounded-full border-[2px] border-[#111] font-mono text-[10px] md:text-xs font-bold uppercase tracking-widest transition-all shadow-[2px_2px_0px_#111] hover:translate-y-[2px] hover:shadow-none flex-shrink-0 ${
+                            aria-current={activeTab === tab.id ? 'page' : undefined}
+                            className={`relative px-5 py-2 rounded-full border-[2px] border-[#111] font-mono text-[10px] md:text-xs font-bold uppercase tracking-widest shadow-[2px_2px_0px_#111] slide-press flex-shrink-0 ${
                               activeTab === tab.id ? 'bg-[#111] text-[#f4f4f0]' : 'bg-white text-[#111] hover:bg-[#dfff00]'
                             }`}>
                       {tab.label}
+                      {/* Active marker slides in under the pill instead of the label just recolouring */}
+                      {activeTab === tab.id && (
+                        <span className="absolute left-1/2 -bottom-[7px] h-[3px] w-[60%] -translate-x-1/2 bg-[#ff5722] rounded-full origin-center"
+                              style={{ animation: 'barFill 380ms var(--ease-out-expo) both' }} />
+                      )}
                     </button>
                   ))}
                </div>
@@ -2056,11 +3736,12 @@ export default function App() {
 
               {/* === NEW: JOURNALING TAB OVERLAY === */}
               {activeJournal && (
-                <div className="absolute inset-0 z-[60] bg-[#f0ebd8] flex flex-col overflow-y-auto font-sans animate-[fadeIn_0.3s_ease-out] hide-scrollbar">
+                <div className="absolute inset-0 z-[60] bg-[#f0ebd8] flex flex-col overflow-y-auto font-sans hide-scrollbar" style={{ animation: 'sheetIn 620ms var(--ease-out-expo) both' }}>
                    
                    {(() => {
                       const len = journalEntries.length;
-                      
+                      if (len === 0) return <div className="p-8 font-mono text-sm uppercase tracking-widest">No journal entries found in system.</div>;
+
                       // PAD THE WHEEL: Ensure we always have enough items to draw a continuous loop
                       const displayCount = len < 7 ? len * Math.ceil(7 / len) : len;
                       
@@ -2089,8 +3770,8 @@ export default function App() {
                                  <span className="cursor-pointer hover:opacity-50">. About .</span>
                                  <span className="cursor-pointer hover:opacity-50">Month</span>
                               </div>
-                              <button onClick={() => setActiveJournal(null)} className="font-mono text-xs font-bold tracking-widest uppercase bg-[#111] text-[#f0ebd8] px-4 py-2 hover:bg-[#ff5722] transition-colors shadow-[2px_2px_0px_rgba(17,17,17,0.3)]">
-                                 Close Entry
+                              <button onClick={() => setActiveJournal(null)} className="font-mono text-xs font-bold tracking-widest uppercase bg-[#111] text-[#f0ebd8] px-4 py-2 hover:bg-[#ff5722] transition-colors shadow-[2px_2px_0px_rgba(17,17,17,0.3)] slide-press">
+                                 Close Entry <span className="opacity-50 ml-1">ESC</span>
                               </button>
                            </div>
 
@@ -2226,7 +3907,8 @@ export default function App() {
                 </div>
               )}
 
-              <main className="flex-1 overflow-y-auto p-4 md:p-8 pb-32 hide-scrollbar relative">
+              {/* key forces a remount per tab so the entrance choreography replays */}
+              <main key={activeTab} className="flex-1 overflow-y-auto p-4 md:p-8 pb-32 hide-scrollbar relative tab-enter">
                 {renderContent()}
               </main>
 
@@ -2241,33 +3923,59 @@ export default function App() {
 
         {/* MODAL HANDLING */}
         {selectedItem && (
-          <div className="fixed inset-0 bg-[#f4f4f0]/80 backdrop-blur-md z-50 flex items-center justify-center p-4 md:p-8">
+          <div
+            role="dialog"
+            aria-modal="true"
+            onClick={(e) => { if (e.target === e.currentTarget) setSelectedItem(null); }}
+            className="fixed inset-0 bg-[#f4f4f0]/80 backdrop-blur-md z-50 flex items-center justify-center p-4 md:p-8"
+            style={{ animation: 'backdropIn 320ms ease-out both' }}
+          >
             
             {/* === VINYL ALBUM MODAL === */}
             {itemType === 'blog' && selectedItem.type === 'album' ? (
-               <div className="w-[95vw] max-w-6xl h-[85vh] min-h-[500px] shadow-[16px_16px_0px_#111] relative flex flex-col items-center justify-center overflow-hidden border-[4px] border-[#111]"
+               <div className="w-[95vw] max-w-6xl h-[85vh] min-h-[500px] shadow-[16px_16px_0px_#111] relative flex flex-col items-center justify-center overflow-hidden border-[4px] border-[#111] anim-sheet"
                     style={{ backgroundColor: selectedItem.bgColor || '#ff5722', backgroundImage: selectedItem.bgImage ? `url(${selectedItem.bgImage})` : 'none', backgroundSize: 'cover', backgroundPosition: 'center' }}>
-                  
+
                   {/* Diagonal slash background accent */}
                   <div className="absolute inset-0 opacity-20 pointer-events-none" style={{ backgroundImage: 'repeating-linear-gradient(45deg, #111, #111 2px, transparent 2px, transparent 10px)' }}></div>
 
-                  <button onClick={() => setSelectedItem(null)} className="absolute top-6 right-6 z-50 text-white bg-[#111] p-3 border-[2px] border-white/20 hover:bg-white hover:text-[#111] hover:border-[#111] transition-all"><X size={24} /></button>
-                  
+                  <button aria-label="Close" onClick={() => setSelectedItem(null)} className="absolute top-6 right-6 z-50 text-white bg-[#111] p-3 border-[2px] border-white/20 hover:bg-white hover:text-[#111] hover:border-[#111] transition-all slide-press"><X size={24} /></button>
+
+                  {/* NOW PLAYING strip — slides in from the left once the needle lands */}
+                  <div className="absolute top-6 left-6 z-40 flex items-center gap-3 bg-[#111] text-[#dfff00] border-[2px] border-[#dfff00] px-4 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.25em] anim-left" style={{ animationDelay: '1.6s' }}>
+                     <Disc3 size={14} className="animate-[spin_3s_linear_infinite]" />
+                     <span>Now spinning</span>
+                     <span className="w-1.5 h-1.5 rounded-full bg-[#ff5722] vinyl-needle-led" />
+                  </div>
+
                   <div className="relative flex items-center justify-center scale-[0.65] sm:scale-75 md:scale-100 md:-translate-x-12">
-                      
-                      <div className="absolute w-[300px] h-[300px] md:w-[450px] md:h-[450px] z-10 animate-slide-vinyl border-[2px] border-[#111] rounded-full shadow-[8px_8px_0px_rgba(17,17,17,0.5)]">
-                          <div className="w-full h-full rounded-full bg-[#111] animate-[spin_4s_linear_infinite]" style={{ backgroundImage: 'repeating-radial-gradient(circle at 50% 50%, #111, #111 2px, #222 3px, #222 4px)' }}>
+
+                      {/* --- THE RECORD: pulled out of the sleeve, then spun up --- */}
+                      <div className="absolute w-[300px] h-[300px] md:w-[450px] md:h-[450px] z-10 vinyl-disc border-[2px] border-[#111] rounded-full shadow-[8px_8px_0px_rgba(17,17,17,0.5)]">
+                          <div className="w-full h-full rounded-full bg-[#111] vinyl-platter" style={{ backgroundImage: 'repeating-radial-gradient(circle at 50% 50%, #111, #111 2px, #222 3px, #222 4px)' }}>
                                <div className="absolute inset-0 m-auto w-1/3 h-1/3 rounded-full bg-white flex items-center justify-center border-[4px] border-[#111]">
                                    <div className="w-3 h-3 rounded-full bg-[#111]"></div>
                                </div>
                           </div>
+                          {/* Static sheen so the disc reads as lacquer, not a flat circle */}
+                          <div className="absolute inset-0 rounded-full pointer-events-none vinyl-shine mix-blend-screen" />
+
+                          {/* --- TONEARM: swings down onto the record after the pull-out --- */}
+                          <div className="absolute -top-6 right-[-6%] w-[62%] h-[10px] z-30 vinyl-tonearm pointer-events-none">
+                             <div className="absolute right-0 -top-3 w-8 h-8 rounded-full bg-[#111] border-[2px] border-white/30 shadow-[3px_3px_0px_rgba(0,0,0,0.4)]" />
+                             <div className="absolute right-4 top-1/2 -translate-y-1/2 h-[6px] w-full bg-[#111] rounded-full shadow-[2px_2px_0px_rgba(0,0,0,0.35)]" />
+                             <div className="absolute left-0 top-1/2 -translate-y-1/2 w-6 h-4 bg-[#ff5722] border-[2px] border-[#111] rotate-[18deg]" />
+                          </div>
                       </div>
 
-                      <div className="w-[300px] h-[300px] md:w-[450px] md:h-[450px] bg-white shadow-[12px_12px_0px_rgba(17,17,17,0.7)] z-20 relative p-8 md:p-12 flex flex-col border-[3px] border-[#111]">
-                          <h2 className="text-3xl md:text-5xl font-serif text-[#111] mb-4 leading-none uppercase">{selectedItem.title}</h2>
-                          
+                      {/* --- THE SLEEVE --- */}
+                      <div className="w-[300px] h-[300px] md:w-[450px] md:h-[450px] bg-white shadow-[12px_12px_0px_rgba(17,17,17,0.7)] z-20 relative p-8 md:p-12 flex flex-col border-[3px] border-[#111] vinyl-sleeve">
+                          <h2 className="text-3xl md:text-5xl font-serif text-[#111] mb-4 leading-none uppercase anim-rise stagger-child" style={{ '--d': 6 }}>{selectedItem.title}</h2>
+
                           <div className="flex text-[#0000ff] mb-6 drop-shadow-sm border-b-[2px] border-[#111] pb-4 shrink-0">
-                              {[...Array(Math.max(0, Number(selectedItem.rating) || 5))].map((_, i) => <Star key={i} size={18} fill="currentColor" />)}
+                              {[...Array(Math.max(0, Math.min(5, Number(selectedItem.rating) || 5)))].map((_, i) => (
+                                <Star key={i} size={18} fill="currentColor" className="anim-stamp stagger-child" style={{ '--d': 8 + i }} />
+                              ))}
                           </div>
                           
                           <div className="flex-1 overflow-y-auto font-sans text-sm md:text-base text-gray-800 whitespace-pre-wrap hide-scrollbar pr-4 space-y-6">
@@ -2281,7 +3989,7 @@ export default function App() {
                               })}
                           </div>
 
-                          <div className="absolute -bottom-8 -right-8 w-28 h-28 md:w-40 md:h-40 bg-[#dfff00] shadow-[8px_8px_0px_#111] rotate-[4deg] p-2 border-[2px] border-[#111] flex flex-col transition-transform hover:rotate-0 hover:scale-105 duration-300 z-30">
+                          <div className="absolute -bottom-8 -right-8 w-28 h-28 md:w-40 md:h-40 bg-[#dfff00] shadow-[8px_8px_0px_#111] rotate-[4deg] p-2 border-[2px] border-[#111] flex flex-col transition-transform duration-[420ms] ease-[cubic-bezier(0.34,1.4,0.5,1)] hover:rotate-0 hover:scale-105 z-30 anim-stamp" style={{ animationDelay: '1.1s' }}>
                              <Pin size={28} fill="#ff5722" className="absolute -top-4 left-1/2 -translate-x-1/2 text-[#111] z-10" />
                              {selectedItem.coverImage ? (
                                 <img src={selectedItem.coverImage} className="w-full h-full object-cover border-[2px] border-[#111]" alt="Album Art" />
@@ -2295,7 +4003,7 @@ export default function App() {
 
             // === VIDEO PLAYER ===
             ) : selectedItem.type === 'video' ? (
-               <div className="bg-[#111] border-[4px] border-[#ff5722] shadow-[16px_16px_0px_#ff5722] p-8 md:p-12 w-full max-w-3xl mx-auto flex flex-col md:flex-row gap-8 md:gap-12 text-[#f4f4f0] font-mono select-none relative">
+               <div className="bg-[#111] border-[4px] border-[#ff5722] shadow-[16px_16px_0px_#ff5722] p-8 md:p-12 w-full max-w-3xl mx-auto flex flex-col md:flex-row gap-8 md:gap-12 text-[#f4f4f0] font-mono select-none relative anim-sheet">
                  <button onClick={() => setSelectedItem(null)} className="absolute top-4 right-4 z-50 text-white/50 hover:text-[#ff5722] transition-colors"><X size={28} /></button>
                  
                  <div className="w-full md:w-80 aspect-video md:aspect-square bg-[#000] border-[2px] border-[#333] overflow-hidden shrink-0 flex items-center justify-center relative shadow-[8px_8px_0px_#000]">
@@ -2329,8 +4037,8 @@ export default function App() {
             ) : (
 
               /* === ALL OTHER MODALS === */
-              <div className="bg-[#f4f4f0] border-[4px] border-[#111] shadow-[16px_16px_0px_#111] w-full max-w-5xl max-h-[90vh] overflow-y-auto relative">
-                <button onClick={() => setSelectedItem(null)} className="absolute top-4 right-4 z-50 bg-[#111] text-white p-3 border-[2px] border-[#111] hover:bg-[#ff5722] transition-colors"><X size={20} /></button>
+              <div className="bg-[#f4f4f0] border-[4px] border-[#111] shadow-[16px_16px_0px_#111] w-full max-w-5xl max-h-[90vh] overflow-y-auto relative anim-sheet hide-scrollbar">
+                <button aria-label="Close" onClick={() => setSelectedItem(null)} className="absolute top-4 right-4 z-50 bg-[#111] text-white p-3 border-[2px] border-[#111] hover:bg-[#ff5722] transition-colors slide-press"><X size={20} /></button>
                 
                 {itemType === 'project' && (
                   <div className="relative">
@@ -2416,16 +4124,24 @@ export default function App() {
 
         {/* AUTH MODAL */}
         {showLogin && !isAdmin && (
-          <div className="fixed inset-0 bg-[#f4f4f0]/90 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-white p-10 border-[4px] border-[#111] shadow-[16px_16px_0px_#111] w-full max-w-md relative">
+          <div className="fixed inset-0 bg-[#f4f4f0]/90 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+               style={{ animation: 'backdropIn 280ms ease-out both' }}
+               onClick={(e) => { if (e.target === e.currentTarget) setShowLogin(false); }}>
+            <div className="bg-white p-10 border-[4px] border-[#111] shadow-[16px_16px_0px_#111] w-full max-w-md relative anim-sheet">
               <button onClick={() => setShowLogin(false)} className="absolute top-4 right-4 text-[#111] hover:bg-[#ff5722] hover:text-white p-2 transition-colors border-[2px] border-transparent hover:border-[#111]"><X size={24}/></button>
               <div className="flex flex-col items-center text-center mb-8">
                 <div className="w-16 h-16 bg-[#111] text-white flex items-center justify-center mb-4 border-[2px] border-[#111] shadow-[4px_4px_0px_#ff5722]"><Lock size={32} /></div>
                 <h2 className="text-3xl font-serif text-[#111] uppercase tracking-widest">Admin Override</h2>
               </div>
               <form onSubmit={handleLogin} className="space-y-4">
-                <input type="email" required placeholder="IDENTIFICATION" value={emailInput} onChange={(e) => setEmailInput(e.target.value)} className="w-full p-4 border-[2px] border-[#111] bg-[#f4f4f0] font-mono text-sm outline-none focus:bg-[#dfff00] transition-colors" />
-                <input type="password" required placeholder="PASSCODE" value={passwordInput} onChange={(e) => setPasswordInput(e.target.value)} className="w-full p-4 border-[2px] border-[#111] bg-[#f4f4f0] font-mono text-sm outline-none focus:bg-[#dfff00] transition-colors" />
+                {/* In local fallback mode there is no account, so email is optional */}
+                <input type="email" required={!!supabase} autoComplete="username" placeholder={supabase ? "IDENTIFICATION" : "IDENTIFICATION (OPTIONAL — LOCAL MODE)"} value={emailInput} onChange={(e) => setEmailInput(e.target.value)} className="w-full p-4 border-[2px] border-[#111] bg-[#f4f4f0] font-mono text-sm outline-none focus:bg-[#dfff00] transition-colors" />
+                <div className="relative">
+                  <input type={showPassword ? 'text' : 'password'} required autoComplete="current-password" placeholder="PASSCODE" value={passwordInput} onChange={(e) => setPasswordInput(e.target.value)} className="w-full p-4 pr-14 border-[2px] border-[#111] bg-[#f4f4f0] font-mono text-sm outline-none focus:bg-[#dfff00] transition-colors" />
+                  <button type="button" aria-label={showPassword ? 'Hide passcode' : 'Show passcode'} onClick={() => setShowPassword(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#111] hover:text-[#ff5722] transition-colors p-1">
+                    {showPassword ? <EyeOff size={18}/> : <Eye size={18}/>}
+                  </button>
+                </div>
                 <button disabled={isLoading} type="submit" className="w-full bg-[#111] text-[#f4f4f0] font-mono font-bold uppercase tracking-widest p-4 border-[2px] border-[#111] hover:bg-[#0000ff] hover:text-white transition-colors disabled:opacity-50 mt-4 shadow-[4px_4px_0px_#111] hover:translate-y-[2px] hover:shadow-[2px_2px_0px_#111]">
                   {isLoading ? 'AUTHENTICATING...' : 'INITIALIZE ACCESS'}
                 </button>
