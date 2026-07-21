@@ -512,6 +512,367 @@ const PatchBay = ({ data, isAdmin, onChange, onToast }) => {
 
 // --- DEFAULT DATA ---
 /* ============================================================
+   TOPOGRAPHIC FIELD
+   Procedural contour lines — no image, no stored asset. A 3D value
+   noise field is sampled on a grid and marching squares traces one
+   iso-line per level; advancing the third axis makes the terrain
+   reshape while drift migrates it sideways.
+
+   ARCHITECTURE: one shared engine, not one per surface.
+   Every <TopoField/> registers a client canvas. The engine renders the
+   terrain ONCE per frame into a single offscreen buffer sized to the
+   viewport, then blits each client's slice out of it. So N panels cost
+   the same as one, and because every client samples the buffer at its
+   own viewport position, the contours line up across panels as a single
+   continuous landscape.
+
+   Memory is bounded by construction: one offscreen canvas (hard pixel
+   cap), one Float32Array (grown, never churned), and client backing
+   stores at 1x. Nothing is allocated per frame.
+   ============================================================ */
+const _smooth = (t) => t * t * (3 - 2 * t);
+const _lerp = (a, b, t) => a + (b - a) * t;
+const _clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+
+// Cheap integer hash -> [0,1). Deterministic, so a seed always yields
+// the same terrain.
+const _hash3 = (x, y, z, seed) => {
+  let n = Math.imul(x | 0, 374761393) + Math.imul(y | 0, 668265263) + Math.imul(z | 0, 1274126177) + Math.imul(seed | 0, 2654435761);
+  n = Math.imul(n ^ (n >>> 13), 1274126177);
+  return ((n ^ (n >>> 16)) >>> 0) / 4294967295;
+};
+
+// Trilinear value noise. Deliberately closure-free: this runs on the
+// order of 10^5 times per frame and a per-call lambda was the single
+// biggest source of GC churn in the first cut.
+const _vnoise = (x, y, z, seed) => {
+  const xi = Math.floor(x), yi = Math.floor(y), zi = Math.floor(z);
+  const u = _smooth(x - xi), v = _smooth(y - yi), w = _smooth(z - zi);
+  const x1 = xi + 1, y1 = yi + 1, z1 = zi + 1;
+  const c000 = _hash3(xi, yi, zi, seed), c100 = _hash3(x1, yi, zi, seed);
+  const c010 = _hash3(xi, y1, zi, seed), c110 = _hash3(x1, y1, zi, seed);
+  const c001 = _hash3(xi, yi, z1, seed), c101 = _hash3(x1, yi, z1, seed);
+  const c011 = _hash3(xi, y1, z1, seed), c111 = _hash3(x1, y1, z1, seed);
+  return _lerp(
+    _lerp(_lerp(c000, c100, u), _lerp(c010, c110, u), v),
+    _lerp(_lerp(c001, c101, u), _lerp(c011, c111, u), v),
+    w
+  );
+};
+
+const _fbm = (x, y, z, octaves, seed) => {
+  let amp = 0.5, freq = 1, sum = 0, norm = 0;
+  for (let i = 0; i < octaves; i++) {
+    sum += amp * _vnoise(x * freq, y * freq, z * freq, seed + i * 31);
+    norm += amp; amp *= 0.5; freq *= 2;
+  }
+  return sum / norm;
+};
+
+const TopoEngine = (() => {
+  // Hard ceilings. These are the whole reason this can't run away:
+  // whatever the viewport or the settings, the engine can never
+  // allocate more than one ~1.8M-pixel buffer and one ~24k-float grid.
+  const MAX_PIXELS = 1800000;   // offscreen buffer ceiling (~7MB RGBA)
+  const MAX_CELLS  = 24000;     // sample-grid ceiling
+  const MIN_FRAME  = 1000 / 24; // 24fps is plenty for terrain this slow
+
+  const clients = new Map();    // canvas -> ctx
+  let cfg = null;
+  let off = null, offCtx = null;
+  let field = null;             // reused; only ever grows
+  let cols = 0, rows = 0, cell = 14;
+  let bufW = 0, bufH = 0, bufScale = 1;
+  let raf = 0, last = 0, t0 = 0, needsField = true, running = false;
+  let reduced = false;
+
+  const ensureBuffer = () => {
+    const vw = Math.max(1, window.innerWidth || 1280);
+    const vh = Math.max(1, window.innerHeight || 800);
+    // Render below CSS resolution and upscale on blit — contours are
+    // soft geometry, the difference is invisible and it quarters the fill.
+    const s = Math.min(1, Math.sqrt(MAX_PIXELS / (vw * vh)));
+    const w = Math.max(1, Math.round(vw * s));
+    const h = Math.max(1, Math.round(vh * s));
+
+    if (!off) {
+      off = document.createElement('canvas');
+      offCtx = off.getContext('2d');
+    }
+    if (w !== bufW || h !== bufH) {
+      off.width = w; off.height = h;
+      bufW = w; bufH = h; bufScale = s;
+      needsField = true;
+    }
+
+    // Grid derived from the buffer, then clamped by cell count so a
+    // 4K monitor with detail=8 can't ask for a million samples.
+    let c = _clamp(Number(cfg.detail) || 14, 6, 60) * bufScale;
+    let nc = Math.ceil(bufW / c) + 2, nr = Math.ceil(bufH / c) + 2;
+    while (nc * nr > MAX_CELLS && c < 400) {
+      c *= 1.18;
+      nc = Math.ceil(bufW / c) + 2; nr = Math.ceil(bufH / c) + 2;
+    }
+    if (nc !== cols || nr !== rows) {
+      cols = nc; rows = nr;
+      const need = cols * rows;
+      if (!field || field.length < need) field = new Float32Array(need);
+      needsField = true;
+    }
+    cell = c;
+  };
+
+  const sampleField = (t) => {
+    const freq = (Number(cfg.scale) || 1) * 0.055 * (cell / (18 * bufScale)) * bufScale;
+    const oct = _clamp(Number(cfg.octaves) || 2, 1, 5) | 0;
+    const seed = Number(cfg.seed) || 0;
+    const ox = t * (Number(cfg.driftX) || 0) * 0.06;
+    const oy = t * (Number(cfg.driftY) || 0) * 0.06;
+    const z = t * (Number(cfg.morph) || 0) * 0.08;
+    for (let j = 0; j < rows; j++) {
+      const base = j * cols, yy = j * cell * freq + oy;
+      for (let i = 0; i < cols; i++) {
+        field[base + i] = _fbm(i * cell * freq + ox, yy, z, oct, seed);
+      }
+    }
+  };
+
+  // Marching squares, allocation-free: no closures, no arrays, no
+  // lookup table indirection inside the hot loop.
+  const contour = (ctx, level) => {
+    ctx.beginPath();
+    const maxJ = rows - 1, maxI = cols - 1;
+    for (let j = 0; j < maxJ; j++) {
+      const r0 = j * cols, r1 = r0 + cols;
+      const y0 = j * cell, y1 = y0 + cell;
+      for (let i = 0; i < maxI; i++) {
+        const a = field[r0 + i];      // top-left
+        const b = field[r0 + i + 1];  // top-right
+        const c = field[r1 + i + 1];  // bottom-right
+        const d = field[r1 + i];      // bottom-left
+        let idx = 0;
+        if (a > level) idx |= 8;
+        if (b > level) idx |= 4;
+        if (c > level) idx |= 2;
+        if (d > level) idx |= 1;
+        if (idx === 0 || idx === 15) continue;
+
+        const x0 = i * cell, x1 = x0 + cell;
+        const tx = x0 + cell * ((level - a) / (b - a || 1e-6)); // top edge
+        const ry = y0 + cell * ((level - b) / (c - b || 1e-6)); // right edge
+        const bx = x0 + cell * ((level - d) / (c - d || 1e-6)); // bottom edge
+        const ly = y0 + cell * ((level - a) / (d - a || 1e-6)); // left edge
+
+        switch (idx) {
+          case 1: case 14: ctx.moveTo(x0, ly); ctx.lineTo(bx, y1); break;
+          case 2: case 13: ctx.moveTo(bx, y1); ctx.lineTo(x1, ry); break;
+          case 3: case 12: ctx.moveTo(x0, ly); ctx.lineTo(x1, ry); break;
+          case 4: case 11: ctx.moveTo(tx, y0); ctx.lineTo(x1, ry); break;
+          case 6: case 9:  ctx.moveTo(tx, y0); ctx.lineTo(bx, y1); break;
+          case 7: case 8:  ctx.moveTo(x0, ly); ctx.lineTo(tx, y0); break;
+          // The two saddles must resolve opposite ways, or every ridge
+          // junction develops an X artefact.
+          case 5:  ctx.moveTo(tx, y0); ctx.lineTo(x0, ly);
+                   ctx.moveTo(x1, ry); ctx.lineTo(bx, y1); break;
+          case 10: ctx.moveTo(tx, y0); ctx.lineTo(x1, ry);
+                   ctx.moveTo(x0, ly); ctx.lineTo(bx, y1); break;
+          default: break;
+        }
+      }
+    }
+    ctx.stroke();
+  };
+
+  const chrome = (ctx, t) => {
+    const w = bufW, h = bufH;
+    if (cfg.rings) {
+      const fx = w * 0.72, fy = h * 0.42, base = Math.min(w, h) * 0.1;
+      ctx.save();
+      ctx.strokeStyle = cfg.ringColor || '#ff5722';
+      ctx.lineWidth = 1;
+      for (let i = 0; i < 4; i++) {
+        const pulse = (t * 0.06 + i * 0.25) % 1;
+        ctx.globalAlpha = Number(cfg.ringOpacity ?? 0.13) * (1 - pulse);
+        ctx.setLineDash(i % 2 ? [3, 5] : []);
+        ctx.beginPath();
+        ctx.arc(fx, fy, base + pulse * base * 2.4, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.setLineDash([]);
+      ctx.restore();
+    }
+    if (cfg.nodePath) {
+      ctx.save();
+      ctx.strokeStyle = cfg.lineColor || '#111';
+      ctx.fillStyle = cfg.lineColor || '#111';
+      ctx.globalAlpha = Math.min(1, Number(cfg.lineOpacity ?? 0.17) * 3.4);
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      const n = 7;
+      for (let i = 0; i < n; i++) {
+        const px = w * (0.12 + (i / (n - 1)) * 0.78);
+        const py = h * (0.2 + _vnoise(i * 0.7, 0, t * 0.02, (Number(cfg.seed) || 0) + 5) * 0.6);
+        i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+      }
+      ctx.stroke();
+      for (let i = 0; i < n; i++) {
+        const px = w * (0.12 + (i / (n - 1)) * 0.78);
+        const py = h * (0.2 + _vnoise(i * 0.7, 0, t * 0.02, (Number(cfg.seed) || 0) + 5) * 0.6);
+        ctx.beginPath();
+        ctx.arc(px, py, 2.6, 0, Math.PI * 2);
+        i % 2 ? ctx.fill() : ctx.stroke();
+      }
+      ctx.restore();
+    }
+    if (cfg.ticks) {
+      ctx.save();
+      ctx.strokeStyle = cfg.lineColor || '#111';
+      ctx.globalAlpha = Math.min(1, Number(cfg.lineOpacity ?? 0.17) * 2.2);
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let x = 24; x < w - 24; x += 14) {
+        const long = (x / 14) % 5 === 0;
+        ctx.moveTo(x, h - 18); ctx.lineTo(x, h - 18 - (long ? 10 : 5));
+      }
+      for (let y = 24; y < h - 24; y += 14) {
+        const long = (y / 14) % 5 === 0;
+        ctx.moveTo(w - 18, y); ctx.lineTo(w - 18 - (long ? 10 : 5), y);
+      }
+      ctx.stroke();
+      ctx.restore();
+    }
+  };
+
+  const renderBuffer = (t) => {
+    sampleField(t);
+    offCtx.clearRect(0, 0, bufW, bufH);
+    offCtx.lineJoin = 'round';
+    offCtx.lineCap = 'round';
+    offCtx.strokeStyle = cfg.lineColor || '#111111';
+    const levels = _clamp(Number(cfg.levels) || 12, 2, 40) | 0;
+    const major = Math.max(0, Number(cfg.majorEvery) || 0);
+    const lw = Number(cfg.lineWidth) || 1;
+    for (let k = 0; k < levels; k++) {
+      const lvl = 0.18 + (k / (levels - 1 || 1)) * 0.64;
+      const isMajor = major > 0 && k % major === 0;
+      offCtx.globalAlpha = isMajor ? Number(cfg.majorOpacity ?? 0.34) : Number(cfg.lineOpacity ?? 0.17);
+      offCtx.lineWidth = lw * (isMajor ? 1.7 : 1);
+      contour(offCtx, lvl);
+    }
+    offCtx.globalAlpha = 1;
+    chrome(offCtx, t);
+  };
+
+  // Copy each client's slice of the shared buffer. Clients that are
+  // scrolled out of view are skipped entirely.
+  const blit = () => {
+    const vw = window.innerWidth || 1280;
+    const vh = window.innerHeight || 800;
+    clients.forEach((ctx, cv) => {
+      const r = cv.getBoundingClientRect();
+      const w = Math.max(1, Math.round(r.width));
+      const h = Math.max(1, Math.round(r.height));
+      if (r.bottom < -64 || r.top > vh + 64 || r.right < -64 || r.left > vw + 64) return;
+      // Only touch .width/.height when they actually change — assigning
+      // either one reallocates the backing store and clears the canvas.
+      if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+      const k = bufW / vw;
+      ctx.clearRect(0, 0, w, h);
+      ctx.drawImage(off, r.left * k, r.top * k, r.width * k, r.height * k, 0, 0, w, h);
+    });
+  };
+
+  const frame = (now) => {
+    if (!running) return;
+    raf = requestAnimationFrame(frame);
+    if (!cfg || clients.size === 0) return;
+    const moving = cfg.animate && !reduced && !document.hidden;
+    if (!moving && !needsField) { return; }
+    if (now - last < MIN_FRAME) return;
+    last = now;
+    ensureBuffer();
+    renderBuffer(moving ? (now - t0) / 1000 : 0);
+    blit();
+    needsField = false;
+  };
+
+  const start = () => {
+    if (running) return;
+    running = true;
+    t0 = performance.now();
+    last = 0;
+    reduced = !!window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+    raf = requestAnimationFrame(frame);
+  };
+
+  const stop = () => {
+    running = false;
+    cancelAnimationFrame(raf);
+    raf = 0;
+  };
+
+  const onResize = () => { needsField = true; };
+
+  return {
+    setConfig(next) {
+      cfg = next;
+      needsField = true;
+    },
+    add(cv) {
+      if (!cv || clients.has(cv)) return;
+      const ctx = cv.getContext('2d');
+      if (!ctx) return;
+      clients.set(cv, ctx);
+      if (clients.size === 1) {
+        window.addEventListener('resize', onResize);
+        window.addEventListener('scroll', onResize, { passive: true });
+        start();
+      }
+      needsField = true;
+    },
+    remove(cv) {
+      clients.delete(cv);
+      if (clients.size === 0) {
+        stop();
+        window.removeEventListener('resize', onResize);
+        window.removeEventListener('scroll', onResize);
+        // Release the buffer so an idle tab holds nothing.
+        if (off) { off.width = 0; off.height = 0; }
+        off = null; offCtx = null; field = null;
+        bufW = bufH = cols = rows = 0;
+      }
+    },
+    // exposed for tests
+    _stats: () => ({ clients: clients.size, cols, rows, bufW, bufH, fieldLen: field ? field.length : 0 })
+  };
+})();
+
+const TopoField = ({ cfg, fixed = false }) => {
+  const ref = useRef(null);
+
+  // Config changes never tear down the loop — the engine just reads the
+  // newest object. (Re-creating the effect on every slider tick was what
+  // made the first version thrash.)
+  useEffect(() => { TopoEngine.setConfig(cfg); }, [cfg]);
+
+  useEffect(() => {
+    const cv = ref.current;
+    if (!cv) return;
+    TopoEngine.add(cv);
+    return () => TopoEngine.remove(cv);
+  }, []);
+
+  return (
+    <canvas
+      ref={ref}
+      aria-hidden="true"
+      className={`${fixed ? 'fixed' : 'absolute'} inset-0 w-full h-full pointer-events-none`}
+      style={{ zIndex: -1 }}
+    />
+  );
+};
+
+/* ============================================================
    STICKER — one decal on the galleria lightbox.
    Shared by the public overlay and the admin drag-preview so what
    you arrange in the panel is exactly what visitors get.
@@ -765,23 +1126,45 @@ const PoemDeck = ({ deck, poems, onOpen }) => {
   const hi = deck.highlight || '#ffffff';
   const hiInk = deck.highlightInk || '#0a0a0a';
   const slotCount = Math.max(1, Math.min(30, Number(deck.slotCount) || 14));
+  // Every duration below is derived from the seeded generator and divided
+  // by this, so one control speeds up or slows the whole rack.
+  const spd = Math.max(0.1, Number(deck.motionSpeed) || 1);
+  const moving = deck.motion !== false;
 
-  // Slot chips: deterministic scatter down the left third.
+  // Slot chips: deterministic scatter down the left third, each with its
+  // own drift vector, blink rate and phase so nothing beats in unison.
   const slots = useMemo(() => Array.from({ length: slotCount }).map((_, i) => ({
     id: i,
     label: `${deck.slotPrefix || 'SLOT_'}${String(i + 1).padStart(2, '0')}`,
     x: 2 + seededRand(i, 1) * 26,
-    y: 14 + (i / slotCount) * 68 + (seededRand(i, 2) - 0.5) * 7
-  })), [slotCount, deck.slotPrefix]);
+    y: 14 + (i / slotCount) * 68 + (seededRand(i, 2) - 0.5) * 7,
+    dx: (seededRand(i, 11) - 0.5) * 7,          // px of lateral drift
+    dy: (seededRand(i, 12) - 0.5) * 6,
+    drift: (5200 + seededRand(i, 13) * 5200) / spd,
+    driftDelay: seededRand(i, 14) * -6000,
+    blink: (1400 + seededRand(i, 15) * 2600) / spd,
+    blinkDelay: seededRand(i, 16) * -3000
+  })), [slotCount, deck.slotPrefix, spd]);
 
+  // Waveform bars carry two seeded heights and animate between them, so
+  // each meter reads as live signal rather than a frozen screenshot.
   const waves = useMemo(() => Array.from({ length: Math.max(1, Number(deck.waveRows) || 4) }).map((_, r) =>
-    Array.from({ length: 70 }).map((_, c) => 12 + seededRand(r * 100 + c, 3) * 88)
-  ), [deck.waveRows]);
+    Array.from({ length: 70 }).map((_, c) => {
+      const k = r * 100 + c;
+      const a = 0.12 + seededRand(k, 3) * 0.88;
+      const b = 0.12 + seededRand(k, 4) * 0.88;
+      return {
+        s0: a, s1: b,
+        dur: (420 + seededRand(k, 5) * 900) / spd,
+        delay: seededRand(k, 6) * -1600
+      };
+    })
+  ), [deck.waveRows, spd]);
 
   const rowY = (i) => (poems.length ? (100 / poems.length) * (i + 0.5) : 50);
 
   return (
-    <div className="w-full relative overflow-hidden border-[2px] border-[#111] shadow-[8px_8px_0px_#111] anim-rise"
+    <div className={`w-full relative overflow-hidden border-[2px] border-[#111] shadow-[8px_8px_0px_#111] anim-rise ${moving ? 'deck-motion' : ''}`}
          style={{ background: deck.bg || '#0a0a0a', color: fg }}>
 
       {/* crop marks */}
@@ -795,12 +1178,20 @@ const PoemDeck = ({ deck, poems, onOpen }) => {
             <h3 className="font-serif text-3xl md:text-4xl" style={{ color: fg }}>{deck.heading}</h3>
             <p className="font-mono text-[10px] uppercase tracking-[0.3em] mt-1" style={{ color: lineCol }}>{deck.kicker}</p>
           </div>
-          <span className="font-mono text-[10px] uppercase tracking-[0.25em] px-3 py-1" style={{ border: `1px solid ${lineCol}`, color: lineCol }}>
+          <span className="font-mono text-[10px] uppercase tracking-[0.25em] px-3 py-1 flex items-center gap-2" style={{ border: `1px solid ${lineCol}`, color: lineCol }}>
+            <span className="deck-led w-1.5 h-1.5 rounded-full" style={{ background: fg, '--ld': '1900ms', '--ldl': '0ms' }} />
             {poems.length} verses
           </span>
         </div>
 
         <div className="relative min-h-[200px] md:min-h-[560px]">
+
+          {/* ---------- SCAN SWEEP ---------- */}
+          {deck.scanline && (
+            <div className="deck-scan absolute inset-x-0 h-24 pointer-events-none hidden md:block"
+                 style={{ '--scd': `${9000 / spd}ms`, background: `linear-gradient(to bottom, transparent, ${fg}12, transparent)` }} />
+          )}
+
           {/* ---------- CABLE LAYER ---------- */}
           {deck.showCables && (
             <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none">
@@ -808,14 +1199,19 @@ const PoemDeck = ({ deck, poems, onOpen }) => {
                 const s = slots[i % slots.length];
                 const s2 = slots[(i * 3 + 5) % slots.length];
                 const ty = rowY(i);
+                const path = `${s.x + 9},${s.y} ${34 + (i % 4) * 2},${s.y} ${41},${ty} ${44},${ty}`;
+                const path2 = `${s2.x + 9},${s2.y} ${30},${(s2.y + ty) / 2} ${44},${ty}`;
                 return (
                   <g key={p.id}>
-                    <polyline points={`${s.x + 9},${s.y} ${34 + (i % 4) * 2},${s.y} ${41},${ty} ${44},${ty}`}
-                              fill="none" stroke={lineCol} strokeWidth="0.18" vectorEffect="non-scaling-stroke"
+                    <polyline points={path} fill="none" stroke={lineCol} strokeWidth="0.18" vectorEffect="non-scaling-stroke"
                               className={deck.animate ? 'deck-cable' : ''} style={{ animationDelay: `${i * 60}ms` }} />
+                    {/* signal pulse riding the cable toward the index */}
+                    {deck.pulses && (
+                      <polyline points={path} fill="none" stroke={fg} strokeWidth="0.5" vectorEffect="non-scaling-stroke"
+                                className="deck-pulse" style={{ '--pd': `${(2600 + seededRand(i, 21) * 3200) / spd}ms`, animationDelay: `${seededRand(i, 22) * -4000}ms` }} />
+                    )}
                     {i % 3 === 0 && (
-                      <polyline points={`${s2.x + 9},${s2.y} ${30},${(s2.y + ty) / 2} ${44},${ty}`}
-                                fill="none" stroke={lineCol} strokeWidth="0.12" opacity="0.55" vectorEffect="non-scaling-stroke"
+                      <polyline points={path2} fill="none" stroke={lineCol} strokeWidth="0.12" opacity="0.55" vectorEffect="non-scaling-stroke"
                                 className={deck.animate ? 'deck-cable' : ''} style={{ animationDelay: `${i * 60 + 120}ms` }} />
                     )}
                   </g>
@@ -827,10 +1223,16 @@ const PoemDeck = ({ deck, poems, onOpen }) => {
           {/* ---------- SLOT FIELD ---------- */}
           <div className="absolute inset-0 hidden md:block pointer-events-none">
             {slots.map((s, i) => (
-              <div key={s.id} className="absolute flex items-center gap-1.5 anim-fade stagger-child"
-                   style={{ left: `${s.x}%`, top: `${s.y}%`, '--d': i, transform: 'translateY(-50%)' }}>
+              <div key={s.id} className="deck-slot absolute flex items-center gap-1.5 anim-fade stagger-child"
+                   style={{
+                     left: `${s.x}%`, top: `${s.y}%`, '--d': i,
+                     '--dx': `${s.dx}px`, '--dy': `${s.dy}px`,
+                     '--sd': `${s.drift}ms`, '--sdl': `${s.driftDelay}ms`,
+                     transform: 'translateY(-50%)'
+                   }}>
                 <span className="flex items-center gap-1 px-1 py-[3px]" style={{ border: `1px solid ${lineCol}` }}>
-                  <span className="block w-3 h-[7px]" style={{ background: fg }} />
+                  <span className={`block w-3 h-[7px] ${deck.slotBlink ? 'deck-led' : ''}`}
+                        style={{ background: fg, '--ld': `${s.blink}ms`, '--ldl': `${s.blinkDelay}ms` }} />
                   <span className="block w-[7px] h-[7px]" style={{ border: `1px solid ${lineCol}` }} />
                 </span>
                 <span className="font-mono text-[7px] tracking-[0.15em]" style={{ color: lineCol }}>{s.label}</span>
@@ -846,7 +1248,16 @@ const PoemDeck = ({ deck, poems, onOpen }) => {
                 {waves.map((row, r) => (
                   <div key={r} className="mb-1 last:mb-0">
                     <div className="flex items-end gap-[1px] h-7 overflow-hidden">
-                      {row.map((h, c) => <span key={c} className="flex-1" style={{ height: `${h}%`, background: fg, opacity: 0.85 }} />)}
+                      {row.map((b, c) => (
+                        <span key={c}
+                              className={`flex-1 h-full ${deck.liveWave ? 'deck-bar' : ''}`}
+                              style={{
+                                background: fg, opacity: 0.85, transformOrigin: 'bottom',
+                                transform: `scaleY(${b.s0})`,
+                                '--s0': b.s0, '--s1': b.s1,
+                                '--bd': `${b.dur}ms`, '--bdl': `${b.delay}ms`
+                              }} />
+                      ))}
                     </div>
                     <p className="font-mono text-[6px] tracking-[0.2em] mt-[1px]" style={{ color: lineCol }}>
                       {(deck.passLabels || [])[r] || `PASS/${r}`}
@@ -860,7 +1271,11 @@ const PoemDeck = ({ deck, poems, onOpen }) => {
           {/* ---------- AVERAGE BOX ---------- */}
           <div className="absolute hidden md:block px-2 py-6" style={{ left: '17%', top: '58%', width: '20%', border: `1px solid ${lineCol}` }}>
             <p className="font-mono text-[7px] tracking-[0.2em]" style={{ color: lineCol }}>{deck.averageLabel}</p>
-            <p className="font-mono text-[7px] tracking-[0.2em] mt-8" style={{ color: lineCol }}>{deck.totalLabel}</p>
+            {/* needle sweeping the averaging window */}
+            <div className="relative h-6 mt-2 overflow-hidden" style={{ borderTop: `1px solid ${lineCol}55`, borderBottom: `1px solid ${lineCol}55` }}>
+              <span className="deck-needle absolute top-0 bottom-0 w-[1px]" style={{ background: fg, '--nd': `${7000 / spd}ms` }} />
+            </div>
+            <p className="font-mono text-[7px] tracking-[0.2em] mt-2" style={{ color: lineCol }}>{deck.totalLabel}</p>
           </div>
 
           {/* ---------- TRACKS LABEL ---------- */}
@@ -878,7 +1293,9 @@ const PoemDeck = ({ deck, poems, onOpen }) => {
                 <span className="font-mono text-[10px] md:text-[11px] tabular-nums shrink-0" style={{ color: fg }}>
                   {String(i + 1).padStart(2, '0')}.
                 </span>
-                <span className="hidden md:block w-1.5 h-1.5 rounded-full shrink-0" style={{ background: fg }} />
+                {/* playhead: the dots light in sequence down the index */}
+                <span className="hidden md:block deck-tick w-1.5 h-1.5 rounded-full shrink-0"
+                      style={{ background: fg, '--td': `${(poems.length * 620) / spd}ms`, '--tdl': `${(i * 620) / spd}ms` }} />
                 <button onClick={() => onOpen(p)}
                         className="deck-row group text-left font-mono text-[11px] md:text-[12px] px-2 py-[3px] tracking-tight truncate"
                         style={{ background: hi, color: hiInk, maxWidth: '100%' }}>
@@ -893,9 +1310,9 @@ const PoemDeck = ({ deck, poems, onOpen }) => {
         {/* ---------- FOOTER ---------- */}
         <div className="mt-10 pt-6 flex flex-col md:flex-row gap-6 md:items-end justify-between" style={{ borderTop: `1px solid ${lineCol}33` }}>
           <div className="flex items-center gap-2">
-            <span className="w-3 h-3 rounded-full" style={{ background: fg }} />
-            <span className="w-2 h-2" style={{ background: fg }} />
-            <span className="w-2 h-2" style={{ background: fg }} />
+            <span className="deck-led w-3 h-3 rounded-full" style={{ background: fg, '--ld': `${2400 / spd}ms`, '--ldl': '0ms' }} />
+            <span className="deck-led w-2 h-2" style={{ background: fg, '--ld': `${3100 / spd}ms`, '--ldl': '-800ms' }} />
+            <span className="deck-led w-2 h-2" style={{ background: fg, '--ld': `${1700 / spd}ms`, '--ldl': '-1500ms' }} />
           </div>
           <p className="font-mono text-[8px] leading-relaxed whitespace-pre-line tracking-[0.15em]" style={{ color: lineCol }}>{deck.footerLeft}</p>
           <p className="font-mono text-[8px] leading-relaxed whitespace-pre-line tracking-[0.15em]" style={{ color: lineCol }}>{deck.footerMid}</p>
@@ -1278,6 +1695,13 @@ const defaultPoemDeck = {
   showCables: true,
   showCropMarks: true,
   showBarcode: true,
+  // procedural motion
+  motion: true,
+  motionSpeed: 1,
+  pulses: true,
+  liveWave: true,
+  scanline: true,
+  slotBlink: true,
   footerLeft: "© 2026 ARCHIVE™\nDETROITUNDERGROUND.NET",
   footerMid: "277 GRATIOT AVE, SUITE 100 · A0G04\nDETROIT, MI 48226",
   animate: true
@@ -1343,23 +1767,42 @@ const ADMIN_TABS = [
   { id: 'access_logs', label: 'Access Logs' },
 ];
 
-// Shipped default backdrop (the StormDay plate). Replaceable in
-// Admin > Settings > Site Backdrop.
-const STORMDAY_BACKDROP = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAoHBwgHBgoICAgLCgoLDhgQDg0NDh0VFhEYIx8lJCIfIiEmKzcvJik0KSEiMEExNDk7Pj4+JS5ESUM8SDc9Pjv/2wBDAQoLCw4NDhwQEBw7KCIoOzs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozv/wAARCAGeAuADASIAAhEBAxEB/8QAGwAAAwEAAwEAAAAAAAAAAAAAAAECAwQFBgf/xABREAEAAQMCAwUGAwYDBAUKBQUBAgADESExBEFRBRJhcYEGEyKRscEyodEUIzNS4fAVQnIHQ2LxFlNzgrIkNDU2VFVjkpTSFyVkdJMmN0SDwv/EABYBAQEBAAAAAAAAAAAAAAAAAAABAv/EABYRAQEBAAAAAAAAAAAAAAAAAAABEf/aAAwDAQACEQMRAD8A+sbeVM1oo1zQKUpRBIsjnjeqNcUqNygdFFFAUUUUBRkaKE02zQFFI0oTJo4oHRSzjGd6e9AkzjEkRzpT5lFFAUUGnlRQFLEc5xrToTNAsa6UOfOmGNMr50UAVM5kDKK7Ac3pVVnD95P3j+E0h49X++XnQVCLEcoyXKnN/SqopTkQjly8gN16FApzYhGIMnQH6vhThAgOqq5V5tKEUzKeGUt8bB0PCqoHUTn3UImZS2Pu+FE590AMydA6/wBKIQ7uWTmTu/Y8KAhDuirmTqvWqoooCiilKUYRzKWOXivQKB1LcO8xid6RuGx5vL61KTufiWEehu+by9K0iEQjEANgoJLeUlce8jkMYDyPu1e1FGKAoqZXIwDvIZ2N18jnSzcnsEDq6r6cvWgqUowMyQOrU9+c/wAEcHWenyN/pTjbjF72Fl/MuX+npVOeWtBHuovxXFmnJ2PI2q8GnhRRQGKAxpSlOMDMpBnbPOp95OR8FtDrPQ+W9BfOoldhFTOZdI6v5Ui33v4k1zyND5b/AJ1XcjGCRiB0NKCT3kgiRIHWWr8j9aPdC/Gs/BcGfI0rTwKNNtmgIgAEcHIKM800odMGWjGuutAOXTbxqZTImMZXQDdonJgGDKuAojENVzJ3aBxMZkoyd0+hTTJT50UEFuMXMdM7hs1XLDudKMa45dKA5czagHyd6Ntjeg21ftQ4yaNABg5FDjC4zjXWjHhiiQIm+lBKoIa68ttqFJgIImcULoKkTGaUCTHB8J1d08KBEmPw4ZAgPj0f1q2OXKHpSkR7pA0HYKIKxy/iHD50FIBoUOppk9afPq0uevoUD6b48aPClvq/KnuOOVBMzODO7qVS6edIczXkGPnT3M8qAofSkCHXzozplKAdcg561Nz+FLHLX71emDq0kzFHmJQPR160Yc75pQc24vgU6Azig0NKHQV0K487srhi3pFcDzXw8PGgd253rhbjFmG4c3ovShjcuLGcjxI6B5vOrAtQIQDPT7tXExED5u60ERswiYM/PFWBExEA8NKeDOutHOgQ9TFPL4fOjXO2nWkhub0Do54oMFGRUyZNygznZtTysDPU0aRbuQ1hdU6T1rV2odmgxlckSi3IIDqmpWkZRkLFE8KU9IksuiP50SswXId2XUcNAUUU6BUUUUEXLk4XLUY2pTLkkkiBABcueWmNNctYvafBHHnAHEQlxSZbMMykHVDY8XFciWe691CWHC7Dyr5HagcNcs2I2OPt+07xwymqRlFdXxE++uKD69RQ7vnTNzpmgVFeJ7Cl7QPafZZxjx/um5xXv/eZxjPwd7PLpmvbYoCisOOLzwHEHDylG825e7YApLDhBwLnk14Lsi37QcT2jY4W9e7ZIXBhxF9nOHuzqkxB6d1oPodGcGzmvD2ezfaK3Z7Zu2O0O1LnEcJcbfAwvXMxvRT8WEwplxjTIVwoz9oPdXf8On27KP7HP9oeMMJdwY93zznO3Kg+i5fGllHDHTrXz2zZ9rOGmd652iFzgLs1nfbxKfc+EADuTzrh8s1N2ftv/grwJ+0ZhZOJ/a4597MQxa694VzzwdKD6KKmpr4UC52SvnvFy7aOPu/tFz2gIfslhsnBijd92d7vZ8d8c80+Jv8AtpxlrhoWrHGW7vBcOSvSgkC9dXOEU7wBhDOuaD6EZ5lFeMnb7f4vj+Ft8LxXG8LwXakS7f8AeRW5wTHWUIyfwi6Ga9lbiW4RgMkiAMlVx1Xd8aB0UV1HaNz2it8RclwEezXhgO579mTXGo4032oO0uPfS0O5mT0Onrt86sMGAwFRZjKMBuY94gzxtnGx4G1XQCgKoAZV5VEBnIuSE/lHkdXxaT+9nj/JF18Xp5H1rSgdTOZAymVcAbr0olKMIspOAqYRkvvJnxJgOh08+tA4QRZSRk742DoeFXSooHypUpSjAZSQDm1GJXN8wh02Xz6H50DbirG2ZTRXY8+r4FONsHvL3pdX7dCqAAiRANADGKKAp1MpEDvSQNtanNy5se7j1TV8jl6/KgqU4wDvSwuxuvkVObk9v3Z46r9j86qNuMFQVd1cr606BRtxgqGrurlfWnRQyInelIDquKB0Zrh+87QlN91Hhu5nRmTHHlnV+VcgtMgb0u+8w0jnwP1zQNuxVIDNOUdjzdqMXZfikQOkdX5v6VjjtAyDwYGx3Z/rR/8AmPXg/lP9aDeNuMHIa9XVfWqyG6ZriL2jrh4TTwn+tD/iK4Xg8PPE/wBaDl5FqZ/DDTTKH51xg7RwPf4TbpP9a1h71IF73fezl93kPz16UGrmJph8Kamya9KlAQ105Z50RevOgrUNdRpZwLoFJkGq46HNpYZoyMR6c3z/AEoAGayTBjAc8das10TU3oNtObQ64kGvSgMDJydKA1akk472NGqM413oBDGWmmmtJzkxQyBM6C4GgMa66vJoznbcoxn7UePOgMZN9aznMAzlUdCqZ5cQ16vI/Wl7sNDnnK0ENwwzuC4zgOWDNK5xlu33sxVOh/wMvoU71uJYuSyr3ZP5JUy4SFyOWUhkZ08YMcfJzQJ4y1kgxkslw46Q7/00rP8AxC1G5HMZpcjk0NMQZ/Qx50r3DxhxPDxypOUx8P3afanLs617y0d+eYiG3/V9z6OfOg1ONtsiPdkPfIbc+53/AKfnU/4jae892fwmuh/J3/pp51nZsRucTfzJPd3hA5/ug1+dK9wMLPDX5k5L3FDTlbYH5GaDY462zYhLMcZ06wZfQ+dEeOtXCBGMz3mA0NMw7/0/Ops8HBtlxlLNyMFNMGId36OaxucMWb3CQjJxObHLjOlpjn5GaDWHaFqVmFwjILjFMhzj3z8vzqzjrUgkEwZRNjnDvn5fnWTwFu1Yt2y5J93KAOmoRIH5a+dFnhRu3bauLVyCJu4tBr86DWHH2p93EZHexj1h3z8j50/2+0StxxL953caGmYsjPpF/KoOBhagJKT7sEzjXEGB+WvnU2uEt3bXD3WaJCEsGNyCfST8ig2t8ZbuoRJGWJqdY94/KiHG2pywEhxF1Oop+Q1mcNGxctdxk96cRXliCH5FXDg7cJd4nLaJr4CH5LQVw16Ny1GQIOPzMn5VsTEJZ0xnWuPw1uNsnDPw20BfAxQjexGOS3sZ/wA2OflQNk35YBbZy2z59CqBndRQLZp3dMLy+VaxjGEQDAVjYUVdrip9MfKg2jGJkDBz8aOWc7Uzo70k88O9A852zik5AwhrQJtnNN5UBr1o23oX50mOrIUXlyoJutyMFtWycuUWXdH1w4rq7F7jv8V41OBtqwtZP2gMaSxrjWu21cFTGzbhdndjHFy4BJ6hnHyy0FYUM6O+KfPlS1MYo1zyoJm5iR5qH51TkeWtTq3QcaGdPGq5tBNFDpRnpmgKKefClk8qArC3wXC2uJnxUOHtl+4YldxmadMuuPDauRSoIswuQ7/vLrcZTUzECJyDG+Ou7mtKWaeaAfOilnzp58/lQFG/Oilnp9KA82m56tGaOVAseLRrnOlPNGfCgDNFGvRozQA560UUZoCs/wCJdz/ltvzf6fV8Kq5NjH4fxLg05/3rThGMIkTODmmr40DqJqpbg4kmVOR18+n9Kc5kIskV2A3XkUQO6KuZLler+lA4hEIgAaBTUBVADKvKis/40utsf/mT7H5tARG5IuSED8A8vF8fpWlC0ZoCpncIpEFk7B9fA8amVyTJjb3NGSaH6vhVRjGA4yrqruvjQEbbklNGRt0PL9aqjlUyuBLuxGUuhy83lQWuBVAN1rP3jc/hmn8yaehz+lHu+8jcSSagGh6c/WtM0ERtxi95WUtu87+nT0qqKUrkYoLldgMr6UDpSnCGO8guxuvkVOLs93uHQ1fnsfnVRtxhliau66r5tBGbs/whA6ur8tj1qo24j3kWXVcv9PSr+tKgfrRSooKNqS4M0lxq7UlyOOlALvo6lCYMaZNubQmYmdOdAKrodQoAymNh1OtIM3VJOgGc/wB+FURNnXDzqIzjGLJkCq4N/lQNliLJ0RznbSo+KUtNI+WuaZqxZpo6HTxfGqM4ddNedBUYA5DL1XLTfDegyYOdKge+1A502o33+VDtQLmi6GpTNXw61OhMwaGjVLpQGDlu08aYpZiCroaq1Aymb906c39KAkmcRk97offlSC4v73DHpFcepWgETTALtRjO+hQKMhAMImQ2p406tErcZIsTJs8z1qMXIOYyJHSW/o0FyCQiCJhOtGx+QVPvMOJRR5Lt86o1xhPOgUoRZRkxFjlFNsmNKmWhGWMA5fLarxq0OMamiYaBEIxZSjEGTlQ1XGMvoU0jKLGURERHmVMNFi7my8yrdGgnAAAAGMHIOVKURnFQWGUU2Uxp6ZqsZXwxSNcrn4nBigi+ZgYyfFH6lURjGcliDJFTTODBn0pXjMDH80fqUm+MktwbmN02oNEHRcnMaAjEAAAADkFRG7FkRlBtydhDXyat7sRk4Dq6UA4UUyjkcbP9tTO4QiykIdWolxPee7ZO/LryKTCRciKXLiZy7RPAoFbt+9ypi2ucbK+NawwyZctjyKiyXWD3pAZdQ1da1AAAwFBN2WLUnoNYlvuWrKL3lOdXxSe6YG6ZToUQG7MmiRiYiPN60Gz5UUG1I105UDDTFCac6DTSigTzR1p58Gh2oE6lAnbHWjAedPOdfSjFAtc60Zc7NOnQZ5S7qYE09P8AnV4KmUSRthNR6UieNJiPXk0AHNp0Us60BTqcmcZM1VAtjPLnRyfKnU8k6ZoGbFHOgxg15U8lAb0UUZoAooozQLdSkd7Zlnxxj0oXCpjamGAKBlHnRSUDXSgdDhoEdShoEOuvo0+ZSloZ6a1F1QjGLiUnA9Or6FA4fHNnyMxj937elXSjEjEiaAYKi7+8S2ZwmZPQ6eu3zoCD7yfvHYyQ8er/AHy860pEQwAGNqU5JiMcMpbZ2PF8CgmeZybcFA/GnI6eb9K0MAAYDTHSlCBCODLzV3Xq0KDlQMarQN3KzVu6RUhzkbvl+vypI3pGRLeuDZl5+HhzrWgUSMQiABsFEpERlKQHVpSuYe7A70unI83lSjbw96T3pcnGh5H9tAjv3A3hH839Pr5VcYxgBGIHQojt60SlGGGUgPHnQOlK5GGBdXYDK+RU5uXNhtx6pq+nKqhbjHODV3XVfNoFi5cdXuR6Gq+uxTjCMBIxDO7zfN51WcUUBUyZmO4DrqPTwqshSXXZoCinkpUBRRRQFR3i2sV03DfPgVTIiK/Lq1GGCXFy8/A8PKgolJMFtx4oUm4CJGWdnRqsOcjj0oR7uRzrnFBDcxGT3ZhrqmhVRAtAAODaiatpQ0TG9OXdMA41KAVyGA86MGTTRelGFlydKMa5AwdHnQVzfKjGxSHXOHPjTc75KAaMO+cNGJOuT5VOV0RHn0aAD4cPPV8qocYyacqnC65HLz6UGV1ca6686AuOYd03k4/WgyjEfF5NI1myc/DoJt40EtXm7ibtBZr96OelKOuV0qjrQI01Wjrn0KD8s0Oujt1oDln50eWhQ+J5FTKUYGZSA5ZoK21KD1ay95dn/Dhg/mnp+VBZZA3LkpeA4KCrsiILIJGpl3OlL9otbd59BaZbtWxSIYM5xVxEhE6GGgyeItiovh8LQcRbDAScafhatyoZ31davGvhQcPiuIG2RIzBlHKG2pVW+IYQIlmTjTbHrW17BaMbd6P1K0zrpnG1Bxm43Duzxbj4xV+dSkR/ePeVMTXJjy61zMtZTtWpbxPHlmguMCJiJp13zWMr0LfEqpjuhprrnNUcNbNiWOmXFPuQtQkxiGBchQZl9jAxbkmurofOqiXrgLItjrgMvzpHfu24wYMIoZV1TwK2zjA0HGvWS3CU1ZLoq5R61yR0HwqL53rM488VVpzbjJ5g5oHjXD8qaUYyUZ670C5jTyUl6a086aDQLV1Dyo6Z36UK7A5phQGNNMdaM43ocBSdxxvQOnU6q4QxRhd5PoYoH+lHN0pYMrlz50Aj+JoFRSooJ/yL5tXWef3T5NWUDqTWUjlp9KdI/FL0+lAd2P8AKfKlIAUD5Veamb8DQOijnToJQZGTOjv6U+6fynypP4zyftToCQEXAGp9aa0pbep9adAZpf5jwM06X+f0+9AR3To096k3l5/aq5UCT4XyrOL37vf5GYn3fnp6U70mNp7v4kwebTiEC2GwYPlQVORCDJ2ORz8KUIsRZfiXLjr09Nqn+Jd/4bb83+n1fCtKCJMQlKRs741otEse8n+KRr4HSph+8uMv8sX4fF6/pVwQtioAZVoKUBkoAZV5VkjdYshICJFN/F+x86YN1JSEgag8/F+x61VyUYRJScAlA1xIz0ajvSuaQUj/AD83y/Wkxbk4twSOuIdfP9K1oFGJAxEwfWm6b4xUyuAkQZSdom/r0KXu2bm4j0ibH6+tAi5KalsEz+N29OtONuJPKspY3d/TpVH4pelB+J9KB0xaVFAUFFA6UBT50PhSoCiiigKGiplmSxHzehQIO/Ilj4Tbx8asow5MBijONGgmOiwzoanlVKRFdip0brrsB96UklKILgVU2zQJVgHcluZ05Zqm5FQFXO2GjEBJY56rXHlx0G62m3cbcZEJXgO6S0wb55muMGaDkpqPdxk60Gxrp0zmkSVY4+I1zsPjTj0xyzQUaum1HKg3TahcmMJ40AS010aS4TGrypgY5FJMuyY0yUE6AHeR6ZpiAmjh3edDmL3tUDrT1MRNMa0GccZQkGrk5utVIzMCRnp1pywj3wwarXR9oXbV7tMs3nhLnuLJ+74mTHM5uRJYwIB8+VB3w64RA0p7HjXXcDanC4/uuKsx7ukZ3i7ac9HK5+Vc8cOHflQPwoUiZ+lEnBq/OsTN93S3yxvL+lAN6Vx7tmLrp3k0KuFqEXvOZS6u/p0qogABgNMG1U+NAsC6lB4HOg0XXFHrnyoJuZWMXBl18jWqXAr0qZjgTVi5x1/soUwPLfPXnQERyruYKrOyeVKJ8Bnd1p4KCL34A/4o/Uq10ai8BbH/AIo/Uq8c+dAetNXDpS323p46tADpmouaxIn+ZCqNVOW9S63Q6C/b9aC9t6DVelOltQLGcnUqOHc2InTR9GtOedms7RidyO2JZ9Gg0VxgpYE8qZpo0YzQIzzo1HSnnP3zQaUB6UjLvoU92hM4zr4UCUxprryok4M8zWjXy1ok7HVoEMsuR1aY76O9CgbPyoyHpQG5s70Cau1MQDOlLIA8mgmg3oooIP4K+D96vkVGf3Mjpk+tWbUBvSPxy9PpVVEfxz9PpQXUz/A43qqibiD/AHzoLpU80UE/5zyfqU6X+c8n6lOgUn4fU+tU1E34fU+pV0BU/wC89PvVVP8AvPT70BHeXn9ijvpPusUHZ3H9KI7y8/sU1IjJ2DLQZy+K49LY/NP0+tO5JiQxrJ0DxxREY2VT4kV83+8elSfHejLlEQ8XGr9vnQaQiQgRHIc+vjU3FkluORTKnI/V2qppAZOdOnPwotxYiy/FJy/p6UBAI94AAcActCsrf76Av8M2P5nr5fWq1uznAXuj8T10NP1+VBMhaiEcyTAHP+lBcplsM5V0DdWo7qsZzRlkwDoeXj41cIMVlJzN3eQdDwqbs4wI81kYA1aCpOJxVABXPKp70rn4Mxj/ADJq+R92kwZ3YSuY2UibG2/VrTLnGHGM5oCMCBiJjOq816tOiigX+d8T70R3k+ND/EPET6UQ/Dnqr+dAyiiigKDaig2oCiimNAOfKk5xpT0pOu1AmWDU15BzoiIa6q5XxoMGcGtDvtpQPJ/ypSe7FcbUxUzU3U9243U+tBJbQwycOqePnVYAANDkU3BmjbltzoFqmHQ8K4HHWI2ccSSmW43o3L8O98MjbvJ4aLyca12GNc4xg1zUzhC5CVuURJCJ1E1PlQOUSWquTpypDkSWDGuTZ8a4/A3JPDFqcluWFtzVyqbPqYfWuTLcdNHD4jQMeumKaoi7UJ8R403pvmgKNnlrUimMum3rVO2lApGYprqYoTCquQ5UnDEeuKHTvYQ20oGGQHZ3rqOD4a5xNq7xMeKnE4i6zIytxnBgaRyJnYNRrsO0bzY7Ov3IqT7rGKb950PzSr4ezHh+Gt2jOIBEz0AD6UGPA8L+ywuR93w8ZTlleHgxHxRXD5aVy8AY2zzpABptWd1VLUXV1XoUEyi8TMM4tx6c3n6VvoAbUogRIhgDTHKjXOAy86CtyjQ86NzpSdNqAMv6UedDvrRz2NKB56VjzbeuM59N61eWjUQCV6UjYwevOgvpjY60G+tM3aNhoM7xmA/8UfqVprnes7wFsxykfUq0TUdutAzdpaDrvQLjLhPCnnwoE47xnOzUw1lJNlwelUyDK6YFrO3KUYHfjjnk1+dBo5050zV2rh3O0YNxtcLF4q7HRjbQjB/4pOh5avhS/Yr3E68deJxf/wDHtZjb8l3l64PCgz4ntnh7LONgeIuQQn3E7lvLgZy2DPTL4VpwnEXLnEThxEYwv21hcjFUzuIuuEefj0rgx4aPDXf2Qtd+Fk90wia3OGmoYDnByeQvOuVb4S7abXEXbmbtmLbmmvvYD8K9EMvq0HY70uem3Wnv5UZ02zQBSk4Hryoy7c6eNE60CDQ1c+dPbQpCpTx55oANDOrSfxnTFM23pOWTjfFAO4eOabs1OVlubdKp1MNA6RkNzFKUox0d3YN2o7jLWYB0PvQOilFJBI2adBnLQuHUU+9aGxUXYrBxuZx9yiJJiJcETfFBfKpj+Ofp9KMT/nPlRGKKshXwxQVSuGLa/wB706m5/Df750F0UnfWigylfswukZXrcUHIzBNuS03ibAo37RjRzcNPzrhcT2B2RxfFyv8AE9m8Peu3BZTnDKuhla457KdlEuIfdzS/vFRI/F3tDGmunlpQdnO/Z7r++t6IvxmmUxnWrLttGRcghjKSMGdvnXT3/ZPsu5dldlC5iVzvdwmERZChgHGQ0VxsYqI+xnZEACN7Ri/xN0xhTGFMaL1etB3ZftSFLttBBSY4XY33ojOE7uIzi/DnRHTO9dKex/ZhDuMuJY4APeBtnDoGUVRdc12PA9mcL2fevysRSV9J3Fxldumhu42yrzoOXFCUs9fsVN3Xu2+UnXyNX7fOqj+Kfn9ipjrelLlEImvPd+1AXpSjakx1kmA8WiMSBbibAnnpSl8U5LtbH5p9j60XJJ7sj+JyHnjf03oH/Eu5/wAsHB4v9PrTuSckIuJPPodf0oUs2gBQMBzX9VpH7qDKWspOoc3kFAopaGMRXOA5rg/5rRYhi2Sk5kmr9jwotRSU5SwyXDjYMGhShJnAjb0A1l08Dq/SguU3vMIAy552PP8ASl3COJKslMru6/keFXGMYGImD61F2cYkcuHvGlBT+OPk/aqrBuM7sSBjRyvpW4YN80BRRRQKWkovi/SiH4I+VTdcQ73RqwwB0KAooooCkZxr1p0G1AUUJk6eVFAUIdKKBaBa56Ua41daaaatJdNBoHjripuYe7A5ufQq1AV5VnbMjN3dfI6UFKnyoHXZ3qsLh5VLk+9AlyuuA3ojggrh5+dEgTbHk0Gou3LO+PCg4kj9n7Si974OJh3XX/PEyfMyehXKYqMcOEw+FY8Zane4Wfuz97BJ29cfFHUPXGPWtbN0vWI3rSMbgSM8hKCyfehGWq4zgpqYJdajW3NljMXVxyasDc1HagQYc7LQgJpiqwYzyowZyZz50EqYUkaalBhQ0car403A9XxalkjgBlLb9fKgm7ZjxDCEzMbcy5jPMcmeuuvyrXnSid0wOXm/enQTORbiydjlU2oIMp/ik5fDwpfxbuf8lt+b/StdnHWgHOcc+VHOgwUY08aAzhc7U8lLWhFxhxQGucdMZzRrrpQGr8qmSySAouqnIoErJYxccl6f1pwMQyaDqHhQhGHdiY5GPGqTAFADg1o/y+lDs0Jq4OVBF7+F/wB6P1Kt+9Z3sts0PxR5+JWkttTTegg1Mim2daMGoGc7fOmCaOuxRnm5w8j60CmaMRfiSO/q1oalYEs3QzqC4566VrlTJgPGgmUY5CMe66ogGvOgmiE8HibPn0phlyyfSgNzfz6YoKwZyxBxjONcdM0pHfiimESp1t/h1MZxzPKlJJkYRXEnDjcDegdh79qMnVxh9K032+dY2Y91uQy4JZPJK228aAwbUZ5c6M9KMfPrQIyOvP60SmCGFXYKJIRV3NjxpREyusnV/SgR39dImvi0JcFTuOnjVBrvTTTRoIxc5ED50+7J3njyMVSPX8qHPhQICOx5vNp56UGnhQnOgxz3J/8ADJ+T/WrpIIiZHSlFR7stzZ6lBVR+CX/Cvyf61dCCImR3KAo+VTFR7jlTUepVGtAYDapufw3yqkqbn8N8vvQVzp0qdBL/ABTyfqVVT/vTHR+pToJn+H1PqVdTP8PqfWqoFypf73/u/eqqQ/e/9370BFBmuw6/Iqbb3LHflgyMn11qbme7ciYzJI/PBVXNWNs2XL5Gv6UBElGw5/Eivm1MXv3Yz5Axj8tX56elVfklpIvxSEPDTf0MtRMx7q3DRkIeAGr/AHzaChJSbihCGcLtnm/b504DJ95MR2iPI/V/pSAnIiGLdvTBspy8j6+VOS3ViKRNJJz8D7tBLH30kjKRBfiRxnwPu1pmFuJHQAwAVErsYndgGAwY2KxZK5XLQaSvLoaH51iDcuga4cr400yJlM9N63sQ92d1xlMj1P1oGRIzgHR+1abVL/Ej5P2qqCLqxtSkOErTOlZ3TNpOuD86qDmEXwKAlEnFi7NOiigmWSEnLtp4VRsVNz8Cdas5eVAqDaig2oCiipu3bVm23LtyEIG8poB5rQVSRzuVlLjOFt2Y3p8TZjbn+GbcAfJzhrbOQTCb6UBgxk3OVLOclDhNd/GgxqmnWgVz8DE56Hm1Rpp8qzGLcVQxoedXnKYaCtKW/lSzHG+aYlAc8VLHmaOapoU+dAoZ7pyXWuv4S9csT7vcj+zXOInC097MhVUTGMZJYw5DGTp2AHdNNQrgyt27XbFqUbZ3rtqbnkSE1xsKLl3cUHPy5NKzfh+KGHqcv6NWGd3PLFNDHQKBRkSdkTcd6cnAuUxrWc87wz3zby6URG5AlcTCbG3r1oAZXNkw/wCbGnp1rSMA2MvNd2oj3oZAzEdDmVpGcZbOvMdygDSs700CEfxT0PDxqp3C3HvOq6Abr0qbduQs7hmcvyOlBUYEIEQ0Ko03fWhKS4aB7dM0OfAPGkHOmuBzQDlzhpZxuPpTMBiplJEjEzJ5cjxaBqRGTsGtKAgsjCuXw6FIhrmb3k9A9KeWbiDgHDLp4HVoBc3ANjX9Krn5VErRAbkByPxa5U8fHnTHJkxrqa0U+W29Pm1EpEcZkDyM6ulAyVxbknVwfWoqbv8ADNP8x9StEz86yvF33Z8ET4jefieFWl0dYG/KZ+lA2ODRT1pZ3XGDT0qW4R/FCR4pn8ypUugRT4nKjy/rQVbc5uI5k6eXKri4UOdIyAZyYoJZNI/aqisGfrSEJ4OZypiumQ8takFY5cKOueVEGcGRBDGy0i3Gd2UtSRgE32p64NEHTegcXddpGM+JQQzlauyZmRBUPTatPew5uHxMVnc1usebbcejmth7wJsmdaBe8hkxOOfOj3kXQe89DWmxiakT5Um3FcoD1oECyJSAxsdPOr1FqPdx5MjyWn3HOk5nyaCufhijGanuPOc188Uu4ZPil82gvHjSM5znNSwQ0nI83NPMo7gnU3+VBWetGKn3kMfi9MNJuGNCb5FAZ8aUo940cJqPRobcP5Y/IqJwiQUiDjfFBcXvGdnZOjTqX4bnhLT1KqgmQpk/EalOLkJGzTqY6TkcnU9d6CjDUXULbnOP61QIuuR8NqU/4b5fegrGrTxQ0UE/7w/0v1Kqpf4h5P1KqgmekfU+pTd6mf4fU+pVc6B1Of3mn8v3p8ql/i/9370GbrfIpn4mXlgP1q463Zy0+HED6v1PlUxf/KLklwRD9X6U4ybfD991UZaG66/coG/FKctiIxPPGV+h86yFlK3KLiVwSL0iG/39SquR7tgtZwo958MZX++tR32PcuJ8czAPIxpny3fOg1kge6g90DVOR0PF/rUSuZCMDETQCoXTBnG+Xdea0UEYVk96Qjgw6bVUXvQJdSlH8UvP7FFv8EfKg2swy5dj61rPeL0cfOojdjEIg6Up3opHf8Ry8aDR0uR8n7VWKy95FuRwmzv6Vry0oJufg9T6lEPwHhp+dFz8D5n1ohsnRT86CqKKNd86dKCZ7B5v5VRseVTLV8hqjYoCg2ooNqAri9pdn2O1eAucFxJNtXMZ7jh0R0fSuVRQdNxvsv2dxnY/DdmXC97jhce7C5h0E1ca6LXaRn7qEYJoACa8tPpWuM0pA7mTcPGgIsZneETlRu68qxlalBZWZI7o6j4VtF70CRpk26UChjEs795pud9KnPcuaukufR/rWj40Eq1SgUgwUjQ8aB7+FIwO/nRjbPyp86BGXIaGWuLxS2+J4KQZPfMF6EoP3D51yzXOdNa4fatws8F72SBbuQllcZxMyeeM0HMd9KHVKUWLElCROLqI5E8MUI433oJyjk1y48qzgkZyhJwD3jya2iIYcYrK/GBK3OeMDhHmUFFy1KWkwXpzoncgYNZTdg3rOU53pEbUAic5GnyrW1ZjaHBmTu82gVuKzZXHMw0OQeFanVqZfxYgbiPpiqoDlQG51o3fAoXCUCNHGfJ60101olqYxq0DkM7NAZM1ENe9LG6noaU5SICptrURz3IwPxP5c1oLxK5JiOIm6fQrVAiAAbAcqIxIRIxMBQ6y8CinsAVi2XKEsQzkDc8M8itaNaipjCNv8IC7vN9arJhpc6HU1KCb38M/1R+pV8/Wsr2e4f6j6lWuN9KAzgVyFR7mLmWO7J1U005D1qg7zlNOQ8qZr4pzaDFWAE8Iid429elM5YAMVtuYwPKsJWy0qZbeeue7/T6UFKaaLrzdKMhDKGOWeRUSuEdNWS4A1VojqspHxDqfy+X61UqsykYVB+b+lMhHIuVzkyrTBHQNd8/WmCplzvRGVy2XOJCRkI5T1rc2OVZQf/KJ7uAK02dvGgdA6ZaF8Glh50DNtd6Wzs6lNoTxaAXwo5maPVox4tAP3oyebQmnX1o2oAzlzRzoz01o80KCai5/Cl5VVTc0ty8qAufgXoj8mq50rj+7l5NMxigdQ/xY9UT6VdQ595HHRoKqbn8NxVVNz+G/3zoLqcImMJzy6lOnQSn7w8n6lVUp+8NeT9SqoIn+H1PqVdRP8Pjk+pVc6B1L/F5fh+9Vgqf97p/L96DBHPEY3lMjr5B92tZ4bkIGx8SeBt+b+VY23NxHnekh4Bg+1aMkLtw3PhNOZ/VoM7rGcrneQiDldu6b/N+lZMm5cjcRFEDoY28+dKWJQbZqY70vENj7+tU/it+T9KC80qPKigUd5ef2KLf8OPlRDAy8/sUWz93HV2oHSntHzPrTpTND/UUCf4kfJ+1aRkjopUP8SPk/anQat4YJIxqa+pWsU70sa65/KuJP8D5n1q7dxt3ZcxBT50HKoyGMuKUUkZNqEXGFMUClqy8I1RseVRnLc0TBjz0qzY8qAoNvWig2oCiiigKHU8aEya0NAlUOVQpbmi4jJyPR5lX3o9T51N3ErcoqOmcLQOTDuo4c8jVaiHvSJ3omnJdauHdIjEATOhVedBJN5wl6A/ej3hnLGR5jVOmPOign3kHmb86oYuyaUOMa6lSwturA+VBQiVhxNuc23ctygXLSp3xw5EdtTfcrX3cf5Sj3Vs3iZ8s0HAt3L3AjGcTibUpslsCSgqqEcuTLyc+DXJtcXHibfvOGj7yLpnONeibj4Nb4waAHSsr3BW7sm/alKzf2bkN5HRNpHn6JQTJugyuLA/4cfLNXbsQjHKd6Sarr8qxeKnw53ePtxjHb38BYPmbx9cnjWxZJBi7NtpkB0TwelA7CdzuZ1go/rWolYMI2bkWJiMtE8eVayUxGOsnY6eNATQYpqjrjkVWdM0ohEweavOkGFORtQVy8aMaa0ndztTOrQBtrvU7ZPGq5pSPxPpQZzO9cIuxhX7VdkFbjzcD1Cs3UUMsnB9K5Bg0NAAPKinnRybUhA13XNJ1cdabqtAKZoyVONzFMdPWop9aTSZabUMg3260XEX3Fv1NfUqtVFNORWd7MoC5ARD1K1dTX5U0wGnjTyZ11zSznY8qHTVoYodc40ocKmBHcdqTnGPypOcgaeXKiJtWo25Sxvtl1cdKV0SZcjt+Fzt4P99a2jgAChIygxTRMNVGMXAdM6cqYaiB4oUoax1DI4dOZTlMjBXYKCbOs7kussfKtM52HHXas7EO7ajnd1Txa1oha9Cg7wbHzpqG6FLvGNBfSgMvRKedefypZV/D82h7yKJnkUCnIiZdDxcUoTJ5wjjo5rK5O5GOZkIGd29j88VXDyJd7WKmNS4T+2lBt+VCc8U6VAOOufKjXlgoNPKh2cUEVNz+HLyqqm7/Dl5UBc/hy8mq5HlU3P4cv9LTiJu5OXhQOpk/vI+tVUS/iQ9aC6w4ziuH4Th27xN+3ZgoErkgF6Zedb11HtL2Idv8AZhwjxDYI3C53iPezgTGMnWg7KxxVjirZc4e/C9blnEoIjjfCVrXW9h9lPYvZdjgPfF6Nlkk8YXKu3rXZUCX94eT9Sqri8bxnDdn2pcTxd6Nq1birKT4mh1fCvDdrf7QuJvTla7KtFi2bXbgM3xDY/Og+gzMxXC6n1KeFXBnyr4xxXbHafFyHiO0OJuZdRuIfI0rjvFcRbmyjfuxTmXEfrQfb+eulL/e/93718j4D2u7b4CZ3ONnegbwv/GY9dT0a9x2B7Z8J2vejY4iJwnEpgFzCbnk8nwfzoO+tMS6ydglJ8NTP0rPiJlvhrcVdfiXOvX70Rdbp/mQAeWVPvXSe2dxeyeNiIFu1HLnUzIf0oO3MFpVO8iuvPG3ptQscw+I2efhXxsuOqTXL1p9+Th7z82g+z946nzpEhcZPnXxn3jnDNPWu09mpr7R8CMlPemmfBoPqUNWXn9iug7R9sOz+zz3NrPFX46JBCI9F/TNdV7Ye0Vy3dudl8HNjh/fzi4dQ+EeXj8q8aOulB6m/7ddqXF9za4eycvhZvzX7UuD9ofabtG77vhWN6Qihajg6b15peQmfOtLF6Vi/C7CU4yiiMVE8mg+h8FP2olO28XDgImuc5zjnoOK70yRO8g41xtnwrznsz7RS7UTh+MYl8UhPb3hjO3XHzq/bYk+z6RzlvQ29aDvpp3H4jc5+NPI3dEcnXxr5DchODhXIDJzstRG5IdLiPg0H2WE5W5eDuVyBEE1GvlHZntL2l2Zcj++nfsjrauKieC6jX0vsvj7XH8Ja4izJbd0yZ3HmPiUHKWPdllN3dqo6mREr5j7ZyT2m4jC6wg4H/hKPZTt+XZHaJbvzXhb6RuZc915S9Ofh5UH08c7lI29aBEERHUTnXmfbLt//AA7gv2Hh544niByjrbhzfBdj1aD0/ej1PnSr4syl3fxOMdWvsPZ2f8M4V/8Agw+hQckclQBcllMxNDxeteX9qu3uMs3P8P7NsX2ShevxtuImTION8bvKvSF63w/BF6/cIQhbJTlJwAG7QbMY9D5UkibRDPhzrx/A+1N3tr2sscPw0m3wUCeDZuON3w6Fexc4QdeVAofCsOW55NVWcsYJEV7ur5cyrHkbbnlQPVN6WvXHnRnFB+VAbmeVPGxpQnypaZMYoGee1BjFGzTOdAimKZDNBnWk5oG7YriPBysPe4GZay5bKZty9DWL4nqNcrV3wUnOguDwoOHPjoYbHEWrlm+7QIs+89YoanyTmFbcJejxEG7FznBtjGNEw6mudKq9ZbvcYXG3O3JRATCYRHcSuFHgrvCcStjjLg3FnP3gTjKTqqaY16JQdlScjnOjXF/auKtaX+EZmfx8O9882LhPTNaWeL4biRLV6NyQZY5xI8x1PUoORg0aN9qkkJy1M4qs52260BkHc22qcgrpgCmBlwHKpl+GeN8fagi0DO2d0UzJzy0/rXIxk23aytCXXC4LZo+L/StnQfkUVJg28ih1zpR9DlQnlnrtUpBjK1L5/KlOcbcZXLiRjAZK7AarXGhx9pcXSVhYko+9xHvHU1/LfWiuSoCu1JyoptsVBxNiWrft5NgmOPzqveQdrkE5JIqNRN5+Addz6lanU0Otdd2v2v2d2Vw0LnHcVCzGcwiuXKIuhl0K5EeLjcw2IN6LEkSihHCZMK65NdKDk+GxypiYV0OddXOHaSybNyWZc5McD4GcelLvcW8TGTK6B8Ds5c5F5Gmmm9VK7UVMGh1pndNnR3aW/jTxRDN9tKeTTbNKOcdNaYaUGSJdkZxnDjzMfaoug4tgfG6+RvWk/wCKOyxfyf61nb+O9KXKPwnnzqo2oopb89KIdFIx40OTbPyoKpUhzQixQWKmBMZPGgx4yRCx3mbAyakon5y0qOBmXCb7xmCbzhLH/wAv3rPiLF6FvLxPEXjJ8MbdtfPUCq4Eli53o3jUx723CPy7u/rQcvOHTYpiO1I1ccinjFAUs4DL60Lr1elKRnHe1125UCpIIjsmKIyEEdGmUEJKQRcY5pzPKr50UcmgKhf3sdHQXSqyBl0DrUwFWSb7HQoL9Km5+B/vnVVxe0+JeE7L4riYxJSs2pTBcChnDQcrnSUBkoAZV2DrStyZ2oyTDKI46ZM11ftVxE+G9mO0LltSXuWInLKD+S0Hzr2n7fu9u9oyYqcJZWNmGdE5yfF/IxXSOxrh8KYAGddceVLRk4NqBqZAy/enPJJExpzr6n7Kdhdn8J2Pw3Exs271+/bJzvSBcuuDOwbaV3F3g+F4m08PxPD2rscYxOAiUHxLRXdpiiJnTavU+2PstDsaceN4If2S491gufdy5Gejy6bV5m3anekRtW5XJPKAq+hQfQfYz2gl2jbOzuKn3uItowm73IGVz4mnpXeWrdviXiZ3IxuQuXExMEQca531K8H2D2D25Y7Sscbb4Vs+4uElvJDJhUxvqDyr3/Bw7nCWou6ZfN1+9BnPs7gSEscDw+cf9SfpXzX2ktwte0PG27cIwjG5gjEANDYK+pvxSxyNXz5FfLvaj/1l47/tPsUHp/YfhOG4jsa7K9w9q5IvoM7YuMGmUrvuJs8F2fwt3jY8JYhKxbZiWwRDJriun9gv/Ql3/wDcP0K7L2mJPs3x5Hf3WdOmTP5UHy+Vy5xN+U7iyuXJZV5q6/WvbdhexNq5xnEXu0IrYtXGFq26e8xzfDX1rwoyJEjccnmV9p7N4u3xvZ9jiLUhjcgSMeP94oM3sPstte6ez+HYYxj3ZXjfaz2Rs9n8O9odnCWBxdsqvcy4yO+M6Jyr6DXD7Vjavdm3+HuSBv25wiLqvdXB6GfSg+TcLxcrF2zdLgStSJRQwxT9a9t7VXziPZi3xEF7tycJCGdEXH514Atqx+IB0XP1r3Xa9mVv2I4EdXFrHeOeHlQeX7Mxd7X4K1OzHu/tEciaI8kd6+i3ey+z7gRnwPDsVwnuwznyK+Z3bki83LU23OziUZxcIjuU59s9p3LcrdztHiZxdEbjhoI7Ts2bHafFWeGl3rVu6xg5zoP229K9p7C3pR7EuMpPdhxCR8Mh9/rXhuF4S/xvERscNalcuScAH5vQ8a+m9k9lR7L7GjwXeGWFuSOcndPLT5UHjPbJP+kl5/8Ah2//AAldEmmhkruPaubc7fuydH3cBOiRB/Mp9ldhy7V7E42/w4vEcNcJRif544cnnpkoO99nPa61wvY16xx0lucJDNnLrcNiOeop6eVeS4zjL3aHF3eK4iXeuXZK9DwPANK4xjG1d12B2HLtKHE8XcE4fhrcpL/NMFD7tB06m3hivsfZ2f8ADOF/7GH0K+ND8J1xX2PgJY7K4XBr7mAHjgoL4m7as2ZzuzjCMDM5ycETxr5t7Ue1F3tq68Pw62+Ctukdm4my/Yr0vtL2P252xc9xYuWbfBwRIsnNx6y0+RXn/wDoD2vj+Jw/j8T+lBxvYn/1nsf6Z/Svqaa14n2d9ke0Oy+2bXGcRKy24khIqupg3K9vQLZxph11qbeiw6beXKrTZxUTwJPkaPlQNMqO1GBBYmps0wc950zsUJhzyxQSWbaGYRfShs2v+rj8qt20oRxvQQ2bWT91H5Ue5tO1uOPKrddOVDpQZ+5tZ0tnyo9zbRzbjjyrROlGnN9KCCzaT+HH5UNm1j+HHXwqnR72MHOn0oM/c2nX3UTrpWd/h7TAxbiJIw4rkc/Os734A55D8yggtWmOfdxBOmzWV7guDvYLnDwm8lNTydz51yH4ZyM6Op96A3DY1NaDqbfBRs8bY4dswM3JXDiGWZzia9xzrs41cYOtduWbWMFuOPKuJx73LEOLXDw9wuOmfh2l+S/Kucirnb60GcbNrKluKZ6Ue4tPeG3HGelWO5g3aI6i+LQY2bNsuJ7sUiDp0X9a2bNrOPdxweFQsrd/vkWQwcihjXRqoXo9yU7jG2RdVkACc1op+5tGvu4Ppis77wvD225e7kIjjKbvQ5r4GtcS72lCd4jb4hs2O4vv22sZyHSIph0y6b7FbcJw8pRt8VxObnEyiOZGC3k1InL69WpVZS4WfHiXbP7Pw8jDDGLkx3H+Uehr4lXHsvhCeblv3/dCJ73E8HQyfnvtrXNkoab50pYAB18KEcV7O4HOXguHev7o/Sk9mdn5f/IeG9bMf0rlOAy6UtXmh151Go6Lt32W7K7W4SNqfDxszg5tzshBF01wannXYdnWLH+HWIwsxtxtwIdw17rHRM+CNcq6Bb0yamX1KwtnuO0blr/JxB7yPhMwSM+Jh+dByPc2hP3cflTLNvnbj5YrQ8aN3ShUlm1gxaj8qPc2tvdRz1xWgUc/Kqyj3Fo2tR+VMsWv+qj8qs8qDyKqONxELUHvFuOSLgxzUxRb4a3btkW3FTdxu0T/AHnGpuWwXzcpW2M0Ee4tr/DjjyobNr/qofKr576NPHi0Rn7i3/1cPlQWbX/VQ+VW4N1PWjR039aCGzaM4tw112plm0H8OJ6VShu0OERwjoiUHF463F4fELRN7xpG3Gb8lD1rPs+KFwbLbcm9mNvO/Rc+tXxNmxatd6HDW1yAHDs/yDNHBYjGaWy3qKnDytZ+e/pQcvQMO9SywDnR2wavlRkkMpaROTzoiSVkmOQdD9aAGfKIHi60Yur/AJTHQWrOleO/2mcRe4f2f4aVi9ctSeLBYTYqdyWmR2oPVsXOYuF3HZo70j8UH01qqNc6higXvDpL5NLvrtGT5mPrVU6CO6rmWMGwbevWrooaArr+3jPs/wBoB/7NP6NdhXA7c/8AQHaH/wC2uf8AhaDk2ZS9xa/dv8OPM6FcPt3hLnaPYXGcJC2965aSOo6mp+ZXOsf+b2v+zj9CtKD4UjFB0eZ0pOe/o6eVe39r/ZG7C/c7U7Ntty3PMr1mJrF5ocx3TlXiNVVHf5UHe9he1naHYYWopf4VV9zczp5PL6V7Ts/247G7QCN65PgrucBeNM+EjT54r5bqpgTTnzp91oPtl6zw3afBNq/bt8Xw9zC91yOHJs9fGnw3D8LwcO5w3DQsR6Qt4+hXyHgO0eN7Mud/g+LuWUcpF0fM2flXsOxv9oBKUbHa1sjnT9otGD1PufKg9RxMgv3MEvjtLs8hKcSXciB3QA6ulLiZQ4l4W/YuRnbu5iTi5ETInXatOdAgAwGCvl3tQf8A9S8c8/efYr6lXz/t/wBne1+M7c4u/Y4Oc7dy5mMhMJg8aDufYVkdiXcRX9+8zoV6O7ZOLtXOHuW3uXYsZYTZMNdN7Idn8V2d2Vcs8ZYlZuN5kCjpg10r0Fr+KUHx3juAvdm8de4S/FLlpY+ZyTqJhruPZ32p4rsSDYlA4jhVVtrhiu6PLy2r23tH7MWO3rRchIs8XbMQuYyJ0TmeO5XzftDsvjeyb7Y4y0QlqiIkjqJvQe5f9oPZpDvHDcUy27qR38815njvanje0u1bXGMfd2eHyQsxcgIirzUa6N+EOtb8JJJkbUZ3LtxwW4mcvLxWg5fZXZrx3H2rNvvDO4AaLo6/Ir3ntXEOwY2/d4jG7AMo4wIVPsr7Oy7KtPFcWZ4q4IRTPu4uqebz+Vcz2l4S/wAb2S2uHtM5+8jJDRwZy0Hg+z+Et8R2lasXrQlyZGSaEjOp4V2ftP7McPwvCQ4vs6wwjbcXYCuRdHXpz86XBdidow7X4O9c4SZbt3BXJg133r2c7ZchKE45jIRE3HcoPmPYPalzsftON/D7mXw3Y9Y/qb19MjcLtolAzGYJITCPOvEcX7KcVZ46/G3w1y/aVbchMA8nXflXofZuHH8PwjwnG8LO1G3rbVHB00fU86DyHtdb7ntLxGNkhL5hXof9neThuOwZ/eQ+jXX+0nY/aHHe0N2fC8JO4TIkUQFImd2u89ieyuO7MscXHjeHlZbk4sSSOQHOzQcLtr2Hu8Z2nPieAu2rNq696cJ5+GTumDZ3xXoDs+z2X7OXuEsGI2+Hnld1w5Xxa7SsOOtTu8BxFuEVlO1OIBuogUHxk1NelfYuz8vAcJjGliDr1wV81PZPt0MPZtwcc06edfTOBtytcJYtTMSjZhFOiGEoHx3HcN2fw0uI4u4QtiGu6rgA5r0rcYoSNmvOdt+zHEdtcfC/e7RlG1bRt2S2Yjjd31XG9cj2g9oOH7A4IDFzipn7u3n83oH50HZ3e0OFtcba4Kd09/fFhA1cBqvQrkD4a9K+Z+y3F8Rx/tfb4ribrO7cJqr4aB0DpX0wMO+rQBrv8qbjGE0dGjFJyrrQKC4YuqaZ69Kqok92RI56OfyqkzvJ8igZQ0jGfHennXyoEGMFNpavhT5ZPOgDONWjGDQ1ozrT5UCzkPGpHBHO1PK5Q/OiOpl8qAlsYqJ4bluJrr3nyKt+HU26dKi1qyuLjOx0OVBV0zBTc1/WpcPxOonTcq9Maa1nHI93bDk8uWtBU7cblqVqRiEosXyTDWPAXJT4K2XM+8tjbnndYuF9cZ9a1cply9ccq6u0cQXn3N2UL967JvQuW1hbMYENOkca65XyDtjKYiZcuXFcefH8NbW2T95c/wCrtDOW+Njb1xSeBjc14m7d4gHPdXuw/wDlMD65rkWrduzbLduEYQDaAAehQcK5c4y/NI248JBx8d3E54P+EcHq+laWuBsRvFy6vETTSd1JYTUwbHocq3EVk7P0KJWRwx0kfFkca0VyM5dVz50sau1KMmcCRhHYdGkundDEn8qgCQyU1xoBTRc6AUzunwgBRjLnBhoqcYdd+rSxrtVhQlF1lePg66n1Ky4+3J4cvWorcsJcgG7jc9RT1K2vH7v1PqVpjXyoamEo3IRuW0YyBE5iZKoK4nBHuLt3gna29+14wVwejk8sVy9taGnQbu29GTr8qRh10350Q8nhTXRc4Ddox4FcbjZ4te7MZuIeRz/T1qomwrFmmJXFlty5fliuQZ5hWMZ96ccRnEdDJg2rbXPIoAB0QydaMGUxR1cLmg/0tEAAuKdJdee1GfCgdTORGDJFwZ0FfkU86ZaSxR1KDr+J4uxxNsg2byCOJ8Ndx56A0uAIMpW7dthHIy/dzhk5fj39K344Y8N3u+RFM5uSh+cRaw7NX3V2TLvMkDFyc0P+8GPSg7APeSJY+E2OvjVvWkYxg2NKqgl1dK8Z/tSw+znCv/6s/wDBKvZ4xttXi/8Aak59neFf/wBWf+CVB7KhpRMQI9DFGuXOMcsUDorONuLEkgrrl8abbhjPcKC6KzgRjOXdMABp860oCuB25/6A7Q//AG1z/wALXMkE5gmQM48WuD27bgdgdoJEE4af/haDnWP/ADe1/wBnH6FXWFu3A4eyEQWMDPoVPF9ocF2fDvcZxVqwYyd+YKeBu0HJro+1/ZHsntdlcnaeHvv++s4F8zZ+tcLj/wDaB2Pw5KHDF7i54wMI92OfN/SuF2P7cHaHbNrheI4Ozw3D3cxjJksiXLLtrttzKDqe0fYDtThMy4Rt8bbNiPwzx5Oj6Neav8NxHCXW3xFmdm5nWFwRPnX273Vv+QrC9wPC8dwza4rh7d62q4mZx5cz0oPirJzrVJ3jvZ0OvWvVe1vsnb7HhHj+DV4ZkQnblqwXZHmee1eVkMgFMNB6H2W7cucBdjwN6a8PcmTgLpbmIieDqJ4lfR5mJuNs6eVfGc+6RjJyYTPhX17h8TsWJIEvdnex1wfbDQZ9odp8F2Xajc42/G0ScREVXwDVrj2vaLsm9wV3i7fFxbVnHvFijHLgyYzrXlfbaMZdr8DB0i2RTzk5+lR2B2fwnEe0vH8Bct97hkmMBQwTMGTXSg57x/s6q/8ASLtHXXBen+ldlZ7T7H7DuDc7U4m9K9CMiN2crqDqOMaZK8r2b2Rwd/2yvcBdtZ4aNy6EMpgBxrvUcVwnDvtHxvDsFt2y6QiroRg4+WCg9T2s9l8XwkONn7T8ba4e/JjAjJY5DKYATHjXS8H7Ndldq8Q2uD9oo3rgMmMrKSTmmUz6V0UZZ7F7q5DiRDkPc/pXY8Fbjw3tH2SWRh3o2Zuu7I1fJoOx7N9n/Z3juNhwse27vEXZqEIWmGcauqPSu+7JveyvC8S8B2dcicTcW33sSZrqISTTZ2rxPs9f/ZvaPhLpoF1F8ESn7LyZ+1fAyXK3sr5i0HsO3bfZ3YHCwu3+L7VuyuLG3CHFyFwZXLsH3rr+E9sOG7PsXIx4LjZk0c3+J947clNDFP8A2hgcP2c41ZXFfQrg+xfA8L2jd4uPF2Y3i2QYEs4FyOPQKDs5+2vD3YTh+xXu4xxKcboJk5ON/Guqj27wEpkfddqGNMvHuPpXoJ8J7LcPflYnHhLdwcMFRE111ri9o+yXAcZw/veyrhalPKBPvQmnLw8yg43A+13B8LCduHC8VIcyze4jvucbCmlck9seH4rh5kuEu24oxUugh1HGleJnw963xLw0rci8S7ncDLnOMYN2vWezPs3C7du8R2lYj3YBAtScve3VB0wcnXWgzh2hwd3uyjb43uZzk4tFNtHGR8a7bhfafhuz7BZs8JxN0Vczv998dU2rruL7Ls2btr9ms3G3fhK5GLMjGAZU2dgz613PYvC9jdr8An7HG1fid2YOUyaSPP60HG432xsXOFuWrnAcQQmd1YXiLjqIZK6mfbXZtsGfCdqYdR/xBc1XE9gcTPtGPAwkTWZ8QcuSnIwPhXbdv8H2J2H2OSnwVu9xCdyyTyspY1Uzsb/IoON2b7adn8JCHDfsfFRtMlZ3L3vUzz11Twr2EUlPJtgw9c618Z1F7xuZr7Hw3eeHty5SiaG+MFB1ntD7R8P2HwwaT4q4fu7P3eh9a+XcXxd/juKucTxNyVy7ccyku/Q8DoV9V4r2d7K47iZ3+I4SNy5J1kir+dZx9k+xEH/D7fjv+tB4X2K09prHL4J5+VfUzx3a63hPZ7svgeJjf4bg4W7sRxIzkzXZDnlQN0pYxp6lBvrQ7UCkCI7JSgqa7mj5lU7aVLpMeUtHPXlQVkHflpT2051KmTTfansFAYc770zBpQ55uKXMT50AZclCZNd6fOjqNBJnOU0fz8aZoptnak5QifOjaBl250E3XvJaOer5VSCI7HLlU2hRuprNzh5HIq5Lsa/doJBNTPk0pGcS3xoj0asRMiYpITHJnLj0oEzxoYP71pxMhl05ZqY4YYXEo6VZpAwcqANfI+tK44jg0XSmGMGc1Okrr0PrQAAhkxjbypLmKg5arIOhs40KMPdcRM55tAozLdxVCD15P9a0NRk89vKsbwSCEgSbj051cbndSE3Mc4iv0f71orUDGu9AdKZvQ6b1MUk8qMb6FMocY5YoMrv8P1PqVahvUXlbeTQya+pVhq8/Gg4nHDbIcZE+LhlZAZWD+I+QPmFcs7sokhETI75OtVjw9K4fBHuJ3OBdrOG1l3tucfJyeh1oOUKhsUw0NqWw4NurRJIisgDVzVQTnG3BnJwBnrXGGcr4ziMgzgdjYNauQ39xjHOQxqPJamwLO5JXOQV1zgoKncj8KiJIdRrURMiJ1Gl3sA50zUMBmyNENE5+dEabGrRg6FTF74kjCab0+7nPKgbgeW1C9AakMyTLp40wE1yPN2oAN9DelLKJAFxz0M+dL3kDMRzrsa0Zk/hghndcUHB467xUeGW9+z2IqHfOLlDXpnunyp9mXI3WUY3rd0torDiW9hw43DHWtO0L07VoScIuTX3hDHq6elT2dcL0LgSJImvv43N/Lb1oObgk97ptTFzh1OtJUdI7dKTlwAY65oKTP2rxf+1HP/R3hlNXiz/wSr2muSvGf7Us/wDRzhc/+1n/AIJUHsambiDjdMHrVVEtWJ1c/KgoMAGxpToqZuIKb4oFb1j3uqtVREAInIxRkBXY1oJjrKT44+VTxPD2+L4W7w13LbvQYSw4cJhw1cBIGd0y+utVQQRCUIG0I6fLBXl/b/siXGdlx7Qsxzd4PPewasHf5Ovzr1MdZyfEPl/zpyiSixkDFERMiPKg+FZ1FfKmucPPPKvRe1fstc7G4uXE8LBnwE3Ihn3K8nw6PpXmhcuevKg9v2H7e3OGsR4btO3O9GJiN+CMw5ZOfnvXoo+2vs+WiX7bIwfhbUs/SvlOulEsuCg9Z7V+1tvti1HguDhOHDkicpzMM0205B415aSGMZpaedEwMYNfGg24azPjOJtcPbgs7syAYzu4r7IcPGEJkV0CJ6GP78q8f7Dezl2E49r8bbYYP/J4Jh13mnLTb517aGfd5d3L86Dx3tl2Lc47g7HH2Isp8NHEw3YOuTxHXyWp9jIcDxTc4+Ern7cDC9GUsjlz3gxs49GuN7ZXr1n2g7OtW7s4wnbgoSQczw5DeuL7Mn7N7bcRw9rS3m7DBtgVD0wUGnZP/wDcG/195e+jXDukp+1/aMQyvv8A/wADXJ7KX/8AEK8Dj97eM+jWDe9z7XdqxTvRuQ4iEzZx3V0eToUHXWjhLPZT75uXw4g0tSIGe45Mor5hXJ4G9Hi/abgWzFs27fcjbLzqkTTONMvhpXF91bl2Qlm9keJNLoQT4HnlPzrmwtzt+0PZJOKLZsYXZ01w7PpQcLh+zePbtu5ZsSgd7MZXfgNeeXGTnkrsux+GsWPafgfcX7HdtzAxcZNxBF0E1c4M6GK4dxunZNzib1ydy9euEe9NWRBHm9cY8jxrs+yOzLVntPs648Tm4WS42o20QVMq4DfzaDme34+47PVzrPXPgVn/ALPj97x7/wAMPq12Xtnw1i5wFq7e7xG3kjIdBca456CB1eg1w/YCcJ3eOt27RGIQcpmTq7v2NNaDpvaCcn2h42LqFzBlxhwZx4123sbenDj7/DRz+zsSYa4JZw48x1ruOI9mC92nxPaFu/bjcvyVZ2iXdyABnQwDrjK42q+H7O7P9mOCuXZXlVJSnIO9PHID6UHl/aUv8N7Ws+BnO3xF2MO6wcPeTDh5Z+9ei425D2Y9li3aT3pHuQf5rju/V9K63sK29te0l/tm7FLdvS2PKWMB5h+bXZ9qdp9jXr7wnFXLc3h5MrhKCkMb8umdutBtK2dp+zEZWCROfDwYCYd9TPjjFeZ7M7Rudm8bDiLeoaThn8Q7n9869d2b212Rx194Ts+9BmokIwQwBl1Drj0ryXtDwdrsftON/utw4gLluBpAcYReZnkdd6D31q9wjwke0dO77lSeNe7unzNutfPO1uIl292hdu3JTj3Hu2hkRt2TO0l3XdDn5V7Dh+Luy9iTi5Ybn7HKW2DOHkYweVfODj+Ijdjct3PdtsSBAAgJhwbanPfxoL4Wyk2V6wziCkF7vedjLyMuV00MV9a4diWbUWQS7geeht1r41O5K5NZSWTqq5Xza+y2U/ZbZLCNsdttCg6D2l9qodlzOC4SUZ8XNBdy0Lz8ehXoYT/dEpIGMq6BpWEuFsfxblm3NxlkxM+a868L7V+1r2gz7P7PmnCmly4aNzwP+H6+VB3tj2sO0Pae12fwOHhokveXMZ94hpjoHXnXp3Qwc6+Wexf/AKzWP9M/pX1PdzQGiByKBPWkuHRwG60LqS6mvhQPGjnlUSM96PXZ6NXkcJs0pm8gExQIe/DPNceTzqh0F56etZp7tzhxINjZq4udREddKB4dM03ONaQ5zr6Ul1wuCgp5Y3ox1qRxg57Y6+NNHJlTycUA97Og4rK5qAaskNPz/KtUNcrg8axEuX44fhBx4tBsuMm2NioTOTPzpsY4zgy86nIZV0N10oGhqZ5GuN9cVSYU7zy51Dci5QVxjQ0+dCzZDseBloKNG4Hhv5U2WwYXOmtQkhWM8qmSRvTJxF7x3V2Ovk0FMo2xVyhnzqYmAz+Jd6SjIVANXLsVJKVzPdMC/jlt6FA1lKbElgDCh+VDZFcym685JVwC3EBzjfO/nSDKDtvrzoM4xLd+KRSKIZc6+FaTwxRBOjzokd+LEccx8aUXvW2WAdnPJ50DjclbDAyjnQzlP1raEozO9GQnPwrGGHPjVd0TKYTZHDRW3hS310xWRO5nBKMwdV0fLJT99orbkA64wj8qB3jEM8u8aepV8/sVhdvwYf5h7xoxTGpVt6LoRm68otBrivO+2Hbj7O8Hw3aMOH99cLzbBcRYoqLy2E8Su8b0hSNtMfzIH3ayvR/abbC9GM4LrDAj55zQR2b2nb7T7N4bjYWpR/aLRMtrljnku3rXJRkjPCjoGx+rXAeHlw027wUQlnNyyoRueI7EvHZ59Tk2eJjxNpuW5d3CxlGRiUXonJ/vag3UN0KytMSK53mv50p3oBo5ca4M5qbUZMPgQBdXV3ojYRQBfP8ASiU4EtZa42NWpbcQzKTJz1wVQxgOAMdDFBJKRKUiDhTGdOXSqWSKzc9Im3rTBSWcJTXImyGpQZlsZus/nvVFuHecmXx1q8AqR1d0aMhua9KA2QNDwpLkQUXTJyp4VM/KnoHIAoOE25W7XvJcRfkyddYD4bgVpwipJZXHGPxsH5d371HE+6vcHGGYz2cEYT5dJOPvR2daLZc7sSOU2twh/wCBc+tBy9cPjRzCnrSzrtyoGb15z237D43t/sixwvAltuW+ILj7yfdMEU3xvlK9GeNC9N6CKg1uvgY+f/KrqIa96XVceRpQXUTMsTq6+mtXUb3fI+v/ACoLqLn4EN3T51dRLWcTzX0/50F+BXSe1nFdq8H2RG72RGcuI99ESFvvvdw50w+Gtd3UXFIOHC6HrQdV7NX+O4nsbh7vaPvDips24Th3Hdw4xppiu4o2AzoaUlwMuhmgjuRuwuE4kozURMibYSvJdrf7PeE4mcr3Zt39lnLVtSFgvhzPzr2EI4gHPFOg+VX/AGL7c4e4hwhfDUbMxz6OGuLH2Y7dcH+E8SOXOY4PnmvrkdWT1cfKroPl3C+w/bl+cS5Zt8OOq3bhoeRlr1fZHsPwHZ9yPEcW/tl81O8YgPgc/WvSGtxeQB9/0qqCbmkHHMwfSnjBg2DFTLWUTxz8qvk+VB5f2q9muJ7YeF4zgZwOIsRI92bjJnIjyRzXD9nPZjtDgO1bnaPaUoe9SSBLvKu6pp6eNeyh+CP+k+lNCUUefOg8VwPs7x/De11ztO4W/wBnncuJieXCONMVxu2/ZXtG52ze43s2UJHEZUZkWKmE13HNe2u2+5KKrjO4eDU5gTMCuHd03oPDz9ie0f8ACLXD2ZWrnEN5uXBngDu4Acau+a577O9oWp9n933dwsNluDc0tsBEjpqo6uhoV6pkpjODoaFAZKDydr2f46za4mULVi9dlxELlvvyxHBkQMOAEB1fKtP8D7Qh2rwF8LceHsW4Fw95mTIEVcZdXRa9LD8L5v1omZA6p9aDova/svi+1eE4f9kh7xsSksBwohqZ3dK85wnZvtNwFi/Z4Tg7tn37FncghPBnAOdDXXrX0Kig+f8A7H7Xucy40/8A939aI9j9u3O88RYvsnKTuS7wOObla+gUpGYSPBoPCW+yfaHhLPdtXLtmGe8kJOVd9DBrWVrsLtMOI7vZ3E8TdvRxJuJEFRXRyumN+bXurr34AGQCcvI2PVrk2oNvh5o/FNwON3OM/NWg+c2uxfaW0wucPwd6xjLH3SQxpvo5+dF/sX2p4yFuPE8PxV6EH4CdwQz0y6V9Jnglo6Qtrj8j6NVAxCMXcTPyzQfOo9k+1seG/ZS3xZY7vd90XDu46YztXFfZXtzl2dc+Z+tfVKMUHy/hfZHtm9xduF3gZ27bI785IAc+dfS0YWIxcAAKcjatI7Z61FzSEnPJKDy3tY9u8fKXZ/Z/CXDhcYuXCQNzwNdD6+VeSfZPtx24GWfCcf1r6womqY8Whdsa8uhQfPvZbsDtTgO3rN/iuEbdsjIZKJlNtGvoOVe6Y9edTIJaIodDShyGB70fzP1oHnV650KNkMaOx+tMwhhEdkpCohvzetA3TOuc7+FCZMZUztRgAoxEEdcOAoJDUll02xrQwJPeAJeGjVZ7p8Wpv5UODVQHczpQSkh5T5dH50iR3pHclk6GcaedX3lPgM+Lof1oBISFyuVetBkaTZsJmXpyxVtyBhRMdYtOTgAyucUySbxR5ZoMp37bCQSMoG2KeQv5jhO4GnnVISTMRxqmKzLcW9IMwANtOdBpJloALyD60iAudZJupz8Ki2XSUpZJmUMuHSqzczlto9RKDWO7nJrzoluHWozczoB5tGJqZmZehQUGqcilIZiAY2wmam5KUI4MLnAAitDcCBFiwXTXb50GcIEpqB3YoA65a2UXSPxPXas7QNrON1c+taYc92WuaBGM4MJ0eVJjp3XGF1xz8K0x13xUssOQyUCXAZ5VHfIX2POQJ51c+7HM09N89MUQhmKyBXfw8KAc5ZOMjqHOq7+mmq7FQrF7rqOgm/k/rTBMK/E6AUDTCEd3VH+96Yj4A4Dnmkd4yIZzqrzpXEJCyMjsb4aBXhI5UNTXPiVoOcgGR1rG9J7iRjhEVk+JVneXWS55GlA8kVlOR6/SpXvyyQU5Ow02EYpJDX1arGXOcP0oJbcndjE8DL86wvcFGVwvWUhxAYJpkmdJHM/M5dK5UVDEt6ajjDzoMOG4svMrU4Nq/AzO064Oo8x5J64dKRbzflBDQ7w+dVxHCRvxispQuQVt3I470Hw8Oo6POsI8TO1xVq1xQQuuYkomIXTqdE5jqcsmtByW2houM8nP5NB70HOHON/CrdU01Hypvj86Ce9vm26u8damVyKDJI4d3I1pjvbbdWhibpnxdaAz3tkCmGKltxde6Z8qC2YyZPJaCnc9aJBIRBEwiZGpSQmJZ8H9aG6RFkImuMZz5UHCvcHw9vhYytcHZ72hpwpcceRj51p2dDuFz9yW8ptwzZz+bn7VndvnEcLGEeHvOzmfDSkaeAmtadnwYFwbZDKbWJWs/Nc0HMoop0CfCl9aqpDOd6CJOBl0M0oGIA7hrSuaxI9UKqgKmGrKWd3Hy0qlwK7BmlAxCI74y+dBWPGo3uyegH3/AEqsa1MNReqtBeaiesox8c/KrqDW6vQD50FVM9Y46oVVS63InQX7UF5zSXAry1oxU3NYMTdQoHAxAzvjL61VFKb3YKbhQTDUZdVftV0omIkehinQRvdfAx86p2fKphr3pdV/LSrfwtBMPwR8iqqYfgj5FVQRPePn9molZi3TGjh+tXPeP+r7NP8A3p/pfrQYtqRyz5VCI61y6EGg4cQ7m+uX60pbxPH7NcqERi5Dd5eLWN9j7yMQDGVxQTRQUUBSkhFcKugG6vKqBXQ1p2wD30jIfgOvj67H9aDOFtjZIaNxBk8u86B5G/oVvEFtQNCMcvywff5VPDxV1wsFV5Ml1+Rp61XD4YymujJx4Bt+vrQKeEvyTBghnr/a1pjF7Hr9qzNbVvI5uTFHzX6Fb4M5xrjGaBlJcC06S6Y6uKANAqWImoL4tXUoq648goJAMCRXbem6pg67ulLuywfG89QP0oYORJL54/SgYJkA05i0aoLz9aXclrrr4g/TFI7wo4x6n60AmMyMJnUPrVjlEwictajMgwGMeK/akRcr3kcZSJjJQaMkNlAaDMXO683lWUhxKMJTUNHOnrWhCbEGRtyP1oGsYfCGZPL+9ipLcRzJHp0KYBHAb753aaOmdxMUDFTbHjQYetPn6UdaCJJiMs896FF1TBXC4nj3Fs4aPvViXIAZL0RSRF/mDXD+uOR+2cOcIcW3YliQSJugjt6+G/Kg2yd8RyB51kTl7653AVwYeWm9cVL3HxZSJ8LwvI2u3Dx/kPDd8K5nC2y3ZCMQHYORyPlQaARAMuNKfLXQpO5501A1oE4x0OtI0O88j5UIqLscqV3BBF3QoFEyk3Iux0KJfFPGmI6a6maJ3CP4QV0A50AgG7u4oEfu3uuCLs9PCrjjGTIdWova2sgfDhPSgvWgHvHTHP5UGjs5cfas5XCJq6OxzfSk9+46DbDXLv8ALlTbcYgxyzznLqtBIy78ZXIpD/KdHxq8DLOh4uzRkY/GZVx3DrSLcTBPWWcmXOCgLjmOILJ6RNKmM3K6QX+YVPtWqsY5yJyoDQwmKCEgr3rnecZ3wU5AQQAHBp51WBzkPrU+7gr8JyxjSgXELhc6KYPWrYq5UHPnWV4YQ0kpkML4nOtCQ53PB3oGonQ608gYzpUKr5bpypxQcZxr5UFd4NMNA5w919KWoZORnxaHcyY1Tegpf+FrDjbMOJ4WVu5BRwnJE1ETUTqVpgUwGMa0Mfhlq6G1BxYcTc4Xu2+Kl37U0LfEODV2J42ejs+Dvzsa65U61lbjGfDRjOIxYAiZETZK8vw/D+1fD+18425Z7GM+7LkxgQxoG8u8P94oPWi5dOdC+FcZucdEU4fh5vQvJ9Y1JxPGiE+z8a7x4iL9QoOZSNvVrjPF3Y78BxD/AKWD/wD9UR47Oe9wnGR152F+i0HKdylIGCO2GuNPtLh7f8QvQ87E/sNT/inBThLHEwi4fxjHl4hQPi7dqPD5TBk/CzP/AAa1PAwtSjPuMnUz8Vx/8f2pS7Q4ZthPi+EDTX9o7v56Vx7Hb/ZL2mdmR4+1PipgxhG4zHTOMumca4zmg7P3Zl+KX/zNHu4uiy9Vq8FLwdqDItkMkhTOklX51bbhjJEemrrV7bVDAzmKxXlyfSgh1uROgv2q6iOs5PTB/fzqqCbmsMdUKqplrOJ0y/b71dApOILzCiJiIdDFTPXunVP1q6BVMNRl/Mr9vtVSe7BehmiJiAPIoCpjrOT0wf386qpt6wHqr86C6iWs4nTK/T71dSGZyeZg+9BVRPUI9U/X7VVS63Q6C/P+2gulJxFl0Fp1E9QOqH9/KgqBiAdCh2fKnQ/hfKgmH4I+RVVMPwR8iqoInvH/AFfZp/70/wBL9aU94/6vs0/96f6X60FUUUKBl2oM+8Qtq75cfNrjOt0XVwv51TPv5eQuPnUmt1N9D6tBRilLvAd0NUFelbQsrrPQ6VN/4gt29AyyTlpseP0oKjAksDWI4k9Xp5dflRKWVnjMYOInWW35bfOqloFq3gU3OR1/SiIMwDELegdX+n3aCAYWm0SzKUkz4uq/WnMCMrcdO9gMaYzp9Bot/FfuS5Dg+Wr+WPSm68XE5Riu3N2/LPzoKdbsImwL9A+9XURw3bjjbER8tX82roAofxFFL/N5FBVFLNOgKWTBnSnS0aAyG9BqvnTqSQKKb0BNwg+dEe7lwb60xMd7rSdyW5igi2hDGuRRwc6v4shjA9XNRB+O5ovxZ28KvKhgdKANFHz0KJOmcL6UC9/GMadactR2oDOXOGsuLs3L9hLNxt3YpK3LOgmwnMdk6Na97XFM3aDz8rk711tcJZm3Zrc90SB4S+OFV0IuueuuBzpz+E7MjYn76+ly9KTMDJC0u/ci7Zebr5bV2BEMpgVyobu2vWjGuVzQY3BQtn+Z/LnWxkEA021qLT3pSuOzoeRVicqAc4Hak7pzxvTcd1NtKHC52xzoA8aznMXvLiMdvFpye+PKH1/pWLOM5hhYx2Dm0F2nL72RquAeVa6jorrr/SscTzpEjnTXXHp40/dq91kqb50Dw82gr+NMT8I/N8fCrxFc6DUkYpkAxpj7U8JoahrhdTyaBqrg0edSPdUjhersUiTcyRdDTOy+HhV6IRDA7BvQZoxWY5Q+JXcrQ+IEcG5SjhXId5+VKBLugbmRx4NAAMs6gb461SZM4FdBHFJnE+Ezk2xT70TRHzSgBTAmvj+tLBLGHXk9KGcQwSTNBLvOI5dMa6YoInhhh0kJl6alVIJZwaHMefhUX9Ya50TbpkrXbbTodCghW2AneibIanglXHEokhHPjo0QNcvKpbeZMoPdc6ps+lBSGeZk5cqJGUM5FzrUk8OJ6LoPJquYg5126UDNtQai7pYlKO7oetNVO7qK41NqS969G2akfifsUFxO7EiGxjeqfKjmUUC16fnT10oOdKgbnoVMXVMGlPOtcHtLjZcBw927CPeuyxCzD+aaoH38ig5MOP4WfGS4OHEQeIgd6Vscoab/ADK2kvcdXZ515/2V4CFmxxHHNwvXb92UfeJuCj83L8q76a4TBqJQK5bjciE4xl1yD9a6Wfsj2ZPtc7XtxnZ4sSUZQkdwkGCXdxhcctnz1rvUEOp+VMz0oOLZ4qZdOH4ojbvOkEz3Lv8ApXn1HU8TWuT5lRes279pt3rZODuP5Pg+JqVxve3eA04mTd4Y2vusrfhPG5/xHr1oOYYcmc0Y111oUQREcIjuUOcbZoMrf4Bd5ZfnVcqAwYNjSnQQazk9MH3q6iGsO91Vq6CHW6H8pn51elRFzKT44+VVQTPUI9UKuodbkTkC/b9atxQRcUg43xgrqu1ztz9v4E7KlA4UQ4kl3cpk2zrtnau2m5Yxxzz8taeaB6ZqIaxXqrTm4gpvjSmGADkYoHUR1lKXjg9KpcZeRU2zEDO7q+utBdS63A6C/b9adTHWcpeIHp/zoLpcmnSeflQK3/Dj5FVU2/4cfIqqCJ7x/wBX2af+9P8AS/WlPeP+r7NP/en+l+tBVYXLnee6bfWtZRZGMoc8c6cYRjsY8aDj2rMmOXQy+e9a24EZyQ10M+n9aqH4fV+tZxW5KZBxHvYZnPQ0P1oKlJmsLbjGjLp4Hj9Km7i3EInJAN1/vnWixtQ2CJoBWYYuNy5gSDpyiZ28+tAGYWwEblzdx4b+Qf3rVS/d2yMN3SPn1fzaVgWBckYkgB0On604fvJtzkaR+79vSgcAtqH4SJq+utTDQjcdO9LL4Caflild1uRtn+cR8hy/p60+Jw2WPOSAfm/kNBVkxaJJhl8SeetaUtOW1OgVI3XxxT50o7D11oHTopUBjNPBS5080BSOdDnJ0oHcoDl0odyj/LrRQRFxcmYVcOlVl2ImfOk6XROYn3/WqxrlaBfF3jKbcqbtq0czBtvQGu9AGlBu06WBoGGg9azvLggOs3Hkc6uJg1rO2E7krmDBofeg0AiETYMBTod9KW+tALp4Vmvf1dYDodfHypz7ziIaLrSuzjGCbY5UGN+4rg56VratxhDRyui83+lY2bcri3JamcB1rkLEFdjQxv8AKgap8ICu36tICOI6pnV8aBkL3jEnn0OhVYeQeJyaAlq6bjvUyS5LubBun0KQMliyYhoYKqCdwMamiHXrQE4imdJbCaUhYyw6LzNmqcmkue74UnZ0znrrjzoEoRdHGMucGlQCJnSM3IdHo08ZUjrE1c9elVI7z3UQSgvQMIHppRgOp4lRHPe7snODJnmdasyr3XTpQJUy5cBu0E8OJDl0z1rK/wAXw/Ckffz91GShJHu58XY9cVh2jdf2JLCNy+lq1IcmXTInQy+lAWL1zibN2/JzandxZMYxAQz6ovliuVhiZcYz8v1rPu27PCwtWwIwIxidAQD8q2MSTXbk0D2DXTr1pS0T86bptjPTrSHZHZxjpQNBEQR61lKMrJ3oSzE17q/Ss7nHWrXaFrgUk3L0JXBDQDfLW15kRJGMDlGgXv49xcJIfwJrl2qbUWN0+LvS1Z4NDPj1ow3huTccoA7eNODKyJ/Ehvk3PM50G7nJikr1c0iRMJRRPCmZyuKBnPzoaDno70KZN8+VAY18a6DjuJjN43tM1t8Hbla4Y3G46MjrqgeTXZdpXrhCHCcPMjxHErGDjPcj/mn6G3ilcLjeGs2p9mdmWTu2p3hYmqxgMnPm4zQc7svhHgOyeH4V/FbthJObu/mtcmWc7ONatVzmhwRcmmKB0daKRu+dA6Q409KE1qXAZdsajr6eNBxWzc4NZ8HHv2c5lw+cYebBdB8HR5YrkWL9viLfvLMu8ZRMYRNxHUTo1QOcqrp/z8Kw4jhWVz39iZZv4wuMxmGxI5nR3OTyoN6makFN8aVVRPVidXPy1oKAADYMULgV5a0VM89xDd0+dAQEgZ3dX1qqeNqTpQTHWUpeOPl/zq6i3+AXd1+dXQRvd8j6/wDKrqIa96XVfy0q6CJ6sTq/ka1VTvdPA+v/ACq6CLn4EHWWh61YciolrOJ4r8qugHFRA+Aebr86qf4Hq6HrpRjBg2oHS/yvlRR/lfKgIfw4+RTpQ/hx/wBJToInvH/V9mm/xT/S/WlPeP8Aq+zTf4p/pfrQVSUiKoButKUyODVk7Bu/08aUYKkriKagbH6vjQRAldi97MYZdNl159DwqosYW1UAX60yUYQWTgF+tRZjKRGczHOMeni+P0oKiMpE5mE/DF5eL4/Spj++vr/kjg83X8j6+VVJZvu4qH+ZOR0PF/KmwhEVzEDXCgBQSK2424uJOTJyM6tagARDAGArO1DAyRF5PI5H982ncXukYuJScD06voUER+K8XNxzGPkbvq/Qqk793HKJ+b/T600IEMaRHHkYotD3O8mGb3n12/LFBUHMIr0p1MPw+r9augmTgXwphgDoUpfharNAqhv2TOb1sw4czNHo61ecOSuin7H9mXLs7jK+SncZuJmMqu2NdV3oO599Z1xet6b/ABmn50y9bZd0uwZYzgkLjrvt410k/Y7sy5OcmXEZm5cTAzkem2YmlW+ynZ/vGcbvEQWDBYTBRCLrjIIYwOOhQd0JIGKI6iOR9Snrmum/6NcPbt27VntDtGxatndhC1xKAZXGMeNdrwtg4bh7dgu3Lpbjjv3Zd6T4rzaDTG+ulDlDClPrU5UDGvOgm44YyXZH7ferznbbrUzD4Y795M+RrVGDOUoAwGCjGaMnXNGuQ5UB66UU38LSHXwoIuLC3KRnONNedFo7luIdPm0rqM4Q31y+R/WrHK8/HFAzLSRTnmjPPc2x1qZLLEDd38CgI7txlgDBnp1rizk37gDu6Vpfud2JbNOodOlLhYgylI1NCg2wQiRDONMf1oi95JKIbGPzpTcuEWJ+JNceFVnKMcY3GgH4nCOBqhQQchrlpOcpu9aGOpnxKAx8chciDmlnuzc6Du9H+tElixZIbjQsXIkpDjY3oL3THTZ51CuWMN9n/h/vpSiLLuTUAyA6p4taAB3QAoFAIxwOSjafd5Jo9OtGE1NOpyqZuTGEd6AkM8YQR0ejQS7zppI0TxojpDJjD+VNgOEyJsm5Qddxdy7K63YftBbid0u8NMuh1J23fDnYXyrDsuzbu9oXOJgWJW7EUJWIsIynIyrFcCGB56vlXOu8DYld94ReHvr/ABbL3F88aPkjWvCcM8NZYtxnOUmU5yAZq5VDTPLTkFBd4jK2pvk20dyqwjgc67vKpu6wwaImX1K0ENDlQEQB0V50ozjOPeiibaOTypTWIyMAZyvKur9mrcrfYXDyln4+9cOqMlM+mvrQTdJPtjwudYnBzTw11+1dpdxcmWuRrLy6VwS9B9o7mmW1wZ3nG2Z5PyK51qCQWWe9ccvgcigd3LEwfDtTjHugZxLm0yIJuHhQknZEz6lBMYZmyJJLqGj5lUXGLi4Y6Js/pV4w8tNKEyI6lAVF+9a4axO/ekQt2xlJdgCjuSjlg6fyu3pXTXbx252q8DHThODkS4j/AOJM1IeRu0HM7Lt3LzPtLiIMbvEgW4O9u0axPN3fF8KyhGXE+0t25kbfB2C2Gde/Ny4PINa7Y38667spbkOI4lkJf4mcjHIEifT86Dm4ySXOTx8KAix0H1pScEsquux4FUAGm2KCvOgflQ6iUOups0A4cDzpJqa6b+NC6mjvTw6dKAwuM/KnjNJSnk60EVDrd8j6/wDKrqY6snq4+VBVTLWcTxX5f86qoNZr0AoLKm5+Bxu6fOqqJfiieOflQVjBgoXAryM0VM9Y93qhQOBiAO+NadOkuBemtAo7yl1cfLSqqYGIA741qigg1uL0A+9XUw1GXVWqoJlrKMfHL6VTUmtxehj51TQKh5+VOlyaBQ/BHyKqph+CPkUSuEUjqydomq0BLePn9ms2bcuBbxjCM0035dfpRK23GLcxjP4Dbnv1+laf5zHT70BGEYDjKu66r50SnGALlXQDdehSlcw92JmSaHTxehRC3hZSe9J0Xp4HQoIhFRuXMd4XAbR1fz8arvJCNuGO8hq7B1amc2NtjEzJzg5Gu74VcIEDGVXVXdaCoxIRAzjfLuvVqH95Pu/5YuXxenpv8qc5JiMU70tvDq+lK3biQAXAvN60GlZw+Obc5bR8ub6v0KmWe82ormWNc5wc37etbAAAYDQOlBlxHxEYb96RnyN/09a151j+Lv3Nw0PIdX5/StudAoGnq/WnSj+H1frToFL8LVVMtmnQFFFFA6lxTooDGmQoN8otGvSjNALLLgMeLQGDXdo2p5KCHW6Z2DP5/wBKrJvSNbrjYAfrVUBSeTRjpRzoDfV+VC4M06wvS7042h1lvjkUFWhuSbiaOh5FaO1AEQA0KN99qBO3eXAalQLbiyT4nV8Cqu6W3xT61M/4cnXXbLQca2N67l65a0tKW/h/FcXA/WptkrdlkoCYDnmtLBoSlppg8Cg0iEQjqBq+NKT7vMooS37nWmqrE1B1k8n9aZEE6/zPPzoCMhhnOMao6Y86QSdcsQ201f0olGO6HeP7+VVF0VXPSgRCMY5DXfPNprjPIzyKIouM55UtdF0z486CZvcRzs5z1Oda4ya6lTIGCYqbXxQwqo43+VBUnLgdt2mAH5NDp5UBprQKOIzYuzqUssHONORRcNO8bxc0ZjhR0fWgcgR75ryOlQTTRyn82NvOiSu+cB8yrEYZMCUEXUbQ5MKanmVa6sT1elZXbcWGTMVTZ8TcqorFlmK4cKa/lQcftllb7F4xtyIyLMsLsaY+9a8Jw5wvB2LEdI27cYg+AVx+10udn+7MSL123bwc8zMnyzWvEdpcLZutlm3b7tZsjOfqG3rig4diJc9oOOAMELVtTwFfqFdts+FdB2PLjeL4vtHirMbdiNziGK3hlM7oCAOOXWuy/ZuKtTsyeOvXX3h3+8QI93d0DOuxrzoOdTN9aQa6a+FcPie2OA4WbaucQSu/9VbGc/kZaDm5o15fKuseM7U4lP2Xs44eCOJ8ZPD/APIZfmlZnYvG3pMuM7a4qYuWFjFqJ4G7ig4XaPa/aPG9p3ex+yrTbnB7t3iJf5DmnQ133eVdzwHZ9ngOBtcJAyQMssayk7q9VqOG7IscKLbv8UsnKyvqr49fWt2zfj3fd8SoOpcgSz6mGgni78uE4K/f/GW7cpmuEwLWXZVlsdkcLa0zC2d5HmmX82jtkZdl3LWg35QtZxp8UgfyzXMbZnMfgTQTpyE50GblUMuXwwONPPP2qxyhhDHMx6VnmVte/lyrk6PLOmMfatRXDo7mlBVAh9aM6alTpnfn+dBWdtM0Z2yO9Byo6edA3WlJAc4Mc108M0PLPWgNttOWNKCFwL0pRMRB3xrTlqY6uKaUBUw2X+ZWmuIr0KAwB0MUBSNZryDFOlHZerQVUus4nTLVVJ+NfIoKqZ6xx1cVVS6yDploHRJxFehmjFEtg5KUBEwB0MU6KS4F6FAo83qv6U6ImAOhQoauxzoHSlKMYspIBzaj3jP+GCfzO3p1/vWnG2D3pSZyNl5eRyoJiznA7owjg1TV8jl6/KrjAgIGrqrqvm04/hPKlKcYGZOOQbq9A50BLeP+r7Vmzlcn3baYxhnuGvLq/lRKM7mGUUjnPcHV837VpE1zjAGAoCMIwEM66q6q9WlOaJGIM3Y5B1fCiU3PchhlzzsHV/SnCBAcKq5V3WgiMCFuWqyXVd1z/elaSkQiydjpUmsTxc/nSj+9kTfwn4PHx/T50DhFFlL8Tv4HIoihbFcAZWrdmsg94kP8sML4vI+/yoC0PflORiUgcdDXB/fWquySOI/ik4PPr6b1X+f0+9RH47rLlHMTz5v2+dBTELbE2DB8qZqDT5Uo/hPKgI7er9adKP4fV+tOgUtmqqXZp0DpPWnRQFKiigPWjFCYdHNGvhQGvWk6CrtTynLPrUXBlEOcnHpz/Kgq3rDvO65qwyhnFTtttRKRE70kDqtA0DZzSUDOlZ+8nPS3HB/NLQ9CmWYus1m+O3yoIeJjtGRnm4zioigykEmWRHC6Y5/nXJIxDAB5VEoPe70HEtnTI+dBJxMH8QxTfJtVsiQMETwpRhNVlMwmNDFJ4e2axGL1HDQO5PMOeTH1qOIXHdD++dK4XCCScjzNH5c6mcozgy8jHSgMe8YW9oxMvj/bWzJziKZdDTl1rGNxeIkRguQDOmhWoYTO+6m/keFBUQiYiZDnTzj4TC9Pv/Sgf8pt1/vnSQExsUBjk5zz8aeNemPypuAzl/Wocurp0KAzrnYH+2qxuC9TWljCiGHc6edMFTcwb9aAxq95Axp41McRuoCCZ16laAGxWdzRjLkOr05feg0086KMUFAVETCx5bnlV0paA8ygEEwlKMcOvpVZMZ5VnxPEWOGsSvcRdjbtxMs5OA/rQF8/dOOpn5lcXiu0uG4K6wnJuXbge7s2zvTm67H3cFcCXaHaHa/wcDalwvBqZ4u5H4pan4Iv1a7HgezeG4GdyVuLO64796496c3GuV+hpQdT2ja47juJ4A4ohwtu5xOlq3LMzEVzKZs6bG2d67bg4cNwnDS9xahZjEyxiYy9V3c9WuH2tdhHtns8uyhC3bhdvMpoGgGMvPVrDjO158bw1+52Zw5cs2bcmfEXlhDQzgN38ig5Hs7Mt9jRu3ZES7Kd9nJARkuVrX/GTiVj2Zw8+NkOG4fBaHxm7+g1xeyuxbEuE4f9uZ8TO3biRt3H4LZjlE0fNzXdxIxiRiABgAwBQdedn8XxZntHjXuu9jhcwh5L+J+ZXK4XhOG4KBDhbELJz7hhfN3fWt6A0P1oFnUzpo1Q0k18SgxvtigZz86GpF1PGqztQcHtEbvE9n2cuHiPeIcyEV+uK5xtXWyu9/2otWcaWuDlLPjKQfQrsh0KBJkxp4Z2qfdsMttwdHb06VaZ++KOVBMZknCJLo/3rQmqa674caedVIjIwmT6VGJxcmZh8z9aCwOgPhQ8tefOlGQmRzTUfHyoBzkoz1zQeNFBDrI8NadI3WnQKXI6tOk4yZeVGTrQDoLQGAPChRwU6ApR2z11odmgwG9A6QZkvpRk6lBtnrrQOlvI8DNFLIZVA6tBVKWMYetR70lpbO94rgPXn6Uvd99G5Lv41xsHpz9aBtzvOLce/wCOcB68/SgtZRuPfTljAen61eOhgp0BQ1EpkMDlXYNV9KTGVwfeOI/yjv5v2KALigWwkhhXY9efkU42yL3lZS6v26FVHBEDABgDlQoCqAaq0BUM2SxtpkcMtw8PF+lSSbv4XEOuy+XQ8a0CMQiYA0A5UDjEhHB5q6q9WiTpg3dKMvIqZsskIPxJq/ynX9KCZ/vJls/CPxPXTb9a1qSJAA0DrTZRBkoAZV5UE3ZMYJEGTkB69fIpwgW4ETLjm7r1qYjLNyWimAeR08+v9K0oM7skwR/FLIefX03q4xIxImwYKiPxz967GSPlzfX7VpkoClH8JRkoOfTNAR29WnSMBvRk60A7U6SmKdAFOlRQFFOlQG1JlE3Sm671nO2Sdj1M0Db1sdZHzqG9GUxjFlgcAZ1oLKJiQemKXuZ5UkPz/WgtbsnSJAea5flTLQIr3nq6/wDKojbjIcqJuZqixHxoNNcqYp8uWaz9zHxoLRrvvQWPiUKdT51Pu48qCEeX5UDbkDQkPlrQq7GPF/Sl3UNJPzoCTtL5hQLu41cq7Z5VjdiSizjoCAm7rqtazXAJquBORzqb2PdiYwIadKBSXvx75iQJpsnh+laZjIEMu/nVThG5EJGT6Vx5TlZmiZOS88/eg2FVgOuMueVAoag5015VHdjFjcJZkoLnfO+laprk9aABz49ejTADWiIGcaUzXVoEGhkMdKMSznIelMoCgWHrr5VEhRia50zVhyaMZyZw70ChJlAcGdnXnVc/OohpOUXnqferaApO/npQYDfTpTHLQdT2n2hxnB93huB4KfE8RcFi4+CB1XrnlpXC7K7H4zj77x3b4zuRT3NiSd2PVYmnTB869BNRJHJ18Tniuvl2qX77w/Z8HirsXE5RcW7aO8p7a9AWg599jbtMpSCJjKuAMm7yK697Rv8AF3Jw7LsF2OcPFXFLRpy5yfLTxon2c3sXOOuvE91GNvHdtGvKBqpprLO9c5uEJShEzJcETpg+RQdG9nQudvxhxs5cfdhw3fW6HdJMsGImgALzrndt2S32BxFqKHvCMFOeZBg+dOzmHtFeLkcylwkHvGxiaYPn+VX2tFuQ4WzsXOLtD5Cr9KDmytABHRgYHwNKcZ5e6mJHLr4lX482onAkZyibJyoKoKmMnPdmYkfJ8SroE0k1zzOdOkOdqBmz50JlOdINPHNPdKDquHtsvavi7kpCR4S0ROYKv2/Ou1Bwa159uX+G9u4xkDa4nhu6Y6BnXxEfRr0JqGKA18KFMOdKKUjImcLs4zigeahkGXcNVzsc9fDXSlKeCSh3Qy66Abi9TXTwqYnfnlyoiKGmm4chFMtBowH4hSXUpM2GO+GOpt69KqJg/tfVp86ANdaKhgx1gh1HanGYuExLo/agVOiigKKKVA+dFdH7SMy92PGEpDLjgwKZ/dz08a4fZXC8fb4UjdsXyX7TxDiQ5w2QHyXQ8aD1GKMS/lflXl/Z3huNsdn8AcRavQlBuMyYifuYhnPiJ518/wCzL169avyvSneSeBn2q2EybAuvn6UH2jDnAOemKUvgGUtA3XSvjt7tTip+x9i08bxErtjtCUZPvXIMFAkOpou/Ou47Cjbe3eAfhUvwT/8AOveuc/yY18qD6R3rk/4dtw/5pCHobtBZV/eZuO+E0PSvj/B3r1/j+OLsp3iN5An2m8Nj4nbLrt6Y8aqXafEnshxnDPHcQ3rHaEExdZEYsZmCY6inls86D7DhP8r8qPRxXyzsruPHcFKUhW5bVe3M8zPw8/L0rinE2u1eM7Tvdt9p8RDirVxLPDnEFoTKIKIYMYNKD65KUYCzcBvnSoW5M+GLCP8AMmr5H6/Kvnfs57Tw7N7A7U4i5f4jiP2XuHDHEyJPflkCKcsmXwGum7K7d4nsftDgu1LvF8Xfbk5ftdu6TIEV0RdFTXTZKD6/GBDOM5d1cr5tVWPCxsQ4W3HhkbKZto5EdRHprVSuKsYBKRu8jzftQVKZAFd9ADKvhU9yVx71wANocvXq/lTjAi5VlJMK/Q6FXQKinUzmQjlyroBuvQoFOfdADMnQOv8ASnCHcHLmS5Xq0oQRZSRk742DoVXKgdZv7yeP8kXXxT7H18qJqpbg4kmVOR18+lXEIxIhgDAUDqLiuLY4ZbvQ5v29apSIyXAGVqbY6zkYlLXDyOR/fOgoAADAGAp0UUBRRRQFFFFAUUUUBTpUC0BRTpUBRzzmiigShkdPF2oNHBQmlAYynPVoJlmL3jY0fL+lXScImM5qYvc+GTpyX6UGlIDXJu0nQcU89aB6Z0OVTIwKOOtC8zemOTL8qBRzjXblSkd5E3N/HwpSmRlGKOJuDHkv2pnx7OIdTn5eFBMUboEssRydFqb+C3I2HUOjRGcf2qdoMMYDptqtO8SnBHGmUoNIowE2xU3bYpLBMxhOp4eNZcFeL9jvEUwscc3Cn1Gtb14scNcvSipbiyQ3cGaDGNuMb5KRIHSKmNfGuSOlKUSUWMgR3rL3xbu27U8rNYxeui6/LFBsa6/Kh6a09qyjeJcROyDmESS8kVD6UGuiDRSijjDvU2bsb1snEQVMPgp9qC+dCZ8ErO9cLNmd2QpAVDnWjopjXwoJm4Yy6OHyaY6ZqLkhlG2j+8yGOSC/aqg5iLvz86Ct9a67tLt7gezFjcuNy/kCza1mrtpyrm3y7Oxchw9wt3USE0yReTjnXTdldhWOzeJlxfE33jONmr3g0F3Q6vVoLOD4/tnFztBlwfCupwtuXxzOXfly8iu1tQ4fhLEbVuMLVuGkYxAA8CjF244yWzoav6Uy1G297VeauWgzuzuXIJCLEU+JNdzYrS1Aiy1VzhXd0Kq4fB6n1KIfil/qftQef7b4m7wXtBwjbFOLtFnI4x+8F18vrXa8e97tHs63rpdnPAdIJ9yteK4Dh+Mu8PcvRWXDXPeW0cYfHqeHgVne17Y4YN4WbkvmxKDm8qlcdeX/ADpmedKQJhBOY86AYko4eTy5NKEnLGX4j8zrVH59amZgJfy7+XOga6a0xM670z/k0slAGppSeoa/WmZx0KWM77UGM+Es3eMtcXOObtmMowc7DjOnp+dcg0ApbeVA5KB0nUcmnM+1FcLtftS12TwEuJuxnN2hCArN5BjbzoOaGy6pzowa6Z864HA9p+87Et9o8d3OHG337mchH561x+wO3Tt14q7bt9y1auEba7pg1emelB26GSm7nMpCZ0y08Od2gM6mN6UiMjCZKb48qE13aCaKWaKB0qluQHu5zLoGWlm7LaJA6ur8tvzoOk9qoxnPseM8939vFxJi6W5u4ibcq6/gOJs8XYLjau599dt/Dxd7GIW++OWXXR8K9LxPZvB8dAhxtiHFRHIXgQcYyGw6tcY9m+wzbsjhP/4ig6fsnjr3F9m2eIjxt3hm8P7qS3rZiBNyye+ZFMDyrLh+C7M4qx761Y7HYDcjl7MRzAzLefT513p7N9hBg7I4MP8Asig9m+wg07I4TH/ZFB0a8DLgOFinZTwt+4tmD2a47/dFcd/Rw7+lb2+zuG4XjLLatdkW7/vm3blDs9EnFBRJ6aprXaS9nOwYmZdk8EBzbQBU/wDR7saf8PsbhMfzStAehu0HVcNwfZV+RxF7h+ybtpbrcx2exk9xxPVk65541rGVvgr/AGdclw0eAhwObl5g8EMQtOJON1DIPjXeR9mOxIqvZfCyXraA9CqPZvsLGP8ACODx090UHQ8J2XwNu1+1P+Hr7qVy3OPBEWHcQUMbij1qL/DcLx1qXaPG8RwXEBauXW5PgBliCCpu4dAr0P8A0b7Cx/6I4T/+Io/6N9h4x/hHCY2x7ooPOS7PsXDhbU7vZzPidB/w8SfckQ1NjDIDw1612XGQucXat8Lf47h52780t2rvDEoHdUDCbiJ445ZrtDsrsyMI2bPZ3DpbdAtgQdefq6HWnHsTszuSjLgbEiRhG2YxnOAoI7GlG/2PwrZlEsNs7rbt9wTKaH+U8N67GMAO7CIByKz4bhrHCWI8Pw1qFm1DSMIGA1zoebWoo6OKBUZp5zvSkkRVAN2gUpRhFkuAqYRWXfmfFjQ6H69aIjORcmJj8MXl4vj9K0oConLuhgzJcB1aqUiEWUtiogSVuTMSdA6HT9aBwh3DVzJcr1aqipnJiBHDJcA9evkUCf3k+7/lii+LyPv8qq5GbblG3MhJNJJ3geuMmfnRGJCODluvN5tVQcT3PaH/ALwtf/Sn/wB9Hue0P/eFr/6U/wDvrl0UHE9z2h/7wtf/AEp/99Hue0P/AHha/wDpT/765dFBxPcdof8At9r/AOlP/vrlA4MuXGrtmnRQcT3PaGf/AD+1vt+y8v8A565dFFAUUUUBTpUUBRRRQFFOlQBpoedJByaa70JmhcBQS2wPhknk6UHeNpD4Jh/Kqz1flRnXQzjegllI/wB2r1HSkzmZl3OTzOlPVFx6jyoNdHQ5lBxrrK42+8BEuGA3fgXWpOLue9jADuyYDg2zGS/QrlNuLtEQc683GPpQ27YkiEdMI46CHyFKDgw4mROF5YsrvuouTTDPDg8miPHXW1akkNe5kx/NcYv5HzrmQsWm1AbcXbGm2HJ8nWh4awgFqAGoBthyfnrQdbwvE3OH95ahjBK7LUy5LofSTWvFcTcucPxdtwRLd/Y1+GQH5LXLjYsl+Y24/EZ26uX8wfMrRsWZEhtxSQiY3Fy/NNaDicTxt2zdlGJFD3u5n8MBPzWlxNydxJaErV5YPlaXX1a5krFqerbgrnVNdTD8wCm2rcn+GLnLk5pjPy08qDhWePu3YQfhxIhnTrbZP5nyqLPE3Hibd1DvXrfDktNPiZZxXMs2LMWUS3AIyMYNjGD5CnlWhYtDFLUBiAYNsZx8suKDh2OOu3LtuKQwxtLg5ylMfyCszi7vDcMECO66md7xH6LXYR4eyIlqAgAhqYVPkr82k8PaTDaghsJ4j9QfOg4fE8TcucPxFuWMe6uuhrpMD8qu5xl0lewRxCV0Mn8vdx9Wt5xsRyTtw1EQMqLlPV1pNtu5xZhAVVkZXOM6eOD5UGcry3Rkh7u7MHbQhnX51Ub6zY24khc5dA01/OtI8Jaz3pxJyVcpzTC48qqYE4yA0cPkmKCfdykfvJqPKOhWsYETEYgdAoHXXy9ae21AOmtCZE60FBvignXu91cpjXrRFxOcfHPzKcjOpuVKhMkbOj9qC9fKuIA9tLzOFwes/wClcuuLAf8AF7rhwcPA8PxSoOVs0U8+NSeXlQGz51WQqUznWmGlBMHGYOdNDPTlVGmlTPEUmuA0V6P9aedMOXzoB125cqZl5ualEd3rTYuN8UDzyfnSNKHLovoUHV8qAFfCs+JvWOG4ed/iJxhatmZSlsFaJjb/AJ1x+P7P4XtOwWOLtFy2Pe7quM9XWg+ae03tNd7cv+5sjb4K25twdGb/ADP2OXnXov8AZw57P4vP/XH0K7d9kewjGeAt/n8t67Ds/svguy4Shwdgsxm5Q5uMZflQcx/vWlFyvTlppSUwa75MdeuOtMEDderzoHyXlUrg5+hmqXSkJlOfPwoMu9cl+GGDrNx+W/0oba/jmyOhoflWlKgIhE7sYgdAxTpUUDpcqm5cLUFRcaaVOLk4xky7kZbEdX5tBcpxhjvSBdjm+RU5uT/DHuHWWr8v1qoW4wFjEOrzadBMbYJJzKRzdceXI9KqnRigVFGKz78p3ZWoYix0VM/KgqUyGMursBlfIpYnc/GsI/yjq+b9j504QjHKZXmrlfWroFEjEIgAbAU3wpUUBJdMAnyo50UUAoDJQDVXlUA3EnMSJrGL9Xx8OVTH97Jk/hhJA6o7v2rZoFQ4BVAN1orN/eXGD+GDqdXf5UDiNyZcdIn4B+r9qunSoBQFXAGVeVRAVbkjCmAeR+ru/wBKUvjudx/DE7ydfDy0rSgKKKKB0UqdAUUUUBRRRQFFFFAUUUUBRRRQFFFFAUUUUC50G/hTpJk3TyoJzr3kzjpypmcGUR3xzoYywMZaZ5lTCQqYxyxyoLUHPdqVyiG/LrRLOuyRM4edGcmfWgo1PD61E0IO2XQ9dKrDHKOxr41Fz8VuKG+cngUFoDkNjGjigJckR0ylBrky1YGKDJyXba8xPvWlZ3dO4nKR+elaY0oB5/KljG1POoUbtBj3y3xcorgkGvjWygZdq407gzAHvSn8K7aaUW427knvxyjgDag1lxNsSMHvydMH61L767NiyIBv3dzwzRcmP7mEQXmmlaxj3I4NebnnQKFqNv8ACYebzaoDGm9POdelIMFAfEeJ+dRdfgfhTCa48a0GouasY8l+mtBZt50beVHLHSigEztRjJppQfSjn50CF2aUo94cOFKa/lQalArc+8a/iNE8aeuM0sBcxj8RnyxT1DK5PzoAxg2zTaWzQy8Op8qBjkoHcNaWznrTeT6UAneEQw6VNvIMXc0Xr0aqpuaHfN4nzOlBRu0jz8qBzh6lM2oFJTQCjvRxh+TTcHIqGWZGDmb0FRc8qaFD0pH9KAwc8+ZS0hgAByA8+aBz505aZzrjLULq8suMm7pQPVljLpjON8cleRomKsMdQ6dKQcvy5VWcGaCU1z6GdKldBFDGmTXHgdRxqlW9OlLGPq0H/9k=";
-
 const defaultSettings = {
   wip: { intro: false, portfolio: false, galleria: false, system: false, blog: false, socials: false, blank: false },
   // Replaces the old blueprint gridlines everywhere .bg-blueprint was used.
   backdrop: {
-    enabled: true,
-    image: STORMDAY_BACKDROP, // swap in Admin > Settings
-    size: "cover",        // cover | contain | repeat
+    mode: "topo",         // 'topo' (generated contours) | 'grid' | 'image'
+    // --- generated topographic field ---
+    lineColor: "#111111",
+    lineOpacity: 0.17,
+    lineWidth: 1,
+    levels: 12,           // number of contour rings
+    detail: 14,           // px per sample cell — lower = finer, heavier
+    scale: 0.5,           // terrain frequency (lower = broader landforms)
+    octaves: 2,           // fbm roughness
+    seed: 7,
+    driftX: 0.5,          // lateral migration
+    driftY: -0.2,
+    morph: 0.35,          // how fast the terrain reshapes
+    animate: true,
+    majorEvery: 4,        // every Nth contour drawn heavier
+    majorOpacity: 0.34,
+    rings: true,          // pulsing focal rings
+    ringColor: "#ff5722",
+    ringOpacity: 0.13,
+    nodePath: true,       // surveyed node polyline
+    ticks: true,          // edge rulers
+    globalLayer: true,    // also paint behind the whole page
+    // --- image mode (optional alternative) ---
+    image: "",
+    size: "cover",
     position: "center",
     opacity: 0.5,
-    blend: "multiply",    // normal | multiply | luminosity | overlay
+    blend: "multiply",
     grayscale: 0,
-    keepGrid: false,      // draw the old gridlines on top of the photo
-    useTint: false,       // paint a flat colour under the photo
+    // --- shared ---
+    keepGrid: false,      // keep the old gridlines on top
+    useTint: false,
     tint: "#e9e9e6"
   }
 };
@@ -2130,17 +2573,23 @@ export default function App() {
   /* Backdrop → CSS custom properties. Every surface that used to draw
      blueprint gridlines (.bg-blueprint) reads these instead, so one
      setting swaps the texture across the whole site. */
+  const backdropCfg = useMemo(
+    () => ({ ...defaultSettings.backdrop, ...(siteSettings.backdrop || {}) }),
+    [siteSettings.backdrop]
+  );
+
   const backdropVars = useMemo(() => {
-    const bd = { ...defaultSettings.backdrop, ...(siteSettings.backdrop || {}) };
+    const bd = backdropCfg;
     const grid = 'linear-gradient(rgba(17,17,17,0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(17,17,17,0.08) 1px, transparent 1px)';
-    const hasImg = !!(bd.enabled && bd.image);
+    const hasImg = bd.mode === 'image' && !!bd.image;
+    const showGrid = bd.mode === 'grid' || bd.keepGrid;
     const repeating = bd.size === 'repeat';
     // Tint rides along as a flat gradient layer so a panel's own bg-white /
     // bg-[#e5e5e5] class survives when the tint is switched off.
-    const layers = !hasImg
-      ? grid
-      : [bd.useTint ? `linear-gradient(${bd.tint || 'transparent'}, ${bd.tint || 'transparent'})` : null, bd.keepGrid ? grid : null]
-          .filter(Boolean).join(', ') || 'none';
+    const layers = [
+      bd.useTint ? `linear-gradient(${bd.tint || 'transparent'}, ${bd.tint || 'transparent'})` : null,
+      showGrid ? grid : null
+    ].filter(Boolean).join(', ') || 'none';
     return {
       '--backdrop-layers': layers,
       '--backdrop-image': hasImg ? `url("${bd.image}")` : 'none',
@@ -2151,7 +2600,10 @@ export default function App() {
       '--backdrop-blend': bd.blend || 'normal',
       '--backdrop-gray': `${bd.grayscale ?? 0}%`,
     };
-  }, [siteSettings.backdrop]);
+  }, [backdropCfg]);
+
+  // One merged object so every consumer (canvas + CSS vars) agrees.
+  const topoOn = backdropCfg.mode === 'topo';
 
   const renderContent = () => {
     if (isLoading && activeTab !== 'admin') {
@@ -2506,6 +2958,7 @@ export default function App() {
                 className="w-[96%] relative overflow-hidden flex justify-center bg-blueprint border-x-[2px] border-t-[2px] border-[#111]"
                 style={{ height: `${containerHeightRem}rem`, minHeight: '14rem' }}
               >
+                {topoOn && <TopoField cfg={backdropCfg} />}
                 {/* 1. The Slanted Grey Background (Pure Trapezoid) */}
                 <div 
                   className="absolute inset-0 bg-[#e5e5e5] z-0 opacity-80"
@@ -2587,7 +3040,7 @@ export default function App() {
                    const span = Math.max(0, galleriaData.length - 1) * 55 + 600;
                    setGalleriaPanX(p => Math.min(span, Math.max(-span, p - e.deltaY * 2.5)));
                  }}>
-              
+              {topoOn && <TopoField cfg={backdropCfg} />}
               <div className="absolute top-8 left-8 font-mono text-[10px] font-bold tracking-widest uppercase text-[#111] bg-[#dfff00] px-3 py-1 border-[2px] border-[#111] z-20 shadow-[2px_2px_0px_#111]">
                  Timeline : Infinite
               </div>
@@ -2896,6 +3349,7 @@ export default function App() {
                   <textarea required value={newGuestMessage} onChange={(e) => setNewGuestMessage(e.target.value)} placeholder="Enter transmission..." className="w-full h-48 p-4 border-[2px] border-[#111] bg-[#f4f4f0] outline-none font-mono text-sm text-[#111] resize-none mb-6 focus:bg-white transition-colors" />
                 ) : (
                   <div className="mb-6 touch-none relative border-[2px] border-[#111] bg-blueprint">
+                    {topoOn && <TopoField cfg={backdropCfg} />}
                     <canvas ref={canvasRef} onMouseDown={startDrawing} onMouseMove={draw} onMouseUp={stopDrawing} onMouseLeave={stopDrawing} onTouchStart={startDrawing} onTouchMove={draw} onTouchEnd={stopDrawing} className="w-full h-64 cursor-crosshair relative z-10" />
                   </div>
                 )}
@@ -3435,71 +3889,163 @@ export default function App() {
                    <div className="flex flex-col md:flex-row md:justify-between md:items-end gap-3 mb-6">
                       <div>
                         <h3 className="font-serif text-3xl mb-2">Site Backdrop</h3>
-                        <p className="font-mono text-sm text-gray-600">Paints behind every panel that used to show blueprint gridlines — galleria stage, project sheets, journal body, sandbox.</p>
+                        <p className="font-mono text-sm text-gray-600">Fills every surface that used to show blueprint gridlines — galleria stage, project sheets, journal body, sandbox — plus the page behind the window.</p>
                       </div>
-                      <label className={`flex items-center gap-2 px-4 py-2.5 border-[2px] border-[#111] font-mono text-[10px] font-bold uppercase tracking-widest cursor-pointer slide-press ${siteSettings.backdrop?.enabled ? 'bg-[#dfff00]' : 'bg-white'}`}>
-                        <input type="checkbox" className="hidden" checked={!!siteSettings.backdrop?.enabled} onChange={e => setBackdrop({ enabled: e.target.checked })} />
-                        {siteSettings.backdrop?.enabled ? <Eye size={14}/> : <EyeOff size={14}/>} {siteSettings.backdrop?.enabled ? 'Active' : 'Off (grid)'}
-                      </label>
+                      <div className="flex gap-2">
+                        {[['topo','Contours'],['grid','Gridlines'],['image','Image']].map(([m, label]) => (
+                          <button key={m} onClick={() => setBackdrop({ mode: m })}
+                                  className={`font-mono text-[10px] font-bold uppercase tracking-widest px-4 py-2.5 border-[2px] border-[#111] slide-press ${backdropCfg.mode === m ? 'bg-[#111] text-[#dfff00]' : 'bg-white'}`}>
+                            {label}
+                          </button>
+                        ))}
+                      </div>
                    </div>
 
-                   <div className="grid lg:grid-cols-[minmax(0,1fr)_320px] gap-8">
-                      <div className="space-y-5">
-                         <div>
-                           <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Backdrop Image</label>
-                           <div className="flex">
-                             <input value={siteSettings.backdrop?.image || ''} onChange={e => setBackdrop({ image: e.target.value })} placeholder="https://… or upload" className="flex-1 p-3 border-[2px] border-[#111] font-mono text-sm outline-none focus:bg-[#dfff00]" />
-                             <label className="cursor-pointer bg-[#111] text-white px-6 flex items-center font-bold font-mono text-xs hover:bg-[#ff5722] transition-colors border-[2px] border-l-0 border-[#111]">
-                               <Upload size={16} className="mr-2"/> UPLOAD
-                               <input type="file" className="hidden" accept="image/*" onChange={e => handleImageUpload(e, b => setBackdrop({ image: b }))} />
+                   <div className="grid lg:grid-cols-[minmax(0,1fr)_340px] gap-8">
+                      <div className="space-y-6">
+
+                         {/* ===== TOPO MODE ===== */}
+                         {backdropCfg.mode === 'topo' && (
+                           <>
+                             <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                                <div>
+                                  <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Line Colour</label>
+                                  <div className="flex gap-2">
+                                    <input type="color" value={backdropCfg.lineColor} onChange={e => setBackdrop({ lineColor: e.target.value })} className="w-12 h-11 border-[2px] border-[#111] p-0 cursor-pointer" />
+                                    <input value={backdropCfg.lineColor} onChange={e => setBackdrop({ lineColor: e.target.value })} className="flex-1 min-w-0 p-2.5 border-[2px] border-[#111] font-mono text-xs outline-none focus:bg-[#dfff00]" />
+                                  </div>
+                                </div>
+                                <div>
+                                  <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Line Opacity ({Math.round(backdropCfg.lineOpacity * 100)}%)</label>
+                                  <input type="range" min="0.02" max="1" step="0.02" value={backdropCfg.lineOpacity} onChange={e => setBackdrop({ lineOpacity: parseFloat(e.target.value) })} className="w-full accent-[#ff5722] h-11" />
+                                </div>
+                                <div>
+                                  <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Line Weight ({backdropCfg.lineWidth}px)</label>
+                                  <input type="range" min="0.4" max="3" step="0.1" value={backdropCfg.lineWidth} onChange={e => setBackdrop({ lineWidth: parseFloat(e.target.value) })} className="w-full accent-[#ff5722] h-11" />
+                                </div>
+                                <div>
+                                  <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Contour Count ({backdropCfg.levels})</label>
+                                  <input type="range" min="3" max="40" value={backdropCfg.levels} onChange={e => setBackdrop({ levels: parseInt(e.target.value) })} className="w-full accent-[#ff5722] h-11" />
+                                </div>
+                             </div>
+
+                             <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 border-t-[2px] border-[#111] pt-5">
+                                <div>
+                                  <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Detail ({backdropCfg.detail}px cells)</label>
+                                  <input type="range" min="8" max="48" value={backdropCfg.detail} onChange={e => setBackdrop({ detail: parseInt(e.target.value) })} className="w-full accent-[#ff5722] h-11" />
+                                  <p className="font-mono text-[8px] uppercase tracking-[0.15em] text-gray-400 mt-1">Lower = smoother curves, more CPU</p>
+                                </div>
+                                <div>
+                                  <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Terrain Scale ({backdropCfg.scale}×)</label>
+                                  <input type="range" min="0.2" max="3" step="0.1" value={backdropCfg.scale} onChange={e => setBackdrop({ scale: parseFloat(e.target.value) })} className="w-full accent-[#ff5722] h-11" />
+                                </div>
+                                <div>
+                                  <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Roughness ({backdropCfg.octaves} oct)</label>
+                                  <input type="range" min="1" max="5" value={backdropCfg.octaves} onChange={e => setBackdrop({ octaves: parseInt(e.target.value) })} className="w-full accent-[#ff5722] h-11" />
+                                </div>
+                                <div>
+                                  <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Seed</label>
+                                  <div className="flex gap-2">
+                                    <input type="number" value={backdropCfg.seed} onChange={e => setBackdrop({ seed: parseInt(e.target.value) || 0 })} className="flex-1 min-w-0 p-2.5 border-[2px] border-[#111] font-mono text-xs outline-none focus:bg-[#dfff00]" />
+                                    <button onClick={() => setBackdrop({ seed: Math.floor(Math.random() * 999) })} title="New terrain" className="p-2.5 bg-white border-[2px] border-[#111] hover:bg-[#dfff00] transition-colors"><RotateCcw size={14}/></button>
+                                  </div>
+                                </div>
+                             </div>
+
+                             <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 border-t-[2px] border-[#111] pt-5">
+                                <div>
+                                  <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Drift X ({backdropCfg.driftX})</label>
+                                  <input type="range" min="-3" max="3" step="0.1" value={backdropCfg.driftX} onChange={e => setBackdrop({ driftX: parseFloat(e.target.value) })} className="w-full accent-[#ff5722] h-11" />
+                                </div>
+                                <div>
+                                  <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Drift Y ({backdropCfg.driftY})</label>
+                                  <input type="range" min="-3" max="3" step="0.1" value={backdropCfg.driftY} onChange={e => setBackdrop({ driftY: parseFloat(e.target.value) })} className="w-full accent-[#ff5722] h-11" />
+                                </div>
+                                <div>
+                                  <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Morph ({backdropCfg.morph})</label>
+                                  <input type="range" min="0" max="2" step="0.05" value={backdropCfg.morph} onChange={e => setBackdrop({ morph: parseFloat(e.target.value) })} className="w-full accent-[#ff5722] h-11" />
+                                </div>
+                                <div>
+                                  <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Index Line Every ({backdropCfg.majorEvery || 'off'})</label>
+                                  <input type="range" min="0" max="8" value={backdropCfg.majorEvery} onChange={e => setBackdrop({ majorEvery: parseInt(e.target.value) })} className="w-full accent-[#ff5722] h-11" />
+                                </div>
+                             </div>
+
+                             <div className="flex flex-wrap items-center gap-3 border-t-[2px] border-[#111] pt-5">
+                                {[['animate','Animate'],['rings','Focal Rings'],['nodePath','Node Path'],['ticks','Edge Rulers'],['globalLayer','Behind Page'],['keepGrid','Keep Gridlines']].map(([k, label]) => (
+                                  <label key={k} className={`flex items-center gap-2 px-4 py-2.5 border-[2px] border-[#111] font-mono text-[10px] font-bold uppercase tracking-widest cursor-pointer slide-press ${backdropCfg[k] ? 'bg-[#dfff00]' : 'bg-white'}`}>
+                                    <input type="checkbox" className="hidden" checked={!!backdropCfg[k]} onChange={e => setBackdrop({ [k]: e.target.checked })} />
+                                    {backdropCfg[k] ? <Check size={14}/> : <X size={14}/>} {label}
+                                  </label>
+                                ))}
+                                <div className="flex items-center gap-2">
+                                  <span className="font-mono text-[10px] font-bold uppercase text-gray-500">Ring</span>
+                                  <input type="color" value={backdropCfg.ringColor} onChange={e => setBackdrop({ ringColor: e.target.value })} className="w-12 h-10 border-[2px] border-[#111] p-0 cursor-pointer" />
+                                </div>
+                             </div>
+                           </>
+                         )}
+
+                         {/* ===== IMAGE MODE ===== */}
+                         {backdropCfg.mode === 'image' && (
+                           <>
+                             <div>
+                               <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Backdrop Image</label>
+                               <div className="flex">
+                                 <input value={backdropCfg.image || ''} onChange={e => setBackdrop({ image: e.target.value })} placeholder="https://… or upload" className="flex-1 p-3 border-[2px] border-[#111] font-mono text-sm outline-none focus:bg-[#dfff00]" />
+                                 <label className="cursor-pointer bg-[#111] text-white px-6 flex items-center font-bold font-mono text-xs hover:bg-[#ff5722] transition-colors border-[2px] border-l-0 border-[#111]">
+                                   <Upload size={16} className="mr-2"/> UPLOAD
+                                   <input type="file" className="hidden" accept="image/*" onChange={e => handleImageUpload(e, b => setBackdrop({ image: b }))} />
+                                 </label>
+                               </div>
+                             </div>
+                             <div className="grid sm:grid-cols-3 gap-4">
+                                <div>
+                                  <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Fit</label>
+                                  <select value={backdropCfg.size} onChange={e => setBackdrop({ size: e.target.value })} className="w-full p-3 border-[2px] border-[#111] font-mono text-xs uppercase bg-white outline-none">
+                                    <option value="cover">Cover</option><option value="contain">Contain</option><option value="repeat">Tile</option>
+                                  </select>
+                                </div>
+                                <div>
+                                  <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Position</label>
+                                  <select value={backdropCfg.position} onChange={e => setBackdrop({ position: e.target.value })} className="w-full p-3 border-[2px] border-[#111] font-mono text-xs uppercase bg-white outline-none">
+                                    {['center','top','bottom','left','right','top left','top right','bottom left','bottom right'].map(v => <option key={v} value={v}>{v}</option>)}
+                                  </select>
+                                </div>
+                                <div>
+                                  <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Blend</label>
+                                  <select value={backdropCfg.blend} onChange={e => setBackdrop({ blend: e.target.value })} className="w-full p-3 border-[2px] border-[#111] font-mono text-xs uppercase bg-white outline-none">
+                                    {['normal','multiply','luminosity','overlay','soft-light','darken'].map(v => <option key={v} value={v}>{v}</option>)}
+                                  </select>
+                                </div>
+                             </div>
+                             <div className="grid sm:grid-cols-2 gap-4">
+                                <div>
+                                  <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Opacity ({Math.round((backdropCfg.opacity ?? 1) * 100)}%)</label>
+                                  <input type="range" min="0" max="1" step="0.05" value={backdropCfg.opacity ?? 1} onChange={e => setBackdrop({ opacity: parseFloat(e.target.value) })} className="w-full accent-[#ff5722] h-10" />
+                                </div>
+                                <div>
+                                  <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Grayscale ({backdropCfg.grayscale ?? 0}%)</label>
+                                  <input type="range" min="0" max="100" value={backdropCfg.grayscale ?? 0} onChange={e => setBackdrop({ grayscale: parseInt(e.target.value) })} className="w-full accent-[#ff5722] h-10" />
+                                </div>
+                             </div>
+                             <label className={`inline-flex items-center gap-2 px-4 py-2.5 border-[2px] border-[#111] font-mono text-[10px] font-bold uppercase tracking-widest cursor-pointer slide-press ${backdropCfg.keepGrid ? 'bg-[#dfff00]' : 'bg-white'}`}>
+                               <input type="checkbox" className="hidden" checked={!!backdropCfg.keepGrid} onChange={e => setBackdrop({ keepGrid: e.target.checked })} />
+                               {backdropCfg.keepGrid ? <Check size={14}/> : <X size={14}/>} Keep gridlines on top
                              </label>
-                           </div>
-                         </div>
+                           </>
+                         )}
 
-                         <div className="grid sm:grid-cols-3 gap-4">
-                            <div>
-                              <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Fit</label>
-                              <select value={siteSettings.backdrop?.size} onChange={e => setBackdrop({ size: e.target.value })} className="w-full p-3 border-[2px] border-[#111] font-mono text-xs uppercase bg-white outline-none">
-                                <option value="cover">Cover</option><option value="contain">Contain</option><option value="repeat">Tile</option>
-                              </select>
-                            </div>
-                            <div>
-                              <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Position</label>
-                              <select value={siteSettings.backdrop?.position} onChange={e => setBackdrop({ position: e.target.value })} className="w-full p-3 border-[2px] border-[#111] font-mono text-xs uppercase bg-white outline-none">
-                                {['center','top','bottom','left','right','top left','top right','bottom left','bottom right'].map(v => <option key={v} value={v}>{v}</option>)}
-                              </select>
-                            </div>
-                            <div>
-                              <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Blend</label>
-                              <select value={siteSettings.backdrop?.blend} onChange={e => setBackdrop({ blend: e.target.value })} className="w-full p-3 border-[2px] border-[#111] font-mono text-xs uppercase bg-white outline-none">
-                                {['normal','multiply','luminosity','overlay','soft-light','darken'].map(v => <option key={v} value={v}>{v}</option>)}
-                              </select>
-                            </div>
-                         </div>
+                         {backdropCfg.mode === 'grid' && (
+                           <p className="font-mono text-xs text-gray-500 uppercase tracking-[0.15em] border-[2px] border-dashed border-[#111]/40 p-6">Original blueprint gridlines. No generated layer.</p>
+                         )}
 
-                         <div className="grid sm:grid-cols-2 gap-4">
-                            <div>
-                              <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Opacity ({Math.round((siteSettings.backdrop?.opacity ?? 1) * 100)}%)</label>
-                              <input type="range" min="0" max="1" step="0.05" value={siteSettings.backdrop?.opacity ?? 1} onChange={e => setBackdrop({ opacity: parseFloat(e.target.value) })} className="w-full accent-[#ff5722] h-10" />
-                            </div>
-                            <div>
-                              <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Grayscale ({siteSettings.backdrop?.grayscale ?? 0}%)</label>
-                              <input type="range" min="0" max="100" value={siteSettings.backdrop?.grayscale ?? 0} onChange={e => setBackdrop({ grayscale: parseInt(e.target.value) })} className="w-full accent-[#ff5722] h-10" />
-                            </div>
-                         </div>
-
-                         <div className="flex flex-wrap items-center gap-4">
-                            <label className={`flex items-center gap-2 px-4 py-2.5 border-[2px] border-[#111] font-mono text-[10px] font-bold uppercase tracking-widest cursor-pointer slide-press ${siteSettings.backdrop?.keepGrid ? 'bg-[#dfff00]' : 'bg-white'}`}>
-                              <input type="checkbox" className="hidden" checked={!!siteSettings.backdrop?.keepGrid} onChange={e => setBackdrop({ keepGrid: e.target.checked })} />
-                              {siteSettings.backdrop?.keepGrid ? <Check size={14}/> : <X size={14}/>} Keep gridlines on top
+                         <div className="flex flex-wrap items-center gap-4 border-t-[2px] border-[#111] pt-5">
+                            <label className={`flex items-center gap-2 px-4 py-2.5 border-[2px] border-[#111] font-mono text-[10px] font-bold uppercase tracking-widest cursor-pointer slide-press ${backdropCfg.useTint ? 'bg-[#dfff00]' : 'bg-white'}`}>
+                              <input type="checkbox" className="hidden" checked={!!backdropCfg.useTint} onChange={e => setBackdrop({ useTint: e.target.checked })} />
+                              {backdropCfg.useTint ? <Check size={14}/> : <X size={14}/>} Panel tint
                             </label>
-                            <div className="flex items-center gap-2">
-                              <label className={`flex items-center gap-2 px-4 py-2.5 border-[2px] border-[#111] font-mono text-[10px] font-bold uppercase tracking-widest cursor-pointer slide-press ${siteSettings.backdrop?.useTint ? 'bg-[#dfff00]' : 'bg-white'}`}>
-                                <input type="checkbox" className="hidden" checked={!!siteSettings.backdrop?.useTint} onChange={e => setBackdrop({ useTint: e.target.checked })} />
-                                {siteSettings.backdrop?.useTint ? <Check size={14}/> : <X size={14}/>} Tint
-                              </label>
-                              <input type="color" value={siteSettings.backdrop?.tint || '#e9e9e6'} onChange={e => setBackdrop({ tint: e.target.value })} className="w-12 h-10 border-[2px] border-[#111] p-0 cursor-pointer" />
-                            </div>
+                            <input type="color" value={backdropCfg.tint || '#e9e9e6'} onChange={e => setBackdrop({ tint: e.target.value })} className="w-12 h-10 border-[2px] border-[#111] p-0 cursor-pointer" />
                             <button onClick={() => setBackdrop({ ...defaultSettings.backdrop })} className="font-mono text-[10px] font-bold uppercase tracking-widest px-4 py-2.5 bg-white border-[2px] border-[#111] slide-press flex items-center gap-2"><RotateCcw size={14}/> Reset</button>
                          </div>
                       </div>
@@ -3507,14 +4053,17 @@ export default function App() {
                       {/* live preview of the exact treatment */}
                       <div>
                         <p className="font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-gray-500 mb-2">Preview</p>
-                        <div className="h-[260px] border-[2px] border-[#111] bg-blueprint relative overflow-hidden" style={backdropVars}>
-                           <div className="absolute inset-6 border-[2px] border-[#111] bg-white/70 backdrop-blur-[1px] flex items-center justify-center">
+                        <div className="h-[300px] border-[2px] border-[#111] bg-white bg-blueprint relative overflow-hidden" style={backdropVars}>
+                           {topoOn && <TopoField cfg={backdropCfg} />}
+                           <div className="absolute inset-6 border-[2px] border-[#111] bg-white/70 flex items-center justify-center">
                               <span className="font-mono text-[10px] uppercase tracking-[0.25em] text-[#111]">Panel content</span>
                            </div>
                         </div>
+                        <p className="font-mono text-[8px] uppercase tracking-[0.15em] text-gray-400 mt-2">Contours are drawn live on a canvas — nothing is stored as an image.</p>
                       </div>
                    </div>
                 </div>
+
               </div>
             )}
 
@@ -4287,6 +4836,10 @@ export default function App() {
                       <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Waveform Rows ({poemDeck.waveRows})</label>
                       <input type="range" min="1" max="6" value={poemDeck.waveRows} onChange={e => setDeck({ waveRows: parseInt(e.target.value) })} className="w-full accent-[#ff5722] h-12" />
                     </div>
+                    <div>
+                      <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Motion Speed ({poemDeck.motionSpeed}×)</label>
+                      <input type="range" min="0.2" max="4" step="0.1" value={poemDeck.motionSpeed ?? 1} onChange={e => setDeck({ motionSpeed: parseFloat(e.target.value) })} className="w-full accent-[#ff5722] h-12" />
+                    </div>
                   </div>
 
                   <div className="grid md:grid-cols-2 lg:grid-cols-5 gap-5 mt-6 pt-6 border-t-[2px] border-[#111]">
@@ -4302,7 +4855,7 @@ export default function App() {
                   </div>
 
                   <div className="flex flex-wrap gap-4 mt-6 pt-6 border-t-[2px] border-[#111]">
-                    {[['showWaveform','Waveform'],['showCables','Cables'],['showCropMarks','Crop Marks'],['showBarcode','Barcode'],['animate','Animate Cables']].map(([k, label]) => (
+                    {[['showWaveform','Waveform'],['showCables','Cables'],['showCropMarks','Crop Marks'],['showBarcode','Barcode'],['animate','Draw-in Cables'],['motion','Live Motion'],['pulses','Signal Pulses'],['liveWave','Live Meters'],['scanline','Scan Sweep'],['slotBlink','Slot LEDs']].map(([k, label]) => (
                       <label key={k} className={`flex items-center gap-2 px-4 py-2.5 border-[2px] border-[#111] font-mono text-[10px] font-bold uppercase tracking-widest cursor-pointer slide-press ${poemDeck[k] ? 'bg-[#dfff00]' : 'bg-white'}`}>
                         <input type="checkbox" className="hidden" checked={!!poemDeck[k]} onChange={e => setDeck({ [k]: e.target.checked })} />
                         {poemDeck[k] ? <Check size={14}/> : <X size={14}/>} {label}
@@ -4602,10 +5155,12 @@ export default function App() {
 
         /* ============================================================
            SITE BACKDROP
-           .bg-blueprint used to paint gridlines. It now paints the
-           configured backdrop photo (Admin > Settings > Backdrop) and
-           only falls back to the grid when no image is set, or when
-           "keep grid" is on and it draws on top.
+           .bg-blueprint used to hard-code gridlines. It is now just a
+           host: it isolates a stacking context so a <TopoField> canvas
+           (or, in image mode, the ::before photo layer) can sit at
+           z-index -1 — above the panel's own background colour, below
+           its content. Gridlines only appear in grid mode or when
+           "keep gridlines" is on.
            ============================================================ */
         .bg-blueprint {
           background-image: var(--backdrop-layers, linear-gradient(rgba(17,17,17,0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(17,17,17,0.08) 1px, transparent 1px));
@@ -4657,8 +5212,68 @@ export default function App() {
         }
 
         /* --- Poem deck ------------------------------------------------- */
+        /* The whole rack runs on seeded CSS animations: durations, delays
+           and drift vectors come from the generator as custom properties,
+           so nothing beats in unison and the browser composites it all
+           without a single JS frame. */
         @keyframes cableDraw  { from { stroke-dashoffset: 400; } to { stroke-dashoffset: 0; } }
         .deck-cable { stroke-dasharray: 400; animation: cableDraw 1400ms var(--ease-out-expo) both; }
+
+        /* signal pulses travelling slot -> index row */
+        @keyframes dashFlow { to { stroke-dashoffset: -240; } }
+        .deck-motion .deck-pulse {
+          stroke-dasharray: 2 34;
+          opacity: 0.85;
+          animation: dashFlow var(--pd, 3s) linear infinite;
+        }
+        .deck-pulse { opacity: 0; }
+
+        /* live meters: scaleY between two seeded heights */
+        @keyframes barBob { from { transform: scaleY(var(--s0, 0.4)); } to { transform: scaleY(var(--s1, 0.8)); } }
+        .deck-motion .deck-bar {
+          animation: barBob var(--bd, 800ms) ease-in-out var(--bdl, 0ms) infinite alternate;
+          will-change: transform;
+        }
+
+        /* slot LEDs and status dots */
+        @keyframes ledFade { 0%, 100% { opacity: 1; } 50% { opacity: 0.14; } }
+        .deck-motion .deck-led { animation: ledFade var(--ld, 2s) ease-in-out var(--ldl, 0ms) infinite; }
+
+        /* the slot field breathes rather than sitting frozen */
+        @keyframes slotDrift {
+          from { transform: translate(0, -50%); }
+          to   { transform: translate(var(--dx, 0px), calc(-50% + var(--dy, 0px))); }
+        }
+        .deck-motion .deck-slot { animation: slotDrift var(--sd, 8s) ease-in-out var(--sdl, 0ms) infinite alternate; }
+
+        /* sweep across the diagram */
+        @keyframes deckScan {
+          0%   { transform: translateY(-15%); opacity: 0; }
+          12%  { opacity: 1; }
+          88%  { opacity: 1; }
+          100% { transform: translateY(560%); opacity: 0; }
+        }
+        .deck-motion .deck-scan { animation: deckScan var(--scd, 9s) linear infinite; }
+
+        /* averaging needle */
+        @keyframes needleSweep { from { left: 0%; } to { left: 100%; } }
+        .deck-motion .deck-needle { animation: needleSweep var(--nd, 7s) ease-in-out infinite alternate; }
+        .deck-needle { left: 0; opacity: 0.7; }
+
+        /* playhead running down the index */
+        @keyframes tickPulse { 0%, 82%, 100% { opacity: 0.28; transform: scale(1); } 88% { opacity: 1; transform: scale(1.9); } }
+        .deck-motion .deck-tick { animation: tickPulse var(--td, 4s) ease-in-out var(--tdl, 0ms) infinite; }
+
+        @media (prefers-reduced-motion: reduce) {
+          .deck-motion .deck-pulse,
+          .deck-motion .deck-bar,
+          .deck-motion .deck-led,
+          .deck-motion .deck-slot,
+          .deck-motion .deck-scan,
+          .deck-motion .deck-needle,
+          .deck-motion .deck-tick { animation: none; }
+          .deck-motion .deck-pulse { opacity: 0; }
+        }
         .deck-row {
           transition: transform 260ms var(--ease-out-expo), letter-spacing 260ms ease, filter 260ms ease;
         }
@@ -4827,9 +5442,12 @@ export default function App() {
         }
       `}} />
 
-      <div className="min-h-screen bg-[#e8e8e3] p-4 md:p-8 flex items-center justify-center relative transition-all duration-1000"
+      <div className="min-h-screen bg-[#e8e8e3] p-4 md:p-8 flex items-center justify-center relative isolate transition-all duration-1000"
            style={backdropVars}>
-        
+
+        {/* Procedural terrain behind the entire page */}
+        {topoOn && backdropCfg.globalLayer && <TopoField cfg={backdropCfg} fixed />}
+
         {/* GLOBAL TOAST NOTIFICATION */}
         {toast && (
           <div
@@ -4993,6 +5611,7 @@ export default function App() {
             
             {/* INNER BLUEPRINT CONTENT FRAME */}
             <div className="flex-1 m-4 md:m-6 mt-3 border-[2px] border-[#111] bg-white bg-blueprint flex flex-col relative overflow-hidden shadow-[inset_0_0_20px_rgba(0,0,0,0.05)]">
+              {topoOn && <TopoField cfg={backdropCfg} />}
               
               {isAdmin && siteSettings?.wip?.[activeTab] && activeTab !== 'admin' && (
                 <div className="absolute top-0 left-0 w-full bg-[#ff5722] text-white text-center py-1.5 font-mono font-bold text-[10px] uppercase tracking-widest z-50 border-b-[2px] border-[#111]">
@@ -5311,6 +5930,7 @@ export default function App() {
                     
                     {selectedItem.type === 'gallery' ? (
                       <div className="w-full bg-blueprint border-b-[4px] border-[#111] min-h-[75vh] relative overflow-hidden p-8">
+                        {topoOn && <TopoField cfg={backdropCfg} />}
                          {isAdmin && (
                            <div className="absolute top-4 left-4 z-50 flex gap-3">
                               <span className="bg-[#111] text-[#00ff00] font-mono font-bold px-4 py-2 text-xs uppercase tracking-widest border-[2px] border-[#00ff00]">ADMIN OVERRIDE: DRAG ACTIVE</span>
