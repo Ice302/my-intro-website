@@ -576,6 +576,8 @@ const TopoEngine = (() => {
   const MAX_PIXELS = 1800000;   // offscreen buffer ceiling (~7MB RGBA)
   const MAX_CELLS  = 24000;     // sample-grid ceiling
   const MIN_FRAME  = 1000 / 24; // 24fps is plenty for terrain this slow
+  const ASCII_FRAME = 1000 / 8;  // ASCII wants to be choppy; 8fps also keeps
+                                 // thousands of fillText calls affordable
 
   const clients = new Map();    // canvas -> ctx
   let cfg = null;
@@ -607,7 +609,11 @@ const TopoEngine = (() => {
 
     // Grid derived from the buffer, then clamped by cell count so a
     // 4K monitor with detail=8 can't ask for a million samples.
-    let c = _clamp(Number(cfg.detail) || 14, 6, 60) * bufScale;
+    // ASCII needs a coarser grid — one glyph per cell, not one sample.
+    const baseCell = cfg.mode === 'ascii'
+      ? _clamp(Number(cfg.asciiSize) || 14, 8, 40)
+      : _clamp(Number(cfg.detail) || 14, 6, 60);
+    let c = baseCell * bufScale;
     let nc = Math.ceil(bufW / c) + 2, nr = Math.ceil(bufH / c) + 2;
     while (nc * nr > MAX_CELLS && c < 400) {
       c *= 1.18;
@@ -743,7 +749,32 @@ const TopoEngine = (() => {
     }
   };
 
+  // One glyph per cell, chosen from a ramp by field density. Reuses the same
+  // noise field as the contours, so the two modes share all the machinery.
+  const renderAscii = (t) => {
+    sampleField(t);
+    offCtx.clearRect(0, 0, bufW, bufH);
+    const ramp = (cfg.asciiRamp && cfg.asciiRamp.length ? cfg.asciiRamp : ' .:-=+*#%@');
+    const last = ramp.length - 1;
+    const px = Math.max(6, cell * 1.5);
+    offCtx.font = px + 'px ui-monospace, SFMono-Regular, Menlo, monospace';
+    offCtx.textBaseline = 'top';
+    offCtx.fillStyle = cfg.lineColor || '#111111';
+    offCtx.globalAlpha = Number(cfg.lineOpacity ?? 0.17);
+    for (let j = 0; j < rows; j++) {
+      const y = j * cell;
+      for (let i = 0; i < cols; i++) {
+        const v = field[j * cols + i];
+        const ch = ramp[_clamp(Math.floor(v * ramp.length), 0, last) | 0];
+        if (ch === ' ') continue;
+        offCtx.fillText(ch, i * cell, y);
+      }
+    }
+    offCtx.globalAlpha = 1;
+  };
+
   const renderBuffer = (t) => {
+    if (cfg.mode === 'ascii') return renderAscii(t);
     sampleField(t);
     offCtx.clearRect(0, 0, bufW, bufH);
     offCtx.lineJoin = 'round';
@@ -788,7 +819,7 @@ const TopoEngine = (() => {
     if (!cfg || clients.size === 0) return;
     const moving = cfg.animate && !reduced && !document.hidden;
     if (!moving && !needsField) { return; }
-    if (now - last < MIN_FRAME) return;
+    if (now - last < (cfg.mode === 'ascii' ? ASCII_FRAME : MIN_FRAME)) return;
     last = now;
     ensureBuffer();
     renderBuffer(moving ? (now - t0) / 1000 : 0);
@@ -996,7 +1027,7 @@ const Sticker = ({ s, accent, ink, index = 0, speed = 1, draggable = false, onDr
    Photo goes duotone, decals swarm in on a stagger, HUD chrome
    snaps to the corners. All of it driven by lightboxConfig.
    ============================================================ */
-const GalleriaLightbox = ({ payload, cfg, onClose, onPrev, onNext, total }) => {
+const GalleriaLightbox = ({ payload, cfg, onClose, onPrev, onNext, total, ascii }) => {
   if (!payload) return null;
   const { item, index } = payload;
   const accent = cfg.accent || '#c6ff2e';
@@ -1008,6 +1039,11 @@ const GalleriaLightbox = ({ payload, cfg, onClose, onPrev, onNext, total }) => {
     <div className="fixed inset-0 z-[85] flex items-center justify-center p-4 md:p-8"
          style={{ background: `${ink}f2`, animation: 'backdropIn 260ms ease-out both' }}
          onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+
+      {ascii?.enabled && (
+        <AsciiTexture seed={91} ramp={ascii.ramp} size={ascii.size} speed={ascii.speed} animate={ascii.animate}
+                      color={ascii.inkOnDark} opacity={(ascii.opacityDark ?? 0.06) * 0.7} className="fixed" mask={ascii.mask} clear={ascii.clear} />
+      )}
 
       {/* Corner rules */}
       <div className="pointer-events-none absolute inset-4 md:inset-6 z-[95]">
@@ -1021,7 +1057,7 @@ const GalleriaLightbox = ({ payload, cfg, onClose, onPrev, onNext, total }) => {
 
         {/* --- PHOTO + DUOTONE STACK --- */}
         <div className="absolute inset-0" style={{ background: accent }}>
-          <img src={item.image} alt="" className="absolute inset-0 w-full h-full object-cover"
+          <img loading="lazy" decoding="async" src={item.image} alt="" className="absolute inset-0 w-full h-full object-cover"
                style={{ filter: cfg.duotone ? 'grayscale(1) contrast(1.15) brightness(1.05)' : 'none', animation: 'lbPhotoIn 900ms var(--ease-out-expo) both' }} />
           {cfg.duotone && <div className="absolute inset-0" style={{ background: accent, mixBlendMode: 'multiply' }} />}
           {cfg.duotone && <div className="absolute inset-0" style={{ background: ink, mixBlendMode: 'lighten', opacity: 0.12 }} />}
@@ -1062,9 +1098,9 @@ const GalleriaLightbox = ({ payload, cfg, onClose, onPrev, onNext, total }) => {
           <div className="absolute bottom-4 right-4 w-[210px] rounded-xl overflow-hidden sticker-pop"
                style={{ background: ink, border: `2px solid ${accent}`, animationDelay: `${420 / speed}ms` }}>
             {[cfg.hudTitle, cfg.hudSub].filter(Boolean).map((row, i) => (
-              <div key={i} className="flex items-center justify-between px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.2em]"
+              <div key={i} className="flex items-center justify-between gap-2 px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.2em]"
                    style={{ color: accent, borderTop: i ? `1px solid ${accent}55` : 'none' }}>
-                <span>{row}</span>
+                <span className="min-w-0 break-words">{row}</span>
                 <span className="w-5 h-5 rounded-full flex items-center justify-center text-[8px]" style={{ border: `1px solid ${accent}` }}>{i ? '▸' : '◉'}</span>
               </div>
             ))}
@@ -1082,7 +1118,7 @@ const GalleriaLightbox = ({ payload, cfg, onClose, onPrev, onNext, total }) => {
               </div>
               <div className="font-mono text-[8px] uppercase tracking-[0.15em] space-y-0.5" style={{ color: ink }}>
                 {(cfg.metaRows || []).map(m => (
-                  <div key={m.id} className="flex gap-2"><span className="opacity-60">{m.label}</span><span className="font-bold">{fill(m.value)}</span></div>
+                  <div key={m.id} className="flex gap-2 min-w-0"><span className="opacity-60 shrink-0">{m.label}</span><span className="font-bold truncate">{fill(m.value)}</span></div>
                 ))}
               </div>
             </div>
@@ -1120,6 +1156,564 @@ const GalleriaLightbox = ({ payload, cfg, onClose, onPrev, onNext, total }) => {
    wires into a highlighted index on the right; each highlighted
    row is a poem.
    ============================================================ */
+/* ============================================================
+   EDITORIAL GALLERIA VIEWER
+   The alternative to the scrapbook lightbox: a dark photo-essay
+   spread. A circular medallion carries the title and standfirst;
+   the clicked plate and its neighbours cascade across the right
+   as overlapping cards with caption blocks tucked under them.
+
+   Switch between this and the scrapbook in Admin > Lightbox.
+   ============================================================ */
+const EditorialLightbox = ({ payload, cfg, items, onClose, onPrev, onNext, onJump, ascii }) => {
+  if (!payload) return null;
+  const { item, index } = payload;
+  const paper = cfg.edPaper || '#e8e3d5';
+  const ink = cfg.edInk || '#16150f';
+  const accent = cfg.edAccent || '#e8552a';
+  const total = items.length;
+
+  // The cascade: the active plate plus the next few, fanned out.
+  const cascade = Array.from({ length: Math.min(4, total) })
+    .map((_, k) => ({ it: items[(index + k) % total], i: (index + k) % total, k }));
+
+  return (
+    <div className="fixed inset-0 z-[85] overflow-y-auto hide-scrollbar"
+         style={{ background: ink, animation: 'backdropIn 320ms ease-out both' }}
+         onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+
+      {/* drafting grid + frame */}
+      {ascii?.enabled
+        ? <AsciiTexture seed={61} ramp={ascii.ramp} size={ascii.size} speed={ascii.speed} animate={ascii.animate}
+                        color={ascii.inkOnDark} opacity={ascii.opacityDark} className="fixed" mask={ascii.mask} clear={ascii.clear} />
+        : <div className="fixed inset-0 ed-grid pointer-events-none" style={{ color: paper }} />}
+      <div className="fixed inset-3 md:inset-6 border pointer-events-none" style={{ borderColor: `${paper}1f` }} />
+
+      <div className="relative min-h-full px-5 md:px-12 py-6 md:py-10 flex flex-col">
+
+        {/* ---------- HEADER ---------- */}
+        <div className="flex items-start justify-between gap-6 shrink-0">
+          <div className="min-w-0">
+            <p className="font-mono text-[9px] uppercase tracking-[0.32em] mb-1" style={{ color: `${paper}66` }}>
+              {cfg.edKicker}
+            </p>
+            <p className="font-serif text-lg md:text-2xl leading-none" style={{ color: paper }}>
+              {cfg.edMasthead}
+            </p>
+          </div>
+          <div className="flex items-center gap-4 shrink-0">
+            <span className="hidden md:block font-mono text-[9px] uppercase tracking-[0.28em]" style={{ color: `${paper}55` }}>
+              {String(index + 1).padStart(2, '0')} / {String(total).padStart(2, '0')}
+            </span>
+            <button onClick={onClose} aria-label="Close" className="ed-arrow w-10 h-10 slide-press"
+                    style={{ color: paper }}><X size={16} /></button>
+          </div>
+        </div>
+
+        <div className="grid lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] gap-10 lg:gap-6 items-center flex-1 py-8 md:py-12">
+
+          {/* ---------- MEDALLION ---------- */}
+          <div className="relative flex items-center justify-center anim-rise">
+            {/* the ring */}
+            <span aria-hidden="true"
+                  className="absolute rounded-full pointer-events-none hidden sm:block"
+                  style={{
+                    width: 'min(74vw, 460px)', height: 'min(74vw, 460px)',
+                    border: `1px solid ${paper}30`,
+                    animation: 'edRingIn 900ms var(--ease-out-expo) both'
+                  }} />
+            <span aria-hidden="true"
+                  className="absolute rounded-full pointer-events-none hidden sm:block"
+                  style={{
+                    width: 'min(84vw, 540px)', height: 'min(84vw, 540px)',
+                    border: `1px solid ${paper}14`,
+                    animation: 'edRingIn 1100ms var(--ease-out-expo) 120ms both'
+                  }} />
+
+            <div className="relative max-w-[360px] text-center sm:text-left px-2">
+              <h2 className="font-serif uppercase leading-[1.06] text-2xl md:text-[2.1rem] tracking-tight mb-2"
+                  style={{ color: paper, animation: 'edFadeUp 700ms var(--ease-out-expo) 160ms both' }}>
+                {item.title || cfg.edFallbackTitle}
+              </h2>
+              <p className="font-serif italic text-sm mb-5" style={{ color: `${paper}80`, animation: 'edFadeUp 700ms var(--ease-out-expo) 240ms both' }}>
+                {item.date ? `By — ${cfg.edByline}, ${item.date}` : `By — ${cfg.edByline}`}
+              </p>
+
+              {/* drop cap standfirst */}
+              {(item.caption || cfg.edStandfirst) && (
+                <p className="user-copy font-serif text-[12.5px] leading-[1.75] ed-dropcap text-left"
+                   style={{ color: `${paper}b0`, animation: 'edFadeUp 700ms var(--ease-out-expo) 320ms both' }}>
+                  {item.caption || cfg.edStandfirst}
+                </p>
+              )}
+
+              <button onClick={onNext} aria-label="Next plate"
+                      className="ed-arrow w-12 h-12 mt-6 slide-press"
+                      style={{ color: paper, animation: 'edFadeUp 700ms var(--ease-out-expo) 400ms both' }}>
+                <ChevronRight size={18} />
+              </button>
+            </div>
+          </div>
+
+          {/* ---------- CASCADE ---------- */}
+          <div className="relative min-h-[340px] md:min-h-[420px]">
+            <div className="mb-4 max-w-[280px]">
+              <EdLabel color={`${paper}70`} right={cfg.edSectionYears}>{cfg.edSectionLabel}</EdLabel>
+            </div>
+
+            <div className="relative flex items-start">
+              {cascade.map(({ it, i, k }) => (
+                <button
+                  key={`${it.id}-${k}`}
+                  onClick={() => (k === 0 ? null : onJump(i))}
+                  className="group relative shrink-0 text-left transition-transform duration-500"
+                  style={{
+                    marginLeft: k === 0 ? 0 : -34,
+                    zIndex: 10 - k,
+                    transform: `translateY(${k * 16}px) rotate(${(k % 2 ? 1 : -1) * k * 0.7}deg)`,
+                    animation: `edCardIn 760ms var(--ease-out-expo) ${180 + k * 110}ms both`,
+                    cursor: k === 0 ? 'default' : 'pointer',
+                    opacity: k === 0 ? 1 : 0.82
+                  }}>
+                  <div className="relative overflow-hidden"
+                       style={{ width: k === 0 ? 168 : 140, background: paper, padding: 7, boxShadow: `0 18px 40px ${ink}cc` }}>
+                    <img loading="lazy" decoding="async" src={it.image} alt=""
+                         className="w-full object-cover transition-transform duration-700 group-hover:scale-[1.04]"
+                         style={{ height: k === 0 ? 190 : 158, filter: 'grayscale(1) contrast(1.05)' }} />
+                  </div>
+                  {/* caption slip */}
+                  <div className="relative -mt-1 ed-notch px-2.5 py-2 max-w-[168px]"
+                       style={{ background: paper, color: ink }}>
+                    <p className="font-serif text-[10px] leading-tight break-words">{it.title || cfg.edFallbackTitle}</p>
+                    <p className="font-mono text-[7px] uppercase tracking-[0.2em] mt-1 opacity-60">{it.date || '—'}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            {/* secondary section marker, as on the reference spread */}
+            <div className="mt-10 flex items-center gap-4 max-w-[320px]">
+              <div className="min-w-0 flex-1">
+                <EdLabel color={`${paper}55`}>{cfg.edSectionLabel2}</EdLabel>
+              </div>
+              <button onClick={onPrev} aria-label="Previous plate" className="ed-arrow w-9 h-9 shrink-0 slide-press" style={{ color: `${paper}99` }}>
+                <ChevronLeft size={14} />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* ---------- FOOTER ---------- */}
+        <div className="flex flex-wrap items-center justify-between gap-4 shrink-0 pt-4"
+             style={{ borderTop: `1px solid ${paper}1a` }}>
+          <div className="flex flex-wrap gap-4 font-mono text-[9px] uppercase tracking-[0.22em]" style={{ color: `${paper}55` }}>
+            {(cfg.edFooterLinks || '').split(',').map((l, i) => l.trim() && (
+              <span key={i} className="hover:opacity-100 transition-opacity">{l.trim()}</span>
+            ))}
+          </div>
+          <div className="flex items-center gap-1.5">
+            {items.map((_, i) => (
+              <button key={i} onClick={() => onJump(i)} aria-label={`Plate ${i + 1}`}
+                      className="transition-all duration-300"
+                      style={{
+                        width: i === index ? 18 : 5, height: 5,
+                        background: i === index ? accent : `${paper}33`
+                      }} />
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/* ============================================================
+   useInView
+   Every ambient animation below is suspended while its box is
+   scrolled out of view, so three decorative pieces on one page
+   cost nothing when you aren't looking at them.
+   ============================================================ */
+const useInView = (ref, rootMargin = '200px') => {
+  const [seen, setSeen] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof IntersectionObserver === 'undefined') { setSeen(true); return; }
+    const io = new IntersectionObserver(([e]) => setSeen(e.isIntersecting), { rootMargin });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [ref, rootMargin]);
+  return seen;
+};
+
+/* ============================================================
+   TEXT ORBIT
+   A word repeated at many depths, circling a figure. Each word is
+   an arm rotating about the centre with a counter-rotating label
+   so the type stays upright — pure CSS transforms, no JS per
+   frame, and the whole field freezes when off-screen.
+   ============================================================ */
+// A human silhouette drawn as one closed path in a shifted-weight stance
+// (hip out, opposite knee soft, one arm swung clear of the body). Blurred it
+// reads as a photographed figure rather than a drawing, and it ships as ~1KB
+// of path data instead of an image.
+const FIGURE_PATH = "M212 18 C248 18 264 46 260 86 C258 106 252 120 244 130 C242 138 241 144 240 150 C276 157 306 174 318 200 C332 228 344 268 350 310 C356 350 356 392 352 424 C350 442 345 456 337 464 C329 457 325 444 324 427 C321 392 318 352 312 314 C305 276 296 242 286 216 C280 246 276 294 274 334 C272 362 279 392 284 422 C290 470 285 530 278 580 C272 640 267 702 265 762 C264 800 267 840 271 864 C273 876 261 883 242 881 C228 879 223 869 223 852 C225 802 228 744 226 702 C224 652 219 602 215 560 L204 560 C199 602 193 652 189 702 C186 748 187 802 188 852 C188 870 181 880 166 882 C147 884 138 876 141 864 C147 839 151 799 150 761 C148 701 141 640 137 580 C131 530 127 470 133 422 C138 392 143 362 141 334 C139 294 136 246 131 216 C124 242 118 274 115 310 C113 348 115 388 111 420 C109 436 105 448 98 456 C91 448 87 436 85 418 C80 386 78 346 80 308 C82 266 90 224 102 198 C114 174 146 157 182 150 C181 144 180 138 178 130 C170 120 164 106 162 86 C158 46 176 18 212 18 Z";
+
+const TextOrbit = ({ cfg }) => {
+  const hostRef = useRef(null);
+  const live = useInView(hostRef);
+  const word = cfg.word || 'POISK';
+  const count = Math.max(8, Math.min(320, Number(cfg.count) || 170));
+  // Only a slice of the field actually orbits; the rest is static type, which
+  // costs a single paint. That is how the field gets this dense and still
+  // idles at zero CPU.
+  // Density is free (static type), motion is not — so the animated subset is
+  // capped at 160 regardless of how high the copy count is pushed.
+  const moving = Math.max(0, Math.min(count, 160, Number(cfg.moving) ?? 80));
+  const speed = Math.max(0.1, Number(cfg.speed) || 1);
+
+  const motes = useMemo(() => Array.from({ length: count }).map((_, i) => ({
+    i,
+    orbits: i < moving,
+    r: 8 + seededRand(i, 41) * 46,
+    x: seededRand(i, 61) * 100,
+    y: seededRand(i, 62) * 100,
+    size: 7 + Math.pow(seededRand(i, 42), 1.7) * 21,
+    dur: (30 + seededRand(i, 43) * 60) / speed,
+    start: seededRand(i, 44) * 360,
+    rev: seededRand(i, 45) > 0.55,
+    opacity: 0.1 + Math.pow(seededRand(i, 46), 1.3) * 0.9,
+    blur: seededRand(i, 47) > 0.66 ? (0.5 + seededRand(i, 48) * 2.4) : 0,
+    bold: seededRand(i, 49) > 0.62,
+    squash: 0.8 + seededRand(i, 50) * 0.36
+  })), [count, moving, speed]);
+
+  const wordStyle = (m) => ({
+    fontSize: m.size + 'px',
+    fontWeight: m.bold ? 700 : 400,
+    color: cfg.wordColor || '#111111',
+    opacity: m.opacity,
+    filter: m.blur ? 'blur(' + m.blur + 'px)' : 'none',
+    letterSpacing: '0.06em'
+  });
+
+  return (
+    <div ref={hostRef}
+         className={'relative w-full overflow-hidden select-none ' + (live ? 'orbit-live' : '')}
+         style={{
+           aspectRatio: cfg.ratio || '4 / 5',
+           maxHeight: 640,
+           background: 'linear-gradient(160deg, ' + (cfg.bgTop || '#ededed') + ' 0%, ' + (cfg.bgBottom || '#b4b4b4') + ' 100%)'
+         }}>
+
+      {/* ---- THE FIGURE ---- */}
+      <div className="absolute inset-0 flex items-end justify-center pointer-events-none">
+        {cfg.image ? (
+          <img loading="lazy" decoding="async" src={cfg.image} alt=""
+               className="h-[88%] w-auto object-contain"
+               style={{ filter: 'grayscale(1) contrast(1.1) blur(' + (cfg.figureBlur ?? 12) + 'px)', opacity: cfg.figureOpacity ?? 0.95 }} />
+        ) : (
+          <svg viewBox="0 0 440 910" preserveAspectRatio="xMidYMax meet" className="h-[92%] w-auto"
+               style={{ filter: 'blur(' + (cfg.figureBlur ?? 12) + 'px)', opacity: cfg.figureOpacity ?? 0.94 }}>
+            <g transform="rotate(-2.5 220 455)">
+              <path d={FIGURE_PATH} fill={cfg.figureColor || '#0d0d0d'} />
+            </g>
+          </svg>
+        )}
+      </div>
+
+      {/* ---- STATIC FIELD (the bulk of the density) ---- */}
+      <div className="absolute inset-0">
+        {motes.filter(m => !m.orbits).map(m => (
+          <span key={m.i} className="absolute font-mono whitespace-nowrap"
+                style={{ left: m.x + '%', top: m.y + '%', transform: 'translate(-50%,-50%)', ...wordStyle(m) }}>
+            {word}
+          </span>
+        ))}
+      </div>
+
+      {/* ---- ORBITING TYPE ---- */}
+      <div className="absolute inset-0">
+        {motes.filter(m => m.orbits).map(m => (
+          <div key={m.i} className="orbit-arm absolute left-1/2 top-1/2"
+               style={{ '--dur': m.dur + 's', '--start': m.start + 'deg', animationDirection: m.rev ? 'reverse' : 'normal', transform: 'scaleY(' + m.squash + ')' }}>
+            <div style={{ transform: 'translateX(' + m.r + 'vmin)' }}>
+              <span className="orbit-word block font-mono whitespace-nowrap"
+                    style={{ '--dur': m.dur + 's', animationDirection: m.rev ? 'reverse' : 'normal', ...wordStyle(m) }}>
+                {word}
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {cfg.caption && (
+        <p className="absolute bottom-4 left-5 font-mono text-[9px] uppercase tracking-[0.3em]" style={{ color: cfg.wordColor || '#111' }}>{cfg.caption}</p>
+      )}
+    </div>
+  );
+};
+
+/* ============================================================
+   TEXT DISC
+   A pressed disc with the credits set around concentric rings.
+   Rings are split across three stacked <svg> layers so the spin
+   is three composited element transforms instead of one transform
+   per ring — the difference between smooth and stuttering once
+   there is real text on the paths.
+   ============================================================ */
+const TextDisc = ({ cfg }) => {
+  const hostRef = useRef(null);
+  const live = useInView(hostRef);
+  const S = 600, C = S / 2;
+  const ringCount = Math.max(3, Math.min(16, Number(cfg.rings) || 11));
+  const speed = Math.max(0.1, Number(cfg.speed) || 1);
+  const words = (cfg.text || '').trim();
+
+  // Chop the text into per-ring runs, longest ring first (outermost
+  // circumference holds the most characters).
+  const rings = useMemo(() => {
+    const outer = Number(cfg.outerRadius) || 268;
+    const inner = Number(cfg.innerRadius) || 88;
+    const step = (outer - inner) / Math.max(1, ringCount - 1);
+    const radii = Array.from({ length: ringCount }, (_, i) => outer - i * step);
+    const totalChars = radii.reduce((sum, r) => sum + Math.floor((2 * Math.PI * r) / ((Number(cfg.fontSize) || 11) * 0.58)), 0);
+    const src = words.length ? words.repeat(Math.max(1, Math.ceil(totalChars / words.length))) : '';
+    let cursor = 0;
+    return radii.map((r, i) => {
+      const cap = Math.floor((2 * Math.PI * r) / ((Number(cfg.fontSize) || 11) * 0.58));
+      const slice = src.slice(cursor, cursor + cap);
+      cursor += cap;
+      return { i, r, text: slice, layer: i % 3 };
+    });
+  }, [words, ringCount, cfg.outerRadius, cfg.innerRadius, cfg.fontSize]);
+
+  const arc = (r) => `M ${C} ${C - r} A ${r} ${r} 0 1 1 ${C - 0.01} ${C - r} A ${r} ${r} 0 1 1 ${C} ${C - r}`;
+
+  return (
+    <div ref={hostRef} className="relative w-full flex items-center justify-center overflow-hidden"
+         style={{ background: cfg.bg || '#050505', aspectRatio: '1 / 1', maxHeight: 620 }}>
+      <div className="relative w-full h-full max-w-[620px] max-h-[620px]">
+
+        {/* disc body */}
+        <div className="absolute rounded-full"
+             style={{
+               inset: '6%',
+               background: `radial-gradient(circle at 38% 30%, ${cfg.disc || '#141414'}, #050505 78%)`,
+               boxShadow: `inset 0 0 60px rgba(0,0,0,0.9), 0 0 0 1px ${cfg.ink || '#ffffff'}14`
+             }} />
+
+        {/* three counter-rotating layers */}
+        {[0, 1, 2].map(layer => (
+          <svg key={layer} viewBox={`0 0 ${S} ${S}`}
+               className={`absolute inset-0 w-full h-full ${live ? 'disc-layer' : ''}`}
+               style={{
+                 '--dur': `${(46 + layer * 26) / speed}s`,
+                 animationDirection: layer === 1 ? 'reverse' : 'normal'
+               }}>
+            <defs>
+              {rings.filter(r => r.layer === layer).map(r => (
+                <path key={r.i} id={`tdisc-${cfg.uid || 'a'}-${r.i}`} d={arc(r.r)} fill="none" />
+              ))}
+            </defs>
+            {rings.filter(r => r.layer === layer).map(r => (
+              <text key={r.i} fill={cfg.ink || '#ffffff'}
+                    fontSize={Number(cfg.fontSize) || 11}
+                    fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
+                    letterSpacing="0.5">
+                <textPath href={`#tdisc-${cfg.uid || 'a'}-${r.i}`} startOffset="0%">{r.text}</textPath>
+              </text>
+            ))}
+          </svg>
+        ))}
+
+        {/* centre hole */}
+        <div className="absolute rounded-full"
+             style={{
+               inset: '43.5%',
+               background: cfg.bg || '#050505',
+               boxShadow: `0 0 0 1px ${cfg.ink || '#ffffff'}22, inset 0 0 0 10px ${cfg.disc || '#141414'}`
+             }} />
+        <div className="absolute rounded-full" style={{ inset: '47.5%', background: cfg.bg || '#050505', boxShadow: `0 0 0 1px ${cfg.ink || '#ffffff'}33` }} />
+
+        {cfg.mark && (
+          <span className="absolute bottom-[14%] right-[16%] font-serif italic text-lg" style={{ color: cfg.ink || '#fff' }}>{cfg.mark}</span>
+        )}
+      </div>
+    </div>
+  );
+};
+
+/* ============================================================
+   FILE CABINET
+   Files stand vertically in the drawer. Pull one and it lifts out
+   into a layered spread — folder page, excerpt card, receipt slip.
+   Only the opened file mounts its documents, so a drawer of thirty
+   costs the same as a drawer of three.
+   ============================================================ */
+const FileCabinet = ({ cfg, files, openId, onOpen, ascii }) => {
+  const active = files.find(f => f.id === openId) || null;
+  const ink = cfg.ink || '#f2f2f2';
+  const drawer = cfg.drawer || '#1f42e0';
+  // Each paper surface gets its own generated character field, seeded off the
+  // file so two documents never share a pattern.
+  const Tex = ({ s: seed, tone = 'light' }) => (ascii?.enabled ? (
+    <AsciiTexture seed={seed} ramp={ascii.ramp} size={ascii.size} speed={ascii.speed} animate={ascii.animate}
+                  mask={ascii.mask} clear={ascii.clear}
+                  color={tone === 'dark' ? ascii.inkOnDark : ascii.inkOnLight}
+                  opacity={tone === 'dark' ? ascii.opacityDark : ascii.opacityLight} />
+  ) : null);
+
+  return (
+    <div className="relative w-full overflow-hidden" style={{ background: cfg.shell || '#0b0b0b' }}>
+      <Tex s={3} tone="dark" />
+
+      {/* ---- HEADER ---- */}
+      <div className="px-5 md:px-10 pt-8 pb-7">
+        <div className="flex flex-wrap items-start justify-between gap-5">
+          <div className="min-w-0">
+            <p className="font-mono text-[9px] uppercase tracking-[0.24em] mb-3" style={{ color: ink + '66' }}>{cfg.breadcrumb}</p>
+            <h3 className="font-serif leading-[0.95] text-4xl md:text-6xl break-words" style={{ color: ink }}>
+              {active ? active.title : cfg.title}
+            </h3>
+          </div>
+          <div className="font-mono text-[9px] leading-relaxed tracking-[0.1em] max-w-[220px] shrink-0" style={{ color: ink + '77' }}>
+            <p className="whitespace-pre-line break-words">{active ? (active.note || cfg.note) : cfg.note}</p>
+            <p className="mt-3">{active ? active.date : cfg.date}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* ---- DRAWER ---- */}
+      <div className="relative px-4 md:px-8 py-8" style={{ background: drawer }}>
+
+        {/*
+          Layout note: this used to position the excerpt and receipt
+          absolutely over the page, which covered body text the moment an
+          entry ran long. Everything below is in normal flow — a grid with
+          the page in one column and the loose material in the other — so no
+          amount of admin-entered text can collide. The only overlap left is
+          a deliberate 14px tuck into the page's own padding, which contains
+          no text at any breakpoint.
+        */}
+        <div className="grid lg:grid-cols-[auto_minmax(0,1fr)] gap-5 lg:gap-6 items-start">
+
+          {/* ---- SPINE RAIL ---- */}
+          <div className="flex lg:flex-col gap-2 overflow-x-auto lg:overflow-x-visible lg:overflow-y-auto lg:max-h-[560px] hide-scrollbar pb-1 lg:pb-0 shrink-0">
+            {files.map((f, i) => {
+              const open = f.id === openId;
+              return (
+                <button key={f.id} onClick={() => onOpen(open ? null : f.id)} title={f.title}
+                        className="cab-spine relative shrink-0 flex items-center justify-center"
+                        style={{
+                          background: f.tabColor || '#c8281e',
+                          width: 42, height: 168,
+                          '--d': i,
+                          // Always readable against the drawer, whatever colour
+                          // the spine is set to in the admin panel.
+                          outline: open ? '2px solid ' + ink : '1px solid rgba(0,0,0,0.35)',
+                          outlineOffset: open ? '2px' : '0',
+                          boxShadow: open
+                            ? '0 12px 26px rgba(0,0,0,0.45)'
+                            : '0 4px 12px rgba(0,0,0,0.3)',
+                          transform: 'translateY(' + (open ? -10 : 0) + 'px)'
+                        }}>
+                  <span className="font-mono text-[9px] uppercase tracking-[0.16em] whitespace-nowrap overflow-hidden"
+                        style={{ writingMode: 'vertical-rl', color: f.tabInk || '#fff', maxHeight: 148 }}>
+                    {f.tab || f.title}
+                  </span>
+                </button>
+              );
+            })}
+            {files.length === 0 && (
+              <p className="font-mono text-[10px] uppercase tracking-[0.2em] py-6" style={{ color: ink + '99' }}>Drawer empty</p>
+            )}
+          </div>
+
+          {/* ---- THE PULLED FILE ---- */}
+          <div className="min-w-0">
+            {!active ? (
+              <div className="min-h-[220px] md:min-h-[320px] flex items-center justify-center"
+                   style={{ border: '1px dashed ' + ink + '44' }}>
+                <p className="font-mono text-[10px] uppercase tracking-[0.25em] text-center px-4" style={{ color: ink + '99' }}>{cfg.emptyHint}</p>
+              </div>
+            ) : (
+              <div key={active.id} className="grid lg:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)] gap-0 items-start">
+
+                {/* folder page — text column, never overlapped */}
+                <div className="cab-page relative z-10 overflow-hidden p-5 md:p-8 pl-10 md:pl-14 lg:pr-12"
+                     style={{ background: cfg.paper || '#f4f1e6', animation: 'cabPage 620ms var(--ease-out-expo) both' }}>
+                  <Tex s={active.id} />
+                  {[18, 46, 74].map(t => (
+                    <span key={t} className="absolute left-4 md:left-6 w-2.5 h-2.5 rounded-full" style={{ top: t + '%', background: drawer }} />
+                  ))}
+
+                  <div className="flex items-start justify-between gap-4 mb-4">
+                    <h4 className="font-serif italic text-2xl md:text-4xl min-w-0 break-words" style={{ color: '#141414' }}>{active.headline}</h4>
+                    <span className="font-mono text-[8px] uppercase tracking-[0.16em] px-2 py-1 shrink-0 whitespace-nowrap"
+                          style={{ border: '1px solid #3a3ad0', color: '#3a3ad0' }}>{active.fileNo}</span>
+                  </div>
+
+                  {active.margin && (
+                    <p className="font-mono text-[7.5px] leading-relaxed uppercase tracking-[0.08em] mb-4 max-w-[240px] p-2 break-words"
+                       style={{ border: '1px solid #1414141f', color: '#141414aa' }}>{active.margin}</p>
+                  )}
+
+                  <p className="user-copy font-serif text-[12px] md:text-[13.5px] leading-[1.7]" style={{ color: '#1a1a1a' }}>{active.body}</p>
+                </div>
+
+                {/* loose material — own column, tucked 14px under the page edge */}
+                <div className="relative z-20 flex flex-col gap-4 mt-4 lg:mt-10 lg:-ml-3.5">
+                  {active.excerptBody && (
+                    <div className="cab-card relative overflow-hidden p-4 md:p-5"
+                         style={{ background: active.excerptColor || '#f0a8b0', animation: 'cabCard 700ms var(--ease-out-expo) 140ms both', boxShadow: '0 10px 26px rgba(0,0,0,0.28)' }}>
+                      <Tex s={active.id + 7} />
+                      <h5 className="font-serif italic text-xl md:text-2xl mb-2 break-words" style={{ color: '#141414' }}>{active.excerptTitle}</h5>
+                      <p className="user-copy font-serif text-[11px] leading-[1.65]" style={{ color: '#1a1a1a' }}>{active.excerptBody}</p>
+                    </div>
+                  )}
+
+                  {active.receipt && (
+                    <div className="cab-slip relative overflow-hidden p-3 md:p-4 self-start w-full max-w-[280px]"
+                         style={{
+                           background: active.receiptColor || '#f2d64b',
+                           animation: 'cabSlip 760ms var(--ease-out-expo) 260ms both',
+                           clipPath: 'polygon(0 2%, 100% 0, 99% 97%, 62% 100%, 30% 96%, 0 100%)',
+                           boxShadow: '0 10px 24px rgba(0,0,0,0.3)'
+                         }}>
+                      <Tex s={active.id + 13} />
+                      <p className="relative user-copy font-mono text-[8px] leading-[1.8] uppercase tracking-[0.06em] break-words" style={{ color: '#3a2f10' }}>{active.receipt}</p>
+                      <div className="mt-2 pt-1 font-serif italic text-[11px] break-words" style={{ borderTop: '1px solid #3a2f1055', color: '#3a2f10' }}>{active.signature}</div>
+                    </div>
+                  )}
+
+                  {(active.sideTabs || []).length > 0 && (
+                    <div className="flex gap-2 flex-wrap">
+                      {active.sideTabs.map((t, i) => (
+                        <span key={i} className="cab-tab px-2.5 py-1.5 font-mono text-[8px] uppercase tracking-[0.16em] break-words"
+                              style={{ background: t.color || '#c8281e', color: '#fff', border: '1px solid rgba(0,0,0,0.3)', animation: 'cabTab 560ms var(--ease-out-expo) ' + (300 + i * 90) + 'ms both' }}>
+                          {t.label}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="px-5 md:px-10 py-4 flex items-center justify-between gap-4 flex-wrap">
+        <p className="font-mono text-[8px] uppercase tracking-[0.28em]" style={{ color: ink + '55' }}>{cfg.footer}</p>
+        {active && (
+          <button onClick={() => onOpen(null)} className="font-mono text-[9px] uppercase tracking-[0.2em] px-3 py-1.5 slide-press"
+                  style={{ color: ink, border: '1px solid ' + ink + '33' }}>File it back</button>
+        )}
+      </div>
+    </div>
+  );
+};
+
 const PoemDeck = ({ deck, poems, onOpen }) => {
   const fg = deck.fg || '#e8e8e8';
   const lineCol = deck.line || '#6b6b6b';
@@ -1330,11 +1924,513 @@ const PoemDeck = ({ deck, poems, onOpen }) => {
 };
 
 /* ============================================================
+   ASCII TEXTURE
+   A generated character field used as the surface of modals and
+   of the documents inside the folder.
+
+   Cheap by construction: the whole field is ONE text node written
+   straight to the DOM. No element per character, no React re-render
+   per frame — animating it is a single textContent assignment a few
+   times a second. A 110x64 field is 7,040 glyphs for the cost of
+   one <pre>.
+   ============================================================ */
+const AsciiTexture = ({
+  seed = 1, ramp, size = 11, color = '#111111', opacity = 0.08,
+  animate = false, speed = 1, cols = 110, rows = 64, className = '',
+  mask = 'edges', clear = 45
+}) => {
+  const ref = useRef(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const chars = (ramp && ramp.length ? ramp : ' .:-=+*#%@');
+    const last = chars.length - 1;
+    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+
+    const build = (t) => {
+      let out = '';
+      for (let j = 0; j < rows; j++) {
+        for (let i = 0; i < cols; i++) {
+          const v = _fbm(i * 0.055, j * 0.09, t, 2, seed);
+          out += chars[Math.min(last, Math.max(0, Math.floor(v * chars.length)))];
+        }
+        out += '\n';
+      }
+      el.textContent = out;
+    };
+
+    build(0);
+    if (!animate || reduced) return;
+
+    // Deliberately slow: ASCII reads better stepping than sliding, and
+    // 5fps keeps this free even with several panels open at once.
+    let raf = 0, last_t = 0, start = performance.now(), stopped = false;
+    const loop = (now) => {
+      if (stopped) return;
+      raf = requestAnimationFrame(loop);
+      if (now - last_t < 200 / speed) return;
+      last_t = now;
+      build(((now - start) / 1000) * 0.09 * speed);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => { stopped = true; cancelAnimationFrame(raf); };
+  }, [seed, ramp, animate, speed, cols, rows]);
+
+  /* LEGIBILITY MASK
+     A character field behind body copy is the fastest way to make text
+     unreadable, so by default the texture is masked out of the middle of
+     the panel — where the words are — and only survives around the
+     perimeter. `clear` is the percentage of the centre kept completely
+     free of glyphs. Set mask='full' to texture edge to edge. */
+  const maskImage = useMemo(() => {
+    if (mask === 'full') return undefined;
+    const c = Math.max(0, Math.min(90, Number(clear) || 0));
+    if (mask === 'top') {
+      return `linear-gradient(to bottom, #000 0%, transparent ${c}%, transparent 100%)`;
+    }
+    return `radial-gradient(125% 105% at 50% 50%, transparent 0%, transparent ${c}%, #000 100%)`;
+  }, [mask, clear]);
+
+  return (
+    <pre ref={ref} aria-hidden="true"
+         className={`absolute inset-0 pointer-events-none select-none overflow-hidden m-0 ${className}`}
+         style={{
+           fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+           fontSize: `${size}px`,
+           lineHeight: 1,
+           letterSpacing: '0.06em',
+           color,
+           opacity,
+           whiteSpace: 'pre',
+           userSelect: 'none',
+           maskImage,
+           WebkitMaskImage: maskImage
+         }} />
+  );
+};
+
+// Convenience wrapper: the texture plus whatever sits on top of it.
+const AsciiSurface = ({ cfg, seed = 1, tone = 'dark', children, className = '', style = {} }) => (
+  <div className={`relative ${className}`} style={style}>
+    {cfg?.enabled && (
+      <AsciiTexture
+        seed={seed}
+        ramp={cfg.ramp}
+        size={cfg.size}
+        speed={cfg.speed}
+        animate={cfg.animate}
+        color={tone === 'dark' ? (cfg.inkOnDark || '#ffffff') : (cfg.inkOnLight || '#111111')}
+        opacity={tone === 'dark' ? (cfg.opacityDark ?? 0.06) : (cfg.opacityLight ?? 0.09)}
+      mask={asciiCfg.mask} clear={asciiCfg.clear} />
+    )}
+    <div className="relative">{children}</div>
+  </div>
+);
+
+/* ============================================================
+   EDITORIAL CHROME
+   Shared furniture for the restyled modals. Pulled from the
+   reference sheets: hairline rules instead of heavy borders,
+   dotted leader lines, diamond markers, corner registration
+   brackets, notched panel corners, halftone fills, serif display
+   over monospace micro-labels.
+
+   Every modal keeps the elements it already had — this only
+   changes the chrome they sit in.
+   ============================================================ */
+const ED = {
+  ink:    '#16150f',
+  ink2:   '#201f18',
+  paper:  '#ece8dc',
+  paper2: '#f5f2e9',
+  orange: '#e8552a',
+  mustard:'#f0c53c',
+  moss:   '#2b2e26'
+};
+
+// Corner registration brackets, as on the feature cards.
+const EdCorners = ({ color = 'currentColor', size = 14, inset = 8, weight = 1 }) => (
+  <>
+    {[
+      { top: inset, left: inset, bt: 1, bl: 1 },
+      { top: inset, right: inset, bt: 1, br: 1 },
+      { bottom: inset, left: inset, bb: 1, bl: 1 },
+      { bottom: inset, right: inset, bb: 1, br: 1 }
+    ].map((p, i) => (
+      <span key={i} aria-hidden="true" className="absolute pointer-events-none"
+            style={{
+              width: size, height: size,
+              top: p.top, left: p.left, right: p.right, bottom: p.bottom,
+              borderTop: p.bt ? `${weight}px solid ${color}` : 'none',
+              borderBottom: p.bb ? `${weight}px solid ${color}` : 'none',
+              borderLeft: p.bl ? `${weight}px solid ${color}` : 'none',
+              borderRight: p.br ? `${weight}px solid ${color}` : 'none'
+            }} />
+    ))}
+  </>
+);
+
+// "◆ Label ··········" — the running header used throughout the sheets.
+const EdLabel = ({ children, color = 'currentColor', right = null, className = '' }) => (
+  <div className={`flex items-center gap-2 min-w-0 ${className}`} style={{ color }}>
+    <span className="shrink-0 text-[8px] leading-none">◆</span>
+    <span className="font-mono text-[9px] uppercase tracking-[0.28em] shrink-0 truncate">{children}</span>
+    <span className="ed-leader flex-1" />
+    {right && <span className="font-mono text-[9px] uppercase tracking-[0.28em] shrink-0">{right}</span>}
+  </div>
+);
+
+/* ============================================================
+   ICE'S SECRET CORNER
+   A music player that isn't in the navigation. It opens either from
+   a small unlabelled glyph tucked into the poem overlay / journal
+   footer, or by typing the passphrase anywhere on the site.
+
+   Tracks are managed in Admin > Secret. Audio is expected to live in
+   Supabase Storage (or any direct URL) — audio is far too large to
+   embed as base64 the way images were.
+   ============================================================ */
+/* ============================================================
+   ICE'S SECRET CORNER
+   A gramophone parlour, not a nav item. Left half is a turntable:
+   the record spins while playing and the tonearm swings onto it.
+   Right half is the library — numbered rows, durations, hearts.
+
+   It opens from a faint glyph in a poem, or by typing the
+   passphrase anywhere on the site. Tracks live in Admin > Secret.
+   ============================================================ */
+/* ============================================================
+   ICE'S SECRET CORNER
+   A gramophone in a dark room. The platter is a real disc in 3D
+   (perspective + rotateX), the tonearm swings down onto it, and
+   changing track physically swaps the record: the old one lifts
+   away and the new one drops onto the spindle.
+
+   Opens from a faint glyph in a poem, or by typing the
+   passphrase anywhere. Tracks live in Admin > Secret.
+   ============================================================ */
+const SecretCorner = ({ cfg, tracks, onClose, ascii }) => {
+  const audioRef = useRef(null);
+  const [idx, setIdx] = useState(0);
+  const [playing, setPlaying] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [volume, setVolume] = useState(0.8);
+  const [loop, setLoop] = useState(false);
+  const [swapping, setSwapping] = useState(false);
+  const [favs, setFavs] = useState(() => {
+    // The visitor's own hearts, kept locally — never touches the admin list.
+    try { return JSON.parse(localStorage.getItem('secret_favs') || '[]'); } catch { return []; }
+  });
+  const [favOnly, setFavOnly] = useState(false);
+  const [err, setErr] = useState(null);
+
+  const bg    = cfg.bgColor    || '#15100c';
+  const brass = cfg.brass      || '#c9a86a';
+  const text  = cfg.textColor  || '#ece0c8';
+  const muted = cfg.mutedColor || '#8d7a5c';
+  const tilt  = Number(cfg.platterTilt ?? 56);
+
+  const all = tracks || [];
+  const list = favOnly ? all.filter(t => favs.includes(t.id)) : all;
+  const track = all[idx] || null;
+
+  useEffect(() => { setProgress(0); setErr(null); }, [idx]);
+  useEffect(() => { if (audioRef.current) audioRef.current.volume = volume; }, [volume]);
+  useEffect(() => { try { localStorage.setItem('secret_favs', JSON.stringify(favs)); } catch {} }, [favs]);
+
+  // Changing record: arm lifts, old disc pulls off, new disc drops in.
+  const swapTimer = useRef(null);
+  const selectTrack = (next) => {
+    if (next === idx) return;
+    setPlaying(false);
+    setSwapping(true);
+    clearTimeout(swapTimer.current);
+    swapTimer.current = setTimeout(() => { setIdx(next); setSwapping(false); }, 340);
+  };
+  useEffect(() => () => clearTimeout(swapTimer.current), []);
+
+  const toggleFav = (id) => setFavs(f => f.includes(id) ? f.filter(x => x !== id) : [...f, id]);
+
+  const toggle = async () => {
+    const a = audioRef.current;
+    if (!a || !track?.src) { setErr('No audio on this track yet.'); return; }
+    try {
+      if (a.paused) { await a.play(); setPlaying(true); }
+      else { a.pause(); setPlaying(false); }
+    } catch { setErr('Could not play this track.'); setPlaying(false); }
+  };
+
+  const go = (delta) => { if (all.length) selectTrack((idx + delta + all.length) % all.length); };
+
+  const seek = (e) => {
+    const a = audioRef.current;
+    if (!a || !duration) return;
+    const r = e.currentTarget.getBoundingClientRect();
+    a.currentTime = ((e.clientX - r.left) / r.width) * duration;
+  };
+
+  const fmt = (t) => !t || !isFinite(t) ? '0:00' : `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
+  const pct = duration ? (progress / duration) * 100 : 0;
+
+  // Turned brass key with a raised rim, as on the plinth.
+  const Key = ({ onClick, label, size = 46, lit = false, children }) => (
+    <button onClick={onClick} aria-label={label} title={label}
+            className="sc-key shrink-0 rounded-full flex items-center justify-center"
+            style={{
+              width: size, height: size,
+              color: lit ? '#2b1d10' : `${brass}dd`,
+              background: lit
+                ? `radial-gradient(circle at 36% 26%, #f0dcae, ${brass} 62%, #8d6f42)`
+                : `radial-gradient(circle at 36% 26%, ${brass}33, ${brass}16 55%, ${brass}0a)`,
+              border: `1px solid ${brass}${lit ? 'cc' : '3d'}`,
+              boxShadow: lit
+                ? `inset 0 1px 2px rgba(255,246,222,0.65), inset 0 -2px 4px rgba(0,0,0,0.35), 0 4px 14px rgba(0,0,0,0.55)`
+                : `inset 0 1px 1px ${brass}22, inset 0 -2px 4px rgba(0,0,0,0.45), 0 3px 10px rgba(0,0,0,0.5)`
+            }}>
+      {children}
+    </button>
+  );
+
+  return (
+    <div className="fixed inset-0 z-[95] flex items-center justify-center p-2 sm:p-4 md:p-6"
+         style={{ background: '#080503f7', animation: 'backdropIn 320ms ease-out both' }}
+         onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+
+      <div className="relative w-full max-w-5xl overflow-hidden anim-sheet"
+           style={{
+             background: `radial-gradient(120% 100% at 24% -10%, #3a2a1c 0%, ${bg} 46%, #0b0806 100%)`,
+             border: `1px solid ${brass}33`,
+             boxShadow: '0 40px 120px rgba(0,0,0,0.85)'
+           }}>
+
+        {ascii?.enabled && (
+          <AsciiTexture seed={51} ramp={ascii.ramp} size={ascii.size} speed={ascii.speed} animate={ascii.animate}
+                        color={ascii.inkOnDark} opacity={ascii.opacityDark} mask={ascii.mask} clear={ascii.clear} />
+        )}
+
+        <button onClick={onClose} aria-label="Close"
+                className="absolute top-3 right-3 z-40 w-8 h-8 rounded-full flex items-center justify-center slide-press"
+                style={{ color: `${brass}cc`, border: `1px solid ${brass}3d`, background: '#0000004d' }}><X size={14} /></button>
+
+        <div className="relative grid md:grid-cols-[minmax(0,1.32fr)_minmax(0,1fr)]">
+
+          {/* ==================== PLATTER ==================== */}
+          <div className="relative overflow-hidden min-h-[470px] md:min-h-[540px]">
+
+            {/* the deck plate the record sits on */}
+            <div className="absolute pointer-events-none"
+                 style={{
+                   left: '-34%', top: '-34%', width: '134%', height: '120%',
+                   background: 'radial-gradient(closest-side, rgba(70,52,34,0.55), rgba(20,14,10,0) 72%)'
+                 }} />
+
+            {/* --- RECORD (perspective stack: swap > tilt > spin) --- */}
+            {/* Sized to overrun the pane and crop against the left edge,
+                the way the record does on the reference deck. */}
+            <div className="absolute"
+                 style={{ left: '34%', top: '38%', transform: 'translate(-50%, -50%)', perspective: '1400px' }}>
+              <div key={track ? track.id : 'none'}
+                   className="sc-disc-swap"
+                   style={{ animation: swapping ? 'discOut 340ms var(--ease-mech) forwards' : 'discIn 620ms var(--ease-out-expo) both' }}>
+                <div style={{ transform: `rotateX(${tilt}deg)`, transformStyle: 'preserve-3d' }}>
+                  <div className={`relative rounded-full ${playing && !swapping ? 'sc-spin' : ''}`}
+                       style={{
+                         width: 'min(112vw, 660px)', height: 'min(112vw, 660px)',
+                         background: `
+                           repeating-radial-gradient(circle at 50% 50%, rgba(255,236,200,0.055) 0 1px, rgba(0,0,0,0) 1px 3px),
+                           radial-gradient(circle at 50% 50%, #221d18 0 27%, rgba(0,0,0,0) 27%),
+                           radial-gradient(circle at 38% 30%, #332c25 0%, #16120e 58%, #0a0806 100%)
+                         `,
+                         boxShadow: '0 0 0 1px rgba(201,168,106,0.16), 0 30px 60px rgba(0,0,0,0.8)'
+                       }}>
+                    {/* centre label — this is what changes with the track */}
+                    <div className="absolute rounded-full overflow-hidden"
+                         style={{ inset: '36%', border: `1px solid ${brass}3d`, background: track?.cover ? '#000' : `${brass}1c` }}>
+                      {track?.cover
+                        ? <img loading="lazy" decoding="async" src={track.cover} alt="" className="w-full h-full object-cover" />
+                        : <div className="w-full h-full flex flex-col items-center justify-center gap-1" style={{ color: `${brass}77` }}>
+                            <Disc3 size={20} />
+                            <span className="font-mono text-[6px] uppercase tracking-[0.2em]">{(track?.artist || '').slice(0, 14)}</span>
+                          </div>}
+                    </div>
+                    {/* spindle */}
+                    <div className="absolute rounded-full" style={{ inset: '48.6%', background: '#0b0806', boxShadow: `0 0 0 1px ${brass}55` }} />
+                    {/* specular sweep across the grooves */}
+                    <div className="absolute inset-0 rounded-full pointer-events-none"
+                         style={{ background: `linear-gradient(122deg, transparent 30%, ${brass}22 44%, ${brass}0d 52%, transparent 62%)` }} />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* --- TONEARM --- */}
+            {/* Pivot sits over the top-right of the platter; the arm swings
+                down-left so the headshell lands in the groove. */}
+            <div className="absolute pointer-events-none hidden sm:block z-20"
+                 style={{ left: '88%', top: '2%' }}>
+              <div style={{
+                     transformOrigin: '50% 10px',
+                     /* rotate() is clockwise, so POSITIVE swings the stylus left,
+                        onto the disc. Parked at -12deg the tip clears the outer
+                        edge; at +10deg it sits in the outer groove. */
+                     transform: `rotate(${playing && !swapping ? 10 : -12}deg)`,
+                     transition: 'transform 1100ms var(--ease-out-expo)'
+                   }}>
+                {/* counterweight + pivot */}
+                <div className="relative mx-auto" style={{ width: 26 }}>
+                  <div style={{ width: 26, height: 12, borderRadius: 4, background: `linear-gradient(180deg, #e2cb9a, ${brass} 55%, #7d6236)`, boxShadow: '0 3px 8px rgba(0,0,0,0.6)' }} />
+                  <div className="mx-auto" style={{ width: 15, height: 15, borderRadius: 15, marginTop: -3, background: `radial-gradient(circle at 34% 30%, #f0dcae, ${brass} 60%, #6f5730)`, boxShadow: '0 3px 10px rgba(0,0,0,0.65)' }} />
+                </div>
+                {/* arm tube */}
+                <div className="mx-auto" style={{ width: 4, height: 186, background: `linear-gradient(90deg, #8d6f42, ${brass} 40%, #f0dcae 52%, ${brass} 64%, #6f5730)`, boxShadow: '2px 0 8px rgba(0,0,0,0.6)' }} />
+                {/* headshell */}
+                <div className="mx-auto" style={{ width: 17, height: 22, marginTop: -1, background: `linear-gradient(180deg, ${brass}, #7d6236)`, clipPath: 'polygon(12% 0,88% 0,66% 100%,34% 100%)', boxShadow: '0 4px 10px rgba(0,0,0,0.7)' }} />
+                <div className="mx-auto" style={{ width: 3, height: 7, background: '#e8dcc0' }} />
+              </div>
+            </div>
+
+            {/* --- CONTROLS, overlaid bottom-left --- */}
+            <div className="absolute inset-x-0 bottom-0 px-6 pb-6 pt-16"
+                 style={{ background: 'linear-gradient(to top, rgba(8,5,3,0.94) 42%, rgba(8,5,3,0) 100%)' }}>
+              <div className="max-w-[330px] mx-auto text-center">
+                <p className="font-serif text-[17px] md:text-xl leading-tight break-words" style={{ color: text }}>
+                  {track?.title || '—'}
+                </p>
+                <p className="font-mono text-[10px] tracking-[0.16em] mt-1 break-words" style={{ color: muted }}>
+                  {track?.artist || ''}
+                </p>
+
+                <div className="flex items-center gap-3 mt-4">
+                  <span className="font-mono text-[9px] tabular-nums shrink-0" style={{ color: muted }}>{fmt(progress)}</span>
+                  <div onClick={seek} className="relative flex-1 h-[2px] cursor-pointer" style={{ background: `${brass}2e` }}>
+                    <div className="absolute inset-y-0 left-0" style={{ width: `${pct}%`, background: `${brass}dd` }} />
+                    <span className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 rounded-full"
+                          style={{ left: `${pct}%`, width: 10, height: 10, background: `radial-gradient(circle at 36% 30%, #f0dcae, ${brass})`, boxShadow: '0 2px 6px rgba(0,0,0,0.7)' }} />
+                  </div>
+                  <span className="font-mono text-[9px] tabular-nums shrink-0" style={{ color: muted }}>{track?.length || fmt(duration)}</span>
+                </div>
+
+                <div className="flex items-center justify-center gap-2.5 sm:gap-3 mt-5">
+                  <Key onClick={() => track && toggleFav(track.id)} label="Favourite" size={40} lit={!!track && favs.includes(track.id)}>
+                    <Star size={15} fill={track && favs.includes(track.id) ? 'currentColor' : 'none'} strokeWidth={1.5} />
+                  </Key>
+                  <Key onClick={() => go(-1)} label="Previous" size={42}><ChevronLeft size={17} strokeWidth={1.8} /></Key>
+                  <Key onClick={toggle} label={playing ? 'Pause' : 'Play'} size={54} lit>
+                    {playing
+                      ? <span className="block w-3 h-3.5" style={{ borderLeft: '3.5px solid currentColor', borderRight: '3.5px solid currentColor' }} />
+                      : <Play size={17} fill="currentColor" strokeWidth={1} />}
+                  </Key>
+                  <Key onClick={() => go(1)} label="Next" size={42}><ChevronRight size={17} strokeWidth={1.8} /></Key>
+                  <Key onClick={() => setLoop(v => !v)} label="Repeat" size={40} lit={loop}><RotateCcw size={15} strokeWidth={1.5} /></Key>
+                </div>
+
+                <div className="flex items-center gap-2 mt-4 justify-center">
+                  <Radio size={10} className="shrink-0" style={{ color: muted }} />
+                  <input type="range" min="0" max="1" step="0.02" value={volume} aria-label="Volume"
+                         onChange={e => setVolume(parseFloat(e.target.value))}
+                         className="w-28 h-[2px] cursor-pointer" style={{ accentColor: brass }} />
+                </div>
+
+                {err && <p className="font-mono text-[9px] uppercase tracking-[0.15em] mt-3" style={{ color: '#e8552a' }}>{err}</p>}
+              </div>
+            </div>
+          </div>
+
+          {/* ==================== LIBRARY ==================== */}
+          <div className="relative flex flex-col min-w-0 pt-5"
+               style={{ borderLeft: `1px solid ${brass}1f`, background: 'rgba(0,0,0,0.22)' }}>
+
+            <div className="flex items-center justify-between gap-3 pl-5 pr-14 pb-4">
+              <div className="flex items-center gap-2.5 min-w-0">
+                {/* gramophone horn */}
+                <svg width="26" height="20" viewBox="0 0 26 20" fill="none" className="shrink-0" style={{ color: brass }}>
+                  <path d="M14 2c5 0 10 3.4 10 7s-5 6-10 6" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round"/>
+                  <path d="M14 2v13" stroke="currentColor" strokeWidth="1.1"/>
+                  <path d="M13 8.5 4 14.5" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round"/>
+                  <circle cx="3" cy="15.4" r="2.1" stroke="currentColor" strokeWidth="1.1"/>
+                </svg>
+                <p className="font-serif text-[17px] leading-none truncate" style={{ color: text }}>{cfg.title}</p>
+              </div>
+              <button onClick={() => setFavOnly(v => !v)}
+                      className="font-mono text-[10px] tracking-[0.12em] shrink-0 transition-colors"
+                      style={{ color: favOnly ? brass : muted }}>
+                {cfg.favLabel}
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto hide-scrollbar max-h-[38vh] md:max-h-[430px] px-5 pb-2">
+              {list.length === 0 && (
+                <p className="py-10 text-center font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: muted }}>
+                  {favOnly ? 'Nothing hearted yet.' : 'The shelf is empty.'}
+                </p>
+              )}
+              {list.map((t) => {
+                const realIdx = all.indexOf(t);
+                const active = realIdx === idx;
+                return (
+                  <div key={t.id}
+                       className="sc-row group flex items-center gap-3 py-2.5 cursor-pointer"
+                       onClick={() => selectTrack(realIdx)}>
+                    <span className="font-mono text-[11px] tabular-nums w-3.5 shrink-0"
+                          style={{ color: active ? brass : `${muted}aa` }}>{realIdx + 1}</span>
+
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center gap-1.5">
+                        <span className="font-mono text-[12.5px] truncate transition-colors"
+                              style={{ color: active ? '#fff6e2' : `${text}cc` }}>{t.title || 'Untitled'}</span>
+                        {active && playing && (
+                          <span className="flex items-end gap-[2px] h-2.5 shrink-0">
+                            {[0,1,2].map(k => <span key={k} className="w-[2px] sc-eq" style={{ background: brass, '--eqd': `${420 + k * 160}ms` }} />)}
+                          </span>
+                        )}
+                      </span>
+                      <span className="block font-mono text-[9px] tracking-[0.1em] truncate mt-0.5" style={{ color: `${muted}cc` }}>
+                        {t.artist || '—'}
+                      </span>
+                    </span>
+
+                    <span className="font-mono text-[11px] tabular-nums shrink-0" style={{ color: `${muted}dd` }}>{t.length || ''}</span>
+
+                    <button onClick={(e) => { e.stopPropagation(); toggleFav(t.id); }}
+                            aria-label="Favourite" className="shrink-0 transition-transform hover:scale-110"
+                            style={{ color: favs.includes(t.id) ? brass : `${muted}55` }}>
+                      <Star size={14} fill={favs.includes(t.id) ? 'currentColor' : 'none'} strokeWidth={1.4} />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+
+            <p className="px-5 py-3 font-mono text-[8px] uppercase tracking-[0.3em] text-center shrink-0"
+               style={{ color: `${muted}88` }}>
+              {cfg.footer}
+            </p>
+          </div>
+        </div>
+
+        <audio
+          ref={audioRef}
+          src={track?.src || undefined}
+          preload="none"
+          loop={loop}
+          onTimeUpdate={e => setProgress(e.currentTarget.currentTime)}
+          onLoadedMetadata={e => setDuration(e.currentTarget.duration)}
+          onEnded={() => { if (!loop) { cfg.autoAdvance ? go(1) : setPlaying(false); } }}
+          onError={() => { setErr('Track unavailable.'); setPlaying(false); }}
+        />
+      </div>
+    </div>
+  );
+};
+
+/* ============================================================
    POEM OVERLAY — staggered slabs across a full-bleed image.
    Offsets are seeded-random per line (re-rollable) or pinned per
    line from the admin panel.
    ============================================================ */
-const PoemOverlay = ({ poem, shuffle, onClose, onShuffle }) => {
+const PoemOverlay = ({ poem, shuffle, onClose, onShuffle, onSecret, ascii }) => {
   if (!poem) return null;
   const accent = poem.accent || '#ffffff';
   const ink = poem.ink || '#111111';
@@ -1356,9 +2452,16 @@ const PoemOverlay = ({ poem, shuffle, onClose, onShuffle }) => {
          style={{ animation: 'backdropIn 240ms ease-out both', background: poem.image ? ink : accent }}
          onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
 
+      {/* Character field sits over the plate at half strength — these
+          surfaces already carry a photograph, so full opacity fights it. */}
+      {ascii?.enabled && (
+        <AsciiTexture seed={81} ramp={ascii.ramp} size={ascii.size} speed={ascii.speed} animate={ascii.animate}
+                      color={ascii.inkOnDark} opacity={(ascii.opacityDark ?? 0.06) * 0.6} className="z-[5]" mask={ascii.mask} clear={ascii.clear} />
+      )}
+
       {/* BACKDROP IMAGE */}
       {poem.image && (
-        <img src={poem.image} alt="" className="absolute inset-0 w-full h-full object-cover"
+        <img loading="lazy" decoding="async" src={poem.image} alt="" className="absolute inset-0 w-full h-full object-cover"
              style={{ animation: 'poemImgIn 1400ms var(--ease-out-expo) both' }} />
       )}
       <div className="absolute inset-0 pointer-events-none" style={{ background: ink, opacity: (Number(poem.imageDim) || 0) / 100 }} />
@@ -1402,7 +2505,16 @@ const PoemOverlay = ({ poem, shuffle, onClose, onShuffle }) => {
       {/* FOOTER */}
       <div className="absolute bottom-6 right-6 md:bottom-10 md:right-12 text-right z-20">
         <p className="font-sans font-black uppercase tracking-tight text-sm md:text-xl" style={{ color: ink }}>{poem.title}</p>
-        <p className="font-mono text-[8px] md:text-[10px] uppercase tracking-[0.2em] mt-1 opacity-70" style={{ color: ink }}>{poem.footnote}</p>
+        <p className="font-mono text-[8px] md:text-[10px] uppercase tracking-[0.2em] mt-1 opacity-70" style={{ color: ink }}>
+          {poem.footnote}
+          {onSecret && (
+            /* Not labelled, not announced. If you notice it, it's yours. */
+            <button onClick={(e) => { e.stopPropagation(); onSecret(); }}
+                    aria-label="" tabIndex={-1}
+                    className="ml-2 align-middle opacity-25 hover:opacity-90 transition-opacity cursor-pointer"
+                    style={{ color: ink }}>❉</button>
+          )}
+        </p>
       </div>
 
       {/* CONTROLS */}
@@ -1634,8 +2746,27 @@ const defaultPlaylists = [
    ============================================================ */
 const STICKER_STYLES = ['graffiti', 'tag', 'chip', 'bubble', 'star', 'outline', 'marquee', 'scribble'];
 
+const GALLERIA_STYLES = [
+  { id: 'scrapbook', label: 'Scrapbook', hint: 'Duotone plate, decals slam in' },
+  { id: 'editorial', label: 'Editorial', hint: 'Dark photo-essay spread, cascading plates' }
+];
+
 const defaultLightbox = {
   enabled: true,
+  style: 'scrapbook',      // which viewer opens on a galleria click
+  // --- editorial viewer ---
+  edPaper: "#e8e3d5",
+  edInk: "#16150f",
+  edAccent: "#e8552a",
+  edKicker: "ARCHIVE / PLATE",
+  edMasthead: "Galleria",
+  edByline: "ice",
+  edFallbackTitle: "Untitled Plate",
+  edStandfirst: "A running record of things worth keeping. Each plate carries its own date and note; the rest is left where it fell.",
+  edSectionLabel: "MEDIA AND PRESS",
+  edSectionYears: "1949—2020",
+  edSectionLabel2: "PHOTO GALLERY",
+  edFooterLinks: "Instagram, Pinterest, Contact",
   accent: "#c6ff2e",
   ink: "#0d0d0d",
   duotone: true,          // recolor photo into accent/ink duotone
@@ -1707,6 +2838,131 @@ const defaultPoemDeck = {
   animate: true
 };
 
+const defaultOrbit = {
+  enabled: true,
+  heading: "Search",
+  kicker: "ambient // field",
+  word: "ПОИСК",
+  count: 170,
+  moving: 80,
+  speed: 1,
+  ratio: "4 / 5",
+  bgTop: "#ededed",
+  bgBottom: "#b4b4b4",
+  wordColor: "#111111",
+  figureColor: "#0d0d0d",
+  figureBlur: 12,
+  figureOpacity: 0.92,
+  image: "",            // upload a cut-out to replace the drawn figure
+  caption: ""
+};
+
+const defaultDisc = {
+  enabled: true,
+  heading: "Pressing",
+  kicker: "ambient // disc",
+  rings: 11,
+  speed: 1,
+  fontSize: 11,
+  outerRadius: 268,
+  innerRadius: 88,
+  bg: "#050505",
+  disc: "#141414",
+  ink: "#ffffff",
+  mark: "",
+  text: "THIS RECORD WAS PRESSED IN A SMALL ROOM WITH THE WINDOW OPEN · EVERY TAKE KEPT THE SOUND OF THE STREET · NOTHING HERE WAS PLAYED TWICE THE SAME WAY · "
+};
+
+const defaultCabinet = {
+  enabled: true,
+  title: "Unindexed Materials",
+  breadcrumb: "Systems / Recovered Entries",
+  note: "Filed without origin.\nReferenced frequently,\nyet seldom cited in full.",
+  date: "Mar 18, 1966",
+  emptyHint: "Pull a file from the drawer",
+  footer: "Systems. Archive exploration",
+  shell: "#0b0b0b",
+  drawer: "#1f42e0",
+  paper: "#f4f1e6",
+  ink: "#f2f2f2"
+};
+
+const defaultFiles = [
+  {
+    id: 1, title: "Fragment 17B", tab: "Varnell Collection", tabColor: "#c8281e", tabInk: "#ffffff",
+    fileNo: "File №02", date: "Mar 18, 1966", headline: "Unverified",
+    note: "Filed without origin.\nReferenced frequently,\nyet seldom cited in full.",
+    margin: "Not dated. Referent unknown. Possible correlation to Entry 9D, though this remains speculative.",
+    body: "There are signs of use: annotations, omissions, the pressure of someone else's urgency. No conclusion is evident, but the document resists being closed. It remains held in transit, not as an answer but as evidence of asking.",
+    excerptTitle: "Excerpt A", excerptColor: "#f0a8b0",
+    excerptBody: "The material arrives already altered — a trace shaped more by its journey than its point of departure. Interpretation loops back on itself, forming layers of intent and silence. Margins offer no certainty, only suggestion.",
+    receipt: "TO: Elias Varnell\nDATE: Apr 11, 1966\n18 Obscura Lane, Sector A\nNew Cartesia, 0027-A", receiptColor: "#f2d64b",
+    signature: "E. Varnell",
+    sideTabs: [{ label: "Varnell Collection", color: "#c8281e" }, { label: "Peripheral Entry", color: "#123ad6" }]
+  },
+  {
+    id: 2, title: "Entry 9D", tab: "Peripheral Entry", tabColor: "#123ad6", tabInk: "#ffffff",
+    fileNo: "File №07", date: "Nov 02, 1964", headline: "Partial",
+    note: "Recovered incomplete.\nTwo pages missing,\nnumbering unbroken.",
+    margin: "Pagination continuous despite loss. Suggests removal was deliberate rather than accidental.",
+    body: "What survives reads as the middle of an argument. The opening is gone and the conclusion was never filed, but the reasoning in between is unusually careful — the work of someone expecting to be read closely, and much later.",
+    excerptTitle: "Excerpt B", excerptColor: "#c9d8b0",
+    excerptBody: "A record kept honestly will contradict itself. That is not a fault in the record; it is the shape of a thing observed over time by someone who kept changing their mind.",
+    receipt: "REF: 9D / PARTIAL\nLOGGED: Nov 02, 1964\nHELD: Cabinet 3, Drawer 2", receiptColor: "#e8cf7a",
+    signature: "—",
+    sideTabs: [{ label: "Peripheral Entry", color: "#123ad6" }]
+  },
+  {
+    id: 3, title: "Note on Method", tab: "Working Notes", tabColor: "#e8a33d", tabInk: "#161616",
+    fileNo: "File №11", date: "Jul 30, 1969", headline: "Working",
+    note: "Not for circulation.\nKept with the drafts\nrather than the results.",
+    margin: "Handwritten. Ink matches the annotations in Fragment 17B.",
+    body: "The method was never written down properly because it kept changing. What is here is a description of habits: where to begin when nothing is labelled, what to do with a page that refuses to fit, and when to stop looking.",
+    excerptTitle: "Excerpt C", excerptColor: "#dcd2ee",
+    excerptBody: "Begin with what is out of place. The misfiled page tells you more about the system than the thousand pages sitting quietly where they belong.",
+    receipt: "WORKING NOTES\nNOT INDEXED\nRETAIN WITH DRAFTS", receiptColor: "#f2d64b",
+    signature: "unsigned",
+    sideTabs: [{ label: "Working Notes", color: "#e8a33d" }]
+  }
+];
+
+const defaultAscii = {
+  enabled: true,
+  ramp: " .:-=+*#%@",
+  size: 11,
+  animate: true,
+  speed: 1,
+  inkOnLight: "#111111",
+  inkOnDark: "#ffffff",
+  // Deliberately low. These sit behind body copy; the texture is meant to
+  // be felt at the edge of vision, not read.
+  opacityLight: 0.07,
+  opacityDark: 0.05,
+  mask: "edges",   // 'edges' keeps the middle clear for text | 'full' | 'top'
+  clear: 45        // % of the centre left completely free of glyphs
+};
+
+const defaultSecret = {
+  enabled: true,
+  title: "ice's secret corner",
+  kicker: "unlisted // playing quietly",
+  footer: "for no one in particular",
+  favLabel: "favourites",
+  // gramophone parlour palette
+  bgColor: "#15100c",      // cabinet
+  brass: "#c9a86a",        // tonearm, keys, accents
+  textColor: "#ece0c8",
+  mutedColor: "#8d7a5c",
+  platterTilt: 56,         // degrees of perspective on the record
+  passphrase: "ice",       // type this anywhere to open
+  showGlyph: true,         // faint trigger in the poem overlay + journal
+  autoAdvance: true
+};
+
+const defaultSecretTracks = [
+  { id: 1, title: "untitled loop", artist: "unknown", length: "3:21", src: "", cover: "", note: "the one I put on when the room gets too quiet." }
+];
+
 const defaultPoems = [
   {
     id: 1, title: "PlonkedSpectral", image: "https://images.unsplash.com/photo-1473448912268-2022ce9509d8?w=1600&q=80",
@@ -1758,6 +3014,8 @@ const ADMIN_TABS = [
   { id: 'galleria',    label: 'Galleria' },
   { id: 'lightbox',    label: 'Lightbox' },
   { id: 'poems',       label: 'Poems' },
+  { id: 'secret',      label: 'Secret' },
+  { id: 'ambient',     label: 'Ambient' },
   { id: 'system',      label: 'System' },
   { id: 'blogs',       label: 'Blogs' },
   { id: 'journals',    label: 'Journals' },
@@ -1771,7 +3029,9 @@ const defaultSettings = {
   wip: { intro: false, portfolio: false, galleria: false, system: false, blog: false, socials: false, blank: false },
   // Replaces the old blueprint gridlines everywhere .bg-blueprint was used.
   backdrop: {
-    mode: "topo",         // 'topo' (generated contours) | 'grid' | 'image'
+    mode: "topo",         // 'topo' contours | 'ascii' | 'grid' | 'image'
+    asciiRamp: " .:-=+*#%@",
+    asciiSize: 14,        // px per glyph cell
     // --- generated topographic field ---
     lineColor: "#111111",
     lineOpacity: 0.17,
@@ -1813,6 +3073,11 @@ const mergeAbout = (saved) => ({ ...defaultAbout, ...(saved || {}), boot: { ...d
 const mergeSystem = (saved) => ({ ...defaultSystem, ...(saved || {}), cables: (saved || {}).cables || defaultSystem.cables });
 const mergeSettings = (saved) => ({ ...defaultSettings, ...(saved || {}), wip: { ...defaultSettings.wip, ...((saved || {}).wip || {}) }, backdrop: { ...defaultSettings.backdrop, ...((saved || {}).backdrop || {}) } });
 const mergeLightbox = (saved) => ({ ...defaultLightbox, ...(saved || {}), stickers: (saved || {}).stickers || defaultLightbox.stickers, metaRows: (saved || {}).metaRows || defaultLightbox.metaRows });
+const mergeAscii = (saved) => ({ ...defaultAscii, ...(saved || {}) });
+const mergeOrbit = (saved) => ({ ...defaultOrbit, ...(saved || {}) });
+const mergeDisc = (saved) => ({ ...defaultDisc, ...(saved || {}) });
+const mergeCabinet = (saved) => ({ ...defaultCabinet, ...(saved || {}) });
+const mergeSecret = (saved) => ({ ...defaultSecret, ...(saved || {}) });
 const mergePoemDeck = (saved) => ({ ...defaultPoemDeck, ...(saved || {}), passLabels: (saved || {}).passLabels || defaultPoemDeck.passLabels });
 
 // Deterministic pseudo-random so a poem's stagger is stable per seed but
@@ -1842,6 +3107,16 @@ export default function App() {
   const [lightboxConfig, setLightboxConfig] = useState(defaultLightbox);
   const [poemDeck, setPoemDeck] = useState(defaultPoemDeck);
   const [poems, setPoems] = useState(defaultPoems);
+  const [secretCfg, setSecretCfg] = useState(defaultSecret);
+  const [secretTracks, setSecretTracks] = useState(defaultSecretTracks);
+  const [secretOpen, setSecretOpen] = useState(false);
+  const [asciiCfg, setAsciiCfg] = useState(defaultAscii);
+  const [orbitCfg, setOrbitCfg] = useState(defaultOrbit);
+  const [discCfg, setDiscCfg] = useState(defaultDisc);
+  const [cabinetCfg, setCabinetCfg] = useState(defaultCabinet);
+  const [cabinetFiles, setCabinetFiles] = useState(defaultFiles);
+  const [openFile, setOpenFile] = useState(null);
+  const [expandedFile, setExpandedFile] = useState(null);
   const [accessLogs, setAccessLogs] = useState([]); // NEW STATE FOR JOURNAL LOGS
 
   // Galleria lightbox + poem overlays
@@ -1933,6 +3208,56 @@ export default function App() {
     dragOverItem.current = null;
   };
 
+  /* The passphrase. Typing it anywhere on the site (outside a text
+     field) opens the corner. Keeps a rolling buffer only as long as the
+     phrase itself, so it costs nothing. */
+  const keyBuf = useRef('');
+  useEffect(() => {
+    const phrase = (secretCfg.passphrase || '').toLowerCase();
+    if (!secretCfg.enabled || !phrase) return;
+    const onKey = (e) => {
+      const t = e.target;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+      if (e.key.length !== 1) return;
+      keyBuf.current = (keyBuf.current + e.key.toLowerCase()).slice(-phrase.length);
+      if (keyBuf.current === phrase) { keyBuf.current = ''; setSecretOpen(true); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [secretCfg.enabled, secretCfg.passphrase]);
+
+  // Deferred fetches. Each runs at most once, the first time the tab that
+  // needs it is opened. Keeps ~2 round trips and an unbounded row count off
+  // the critical path.
+  const fetchedMessages = useRef(false);
+  const fetchedLogs = useRef(false);
+
+  const ensureMessages = useCallback(async () => {
+    if (!supabase || fetchedMessages.current) return;
+    fetchedMessages.current = true;
+    try {
+      const { data } = await supabase
+        .from('playground_messages').select('*')
+        .order('created_at', { ascending: false }).limit(200);
+      if (data) setGuestMessages(data);
+    } catch (e) { console.error('messages load failed', e); }
+  }, []);
+
+  const ensureAccessLogs = useCallback(async () => {
+    if (!supabase || fetchedLogs.current) return;
+    fetchedLogs.current = true;
+    try {
+      const { data } = await supabase
+        .from('journal_access_logs').select('*')
+        .order('created_at', { ascending: false }).limit(200);
+      if (data) setAccessLogs(data);
+    } catch (e) { /* table may not exist; non-fatal */ }
+  }, []);
+
+  useEffect(() => { if (activeTab === 'blank') ensureMessages(); }, [activeTab, ensureMessages]);
+  useEffect(() => { if (isAdmin && adminTab === 'access_logs') ensureAccessLogs(); }, [isAdmin, adminTab, ensureAccessLogs]);
+  useEffect(() => { if (isAdmin && adminTab === 'messages') ensureMessages(); }, [isAdmin, adminTab, ensureMessages]);
+
   useEffect(() => {
     async function loadDataAndAuth() {
       // 1. LOCAL STORAGE FALLBACK (If Supabase is missing)
@@ -1954,6 +3279,13 @@ export default function App() {
             if (parsed.lightbox) setLightboxConfig(mergeLightbox(parsed.lightbox));
             if (parsed.poem_deck) setPoemDeck(mergePoemDeck(parsed.poem_deck));
             if (parsed.poems) setPoems(parsed.poems);
+            if (parsed.secret) setSecretCfg(mergeSecret(parsed.secret));
+            if (parsed.secret_tracks) setSecretTracks(parsed.secret_tracks);
+            if (parsed.ascii) setAsciiCfg(mergeAscii(parsed.ascii));
+            if (parsed.orbit) setOrbitCfg(mergeOrbit(parsed.orbit));
+            if (parsed.disc) setDiscCfg(mergeDisc(parsed.disc));
+            if (parsed.cabinet) setCabinetCfg(mergeCabinet(parsed.cabinet));
+            if (parsed.cabinet_files) setCabinetFiles(parsed.cabinet_files);
             if (parsed.access_logs) setAccessLogs(parsed.access_logs);
           } catch(e) { console.error("Failed to parse local data", e); }
         }
@@ -1963,10 +3295,18 @@ export default function App() {
 
       // 2. SUPABASE DB LOAD (If configured)
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session) setIsAdmin(true);
+        // Session and content are independent, so they go out together
+        // instead of costing two serial round trips. Guest messages and
+        // access logs are NOT fetched here — they belong to the sandbox
+        // and admin tabs, and are loaded on demand (see ensureMessages /
+        // ensureAccessLogs) so they never delay first paint.
+        const [authRes, siteRes] = await Promise.all([
+          supabase.auth.getSession(),
+          supabase.from('site_data').select('section,data')
+        ]);
 
-        const { data: siteData } = await supabase.from('site_data').select('*');
+        if (authRes?.data?.session) setIsAdmin(true);
+        const siteData = siteRes?.data;
         if (siteData && siteData.length > 0) {
           const p = siteData.find(d => d.section === 'projects');
           const b = siteData.find(d => d.section === 'blogs');
@@ -1980,6 +3320,13 @@ export default function App() {
           const lb = siteData.find(d => d.section === 'lightbox');
           const pd = siteData.find(d => d.section === 'poem_deck');
           const pm = siteData.find(d => d.section === 'poems');
+          const sc = siteData.find(d => d.section === 'secret');
+          const st = siteData.find(d => d.section === 'secret_tracks');
+          const ax = siteData.find(d => d.section === 'ascii');
+          const ob = siteData.find(d => d.section === 'orbit');
+          const dc = siteData.find(d => d.section === 'disc');
+          const cb = siteData.find(d => d.section === 'cabinet');
+          const cf = siteData.find(d => d.section === 'cabinet_files');
           
           if (p) setProjects(p.data);
           if (b) setBlogs(b.data);
@@ -1993,14 +3340,14 @@ export default function App() {
           if (lb) setLightboxConfig(mergeLightbox(lb.data));
           if (pd) setPoemDeck(mergePoemDeck(pd.data));
           if (pm) setPoems(pm.data);
+          if (sc) setSecretCfg(mergeSecret(sc.data));
+          if (st) setSecretTracks(st.data);
+          if (ax) setAsciiCfg(mergeAscii(ax.data));
+          if (ob) setOrbitCfg(mergeOrbit(ob.data));
+          if (dc) setDiscCfg(mergeDisc(dc.data));
+          if (cb) setCabinetCfg(mergeCabinet(cb.data));
+          if (cf) setCabinetFiles(cf.data);
         }
-
-        const { data: messages } = await supabase.from('playground_messages').select('*').order('created_at', { ascending: false });
-        if (messages) setGuestMessages(messages);
-        
-        // Try fetching access logs. If table missing, ignore error.
-        const { data: logs } = await supabase.from('journal_access_logs').select('*').order('created_at', { ascending: false });
-        if (logs) setAccessLogs(logs);
 
       } catch (e) {
         console.error("Error loading data:", e);
@@ -2102,13 +3449,88 @@ export default function App() {
     }
   };
 
-  const handleImageUpload = (e, callback) => {
-    const file = e.target.files[0];
+  /* ------------------------------------------------------------------
+     IMAGE INTAKE
+     Previously this stored the raw file as a base64 data URL straight
+     into the JSONB row. Base64 inflates bytes by ~33%, and every one of
+     those images was then re-fetched on every page load and re-uploaded
+     on every save — a handful of photos was megabytes on the critical
+     path.
+
+     Now: downscale + re-encode in the browser first (a 2MB phone photo
+     lands around 120-180KB), then, if a Supabase Storage bucket is
+     reachable, upload the file and keep only its URL in the row. If
+     Storage isn't set up, we fall back to the compressed data URL, which
+     is still an order of magnitude smaller than before.
+     ------------------------------------------------------------------ */
+  const MEDIA_BUCKET = 'media';
+  const storageOK = useRef(null); // null = untested, false = unavailable
+
+  const compressImage = (file, maxEdge = 1600, quality = 0.82) => new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const scale = Math.min(1, maxEdge / Math.max(img.width, img.height));
+      const w = Math.max(1, Math.round(img.width * scale));
+      const h = Math.max(1, Math.round(img.height * scale));
+      const cv = document.createElement('canvas');
+      cv.width = w; cv.height = h;
+      const ctx = cv.getContext('2d');
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(img, 0, 0, w, h);
+      // WebP where the browser supports it, JPEG otherwise. PNGs with
+      // transparency keep their alpha channel via WebP.
+      const webp = cv.toDataURL('image/webp', quality);
+      const dataUrl = webp.startsWith('data:image/webp') ? webp : cv.toDataURL('image/jpeg', quality);
+      cv.toBlob(
+        (blob) => resolve({ dataUrl, blob, type: dataUrl.slice(5, dataUrl.indexOf(';')) }),
+        dataUrl.startsWith('data:image/webp') ? 'image/webp' : 'image/jpeg',
+        quality
+      );
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('decode failed')); };
+    img.src = url;
+  });
+
+  const handleImageUpload = async (e, callback) => {
+    const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 1024 * 1024 * 2) { showToast("Please choose an image smaller than 2MB."); return; }
-    const reader = new FileReader();
-    reader.onloadend = () => callback(reader.result);
-    reader.readAsDataURL(file);
+    if (!file.type.startsWith('image/')) { showToast("That doesn't look like an image."); return; }
+    if (file.size > 1024 * 1024 * 12) { showToast("Please choose an image smaller than 12MB."); return; }
+    // Let the same file be picked again later
+    const input = e.target;
+
+    try {
+      const { dataUrl, blob, type } = await compressImage(file);
+
+      if (supabase && storageOK.current !== false && blob) {
+        try {
+          const ext = type === 'image/webp' ? 'webp' : 'jpg';
+          const path = `uploads/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+          const { error } = await supabase.storage.from(MEDIA_BUCKET)
+            .upload(path, blob, { contentType: type, cacheControl: '31536000', upsert: false });
+          if (error) throw error;
+          const { data } = supabase.storage.from(MEDIA_BUCKET).getPublicUrl(path);
+          if (data?.publicUrl) {
+            storageOK.current = true;
+            callback(data.publicUrl);
+            input.value = '';
+            return;
+          }
+        } catch (err) {
+          // Bucket missing or not public — stop trying for this session.
+          storageOK.current = false;
+          console.warn(`Supabase Storage unavailable (bucket "${MEDIA_BUCKET}"), embedding compressed image instead.`, err?.message || err);
+        }
+      }
+
+      callback(dataUrl);
+      input.value = '';
+    } catch (err) {
+      console.error(err);
+      showToast("Couldn't process that image.");
+    }
   };
 
   const handleBatchGalleriaUpload = (e) => {
@@ -2151,6 +3573,13 @@ export default function App() {
         lightbox: lightboxConfig,
         poem_deck: poemDeck,
         poems: poems,
+        secret: secretCfg,
+        secret_tracks: secretTracks,
+        ascii: asciiCfg,
+        orbit: orbitCfg,
+        disc: discCfg,
+        cabinet: cabinetCfg,
+        cabinet_files: cabinetFiles,
         access_logs: accessLogs
       }));
       setIsSaving(false);
@@ -2171,7 +3600,14 @@ export default function App() {
       { section: 'playlists', data: playlists },
       { section: 'lightbox', data: lightboxConfig },
       { section: 'poem_deck', data: poemDeck },
-      { section: 'poems', data: poems }
+      { section: 'poems', data: poems },
+      { section: 'secret', data: secretCfg },
+      { section: 'secret_tracks', data: secretTracks },
+      { section: 'ascii', data: asciiCfg },
+      { section: 'orbit', data: orbitCfg },
+      { section: 'disc', data: discCfg },
+      { section: 'cabinet', data: cabinetCfg },
+      { section: 'cabinet_files', data: cabinetFiles }
     ];
     const { error } = await supabase.from('site_data').upsert(updates, { onConflict: 'section' });
     setIsSaving(false);
@@ -2208,6 +3644,8 @@ export default function App() {
     journals: [journalEntries, setJournalEntries],
     playlists: [playlists, setPlaylists],
     poems: [poems, setPoems],
+    secret_tracks: [secretTracks, setSecretTracks],
+    cabinet_files: [cabinetFiles, setCabinetFiles],
   };
 
   const moveListItem = (listType, index, dir) => {
@@ -2270,6 +3708,65 @@ export default function App() {
     return next;
   });
 
+  const goPrevPlate = () => setActiveGalleriaImage(p => {
+    if (!p || !galleriaData.length) return p;
+    const n = (p.index - 1 + galleriaData.length) % galleriaData.length;
+    return { item: galleriaData[n], index: n };
+  });
+  const goNextPlate = () => setActiveGalleriaImage(p => {
+    if (!p || !galleriaData.length) return p;
+    const n = (p.index + 1) % galleriaData.length;
+    return { item: galleriaData[n], index: n };
+  });
+
+  /* ---------- SECRET CORNER WRITERS ---------- */
+  const setSecret = (patch) => setSecretCfg(c => ({ ...c, ...patch }));
+  const updateTrack = (id, patch) => setSecretTracks(ts => ts.map(t => t.id === id ? { ...t, ...patch } : t));
+  const addTrack = () => setSecretTracks(ts => [...ts, { id: Date.now(), title: "", artist: "", length: "", src: "", cover: "", note: "" }]);
+
+  // Audio always goes to Storage — a song as base64 would be several MB
+  // inside a row that is fetched on every single page load.
+  const handleAudioUpload = async (e, callback) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const input = e.target;
+    if (!supabase) { showToast("Connect Supabase to upload audio, or paste a URL."); input.value = ''; return; }
+    if (file.size > 1024 * 1024 * 25) { showToast("Audio must be under 25MB."); input.value = ''; return; }
+    showToast("Uploading track…");
+    try {
+      const ext = (file.name.split('.').pop() || 'mp3').toLowerCase();
+      const path = `audio/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+      const { error } = await supabase.storage.from(MEDIA_BUCKET)
+        .upload(path, file, { contentType: file.type || 'audio/mpeg', cacheControl: '31536000' });
+      if (error) throw error;
+      const { data } = supabase.storage.from(MEDIA_BUCKET).getPublicUrl(path);
+      if (!data?.publicUrl) throw new Error('no public url');
+      callback(data.publicUrl);
+      showToast("Track uploaded.", 'success');
+    } catch (err) {
+      console.error(err);
+      showToast(`Upload failed — create a public "${MEDIA_BUCKET}" bucket, or paste a direct URL.`);
+    }
+    input.value = '';
+  };
+
+  /* ---------- AMBIENT WRITERS ---------- */
+  const setAscii = (patch) => setAsciiCfg(c => ({ ...c, ...patch }));
+  const setOrbit = (patch) => setOrbitCfg(c => ({ ...c, ...patch }));
+  const setDisc = (patch) => setDiscCfg(c => ({ ...c, ...patch }));
+  const setCabinet = (patch) => setCabinetCfg(c => ({ ...c, ...patch }));
+  const updateFile = (id, patch) => setCabinetFiles(fs => fs.map(f => f.id === id ? { ...f, ...patch } : f));
+  const addFile = () => {
+    const id = Date.now();
+    setCabinetFiles(fs => [...fs, {
+      id, title: "New File", tab: "Unfiled", tabColor: "#c8281e", tabInk: "#ffffff",
+      fileNo: "File №--", date: "", headline: "Untitled", note: "", margin: "",
+      body: "", excerptTitle: "Excerpt", excerptColor: "#f0a8b0", excerptBody: "",
+      receipt: "", receiptColor: "#f2d64b", signature: "", sideTabs: []
+    }]);
+    setExpandedFile(id);
+  };
+
   /* ---------- BACKDROP WRITER ---------- */
   const setBackdrop = (patch) => setSiteSettings(s => ({ ...s, backdrop: { ...defaultSettings.backdrop, ...(s.backdrop || {}), ...patch } }));
 
@@ -2324,6 +3821,8 @@ export default function App() {
     if (listType === 'journals') setJournalEntries(journalEntries.filter(j => j.id !== id));
     if (listType === 'playlists') setPlaylists(playlists.filter(pl => pl.id !== id));
     if (listType === 'poems') setPoems(poems.filter(p => p.id !== id));
+    if (listType === 'secret_tracks') setSecretTracks(secretTracks.filter(t => t.id !== id));
+    if (listType === 'cabinet_files') setCabinetFiles(cabinetFiles.filter(f => f.id !== id));
   }
 
   const updateModalGalleryImage = (id, newPos) => {
@@ -2508,7 +4007,7 @@ export default function App() {
   useEffect(() => {
     if (!hydrated.current) { hydrated.current = !isLoading; return; }
     setIsDirty(true);
-  }, [aboutData, projects, blogs, socials, galleriaData, systemData, siteSettings, journalEntries, playlists, lightboxConfig, poemDeck, poems, isLoading]);
+  }, [aboutData, projects, blogs, socials, galleriaData, systemData, siteSettings, journalEntries, playlists, lightboxConfig, poemDeck, poems, secretCfg, secretTracks, asciiCfg, orbitCfg, discCfg, cabinetCfg, cabinetFiles, isLoading]);
 
   // Warn before losing unsaved admin work
   useEffect(() => {
@@ -2524,6 +4023,7 @@ export default function App() {
       if (e.key === 'Escape') {
         if (showLogin) return setShowLogin(false);
         if (selectedItem) return setSelectedItem(null);
+        if (secretOpen) return setSecretOpen(false);
         if (activePoem) return setActivePoem(null);
         if (activeGalleriaImage) return setActiveGalleriaImage(null);
         if (pendingJournal) { setPendingJournal(null); setVisitorName(''); return; }
@@ -2542,10 +4042,10 @@ export default function App() {
 
   // --- Lock body scroll whenever an overlay owns the screen ---
   useEffect(() => {
-    const locked = !!(selectedItem || showLogin || pendingJournal || activeJournal || activeGalleriaImage || activePoem);
+    const locked = !!(selectedItem || showLogin || pendingJournal || activeJournal || activeGalleriaImage || activePoem || secretOpen);
     document.body.style.overflow = locked ? 'hidden' : '';
     return () => { document.body.style.overflow = ''; };
-  }, [selectedItem, showLogin, pendingJournal, activeJournal, activeGalleriaImage, activePoem]);
+  }, [selectedItem, showLogin, pendingJournal, activeJournal, activeGalleriaImage, activePoem, secretOpen]);
 
   useEffect(() => { setAdminSearch(""); setConfirmDelete(null); }, [adminTab]);
 
@@ -2603,7 +4103,7 @@ export default function App() {
   }, [backdropCfg]);
 
   // One merged object so every consumer (canvas + CSS vars) agrees.
-  const topoOn = backdropCfg.mode === 'topo';
+  const topoOn = backdropCfg.mode === 'topo' || backdropCfg.mode === 'ascii';
 
   const renderContent = () => {
     if (isLoading && activeTab !== 'admin') {
@@ -2742,7 +4242,7 @@ export default function App() {
                       </div>
                       {aboutData.introImage && (
                         <div className="group w-full md:w-64 shrink-0 shadow-[8px_8px_0px_#111] border-2 border-[#111] bg-white p-2 slide-card anim-right stagger-child overflow-hidden" style={{ '--d': 2 }}>
-                          <img src={aboutData.introImage} alt="Intro" className="w-full grayscale img-reveal" />
+                          <img loading="lazy" decoding="async" src={aboutData.introImage} alt="Intro" className="w-full grayscale img-reveal" />
                         </div>
                       )}
                     </div>
@@ -2775,7 +4275,7 @@ export default function App() {
                       {circle.map((friend, i) => (
                         <div key={friend.id ?? i} className="group flex flex-col items-center anim-rise stagger-child" style={{ '--d': 3 + i }}>
                           <div className="w-full aspect-square border-[2px] border-[#111] overflow-hidden bg-gray-100 mb-3 slide-card relative">
-                            <img src={friend.image} alt={friend.name} className="w-full h-full object-cover grayscale img-reveal" />
+                            <img loading="lazy" decoding="async" src={friend.image} alt={friend.name} className="w-full h-full object-cover grayscale img-reveal" />
                             <span className="absolute top-1 right-1 w-2 h-2 rounded-full" style={{ background: bootAccent, boxShadow: `0 0 6px ${bootAccent}`, animation: 'ledBlink 3s ease-in-out infinite', animationDelay: `${i * 400}ms` }} />
                           </div>
                           <p className="text-sm font-mono text-[#111] font-bold uppercase tracking-widest bg-[#dfff00] px-2 transition-transform duration-300 group-hover:-translate-y-0.5">{friend.name}</p>
@@ -2824,7 +4324,7 @@ export default function App() {
                             {/* expanded detail — the original card content, preserved */}
                             <div className="grid md:grid-cols-[200px_1fr] gap-4 px-4 pb-4 items-start">
                               <div className="overflow-hidden border-[2px] border-[#111]">
-                                <img src={interest.image} alt={interest.title} className="w-full aspect-video object-cover grayscale img-reveal" />
+                                <img loading="lazy" decoding="async" src={interest.image} alt={interest.title} className="w-full aspect-video object-cover grayscale img-reveal" />
                               </div>
                               <p className="text-xs text-gray-700 font-sans leading-relaxed whitespace-pre-wrap pt-1">{interest.desc}</p>
                             </div>
@@ -3067,7 +4567,7 @@ export default function App() {
                               className="gal-item group cursor-pointer">
                             
                             {/* Image respects its own aspect ratio while filling the height */}
-                            <img src={img.image} className="h-full w-auto max-w-none grayscale group-hover:grayscale-0 transition-all duration-[600ms] block" alt="galleria" />
+                            <img loading="lazy" decoding="async" src={img.image} className="h-full w-auto max-w-none grayscale group-hover:grayscale-0 transition-all duration-[600ms] block" alt="galleria" />
                             
                             {/* Hover Tag */}
                             <div className="absolute bottom-3 left-3 p-1.5 bg-[#dfff00] border-[2px] border-[#111] opacity-0 translate-y-3 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] shadow-[4px_4px_0px_#111] flex items-center gap-2">
@@ -3094,6 +4594,34 @@ export default function App() {
               </div>
             </div>
 
+            {/* ===== AMBIENT BOXES (under galleria, above the audio section) ===== */}
+            {(orbitCfg.enabled || discCfg.enabled) && (
+              <div className="w-full grid lg:grid-cols-2 gap-6">
+                {orbitCfg.enabled && (
+                  <div className="anim-rise min-w-0">
+                    <div className="flex justify-between items-end border-b-[2px] border-[#111] pb-3 mb-4 gap-3">
+                      <h3 className="text-2xl md:text-3xl font-serif text-[#111] tracking-tight min-w-0 truncate">{orbitCfg.heading}</h3>
+                      <span className="font-mono text-[9px] uppercase tracking-[0.2em] text-gray-500 shrink-0">{orbitCfg.kicker}</span>
+                    </div>
+                    <div className="border-[2px] border-[#111] shadow-[8px_8px_0px_#111] overflow-hidden">
+                      <TextOrbit cfg={orbitCfg} />
+                    </div>
+                  </div>
+                )}
+                {discCfg.enabled && (
+                  <div className="anim-rise min-w-0">
+                    <div className="flex justify-between items-end border-b-[2px] border-[#111] pb-3 mb-4 gap-3">
+                      <h3 className="text-2xl md:text-3xl font-serif text-[#111] tracking-tight min-w-0 truncate">{discCfg.heading}</h3>
+                      <span className="font-mono text-[9px] uppercase tracking-[0.2em] text-gray-500 shrink-0">{discCfg.kicker}</span>
+                    </div>
+                    <div className="border-[2px] border-[#111] shadow-[8px_8px_0px_#111] overflow-hidden">
+                      <TextDisc cfg={discCfg} />
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* PLAYLISTS SECTION (Underneath Galleria) */}
             <div className="w-full">
               <div className="flex justify-between items-end border-b-[2px] border-[#111] pb-4 mb-10">
@@ -3110,7 +4638,7 @@ export default function App() {
                          
                          {/* Image & Gradient Fade Area */}
                          <div className="w-full h-56 relative shrink-0 bg-[#111]">
-                            {pl.image && <img src={pl.image} alt={pl.title} className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 text-transparent" />}
+                            {pl.image && <img loading="lazy" decoding="async" src={pl.image} alt={pl.title} className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 text-transparent" />}
                             {/* CSS Gradient dynamically bound to the configured hex color */}
                             <div className="absolute inset-0" style={{ backgroundImage: `linear-gradient(to bottom, transparent 10%, ${pl.color || '#333'} 100%)` }}></div>
                          </div>
@@ -3191,6 +4719,19 @@ export default function App() {
                 onToast={showToast}
               />
             </div>
+
+            {/* ===== RECOVERED FILES ===== */}
+            {cabinetCfg.enabled && (
+              <div className="w-full mt-10 border-[2px] border-[#111] shadow-[8px_8px_0px_#111] overflow-hidden anim-rise">
+                <FileCabinet
+                  cfg={cabinetCfg}
+                  files={cabinetFiles}
+                  openId={openFile}
+                  onOpen={setOpenFile}
+                  ascii={asciiCfg}
+                />
+              </div>
+            )}
           </div>
         );
       }
@@ -3225,7 +4766,7 @@ export default function App() {
                                <div key={post.id} onClick={() => openModal(post, 'blog')} style={{ '--d': post.__i }} className="bg-white flex flex-col md:flex-row border-[2px] border-[#111] shadow-[6px_6px_0px_#111] slide-card cursor-pointer group anim-rise stagger-child overflow-hidden">
                                  {post.coverImage && (
                                    <div className="w-full md:w-[35%] h-64 md:h-auto shrink-0 overflow-hidden border-b-[2px] md:border-b-0 md:border-r-[2px] border-[#111]">
-                                     <img src={post.coverImage} className={`w-full h-full object-cover grayscale img-reveal ${post.imageEffect === 'duotone' || post.imageEffect === 'both' ? 'img-duotone' : ''}`} alt="cover"/>
+                                     <img loading="lazy" decoding="async" src={post.coverImage} className={`w-full h-full object-cover grayscale img-reveal ${post.imageEffect === 'duotone' || post.imageEffect === 'both' ? 'img-duotone' : ''}`} alt="cover"/>
                                      {(post.imageEffect === 'ascii' || post.imageEffect === 'both') && <div className="effect-ascii-overlay"></div>}
                                    </div>
                                  )}
@@ -3275,7 +4816,7 @@ export default function App() {
                        {filteredBlogs.map((p, mi) => ({ ...p, __i: mi })).map(post => (
                           <div key={post.id} onClick={() => openModal(post, 'blog')} style={{ '--d': post.__i }} className="relative w-full min-h-[480px] bg-[#111] rounded-[24px] overflow-hidden shadow-[8px_8px_0px_#111] border-[2px] border-[#111] cursor-pointer group flex flex-col justify-end p-8 slide-card pb-6 anim-rise stagger-child">
                              <div className="absolute inset-0 z-0 bg-[#111]">
-                                <img src={post.coverImage} className={`w-full h-[60%] object-cover transition-transform duration-700 group-hover:scale-105 ${post.imageEffect === 'duotone' || post.imageEffect === 'both' ? 'img-duotone opacity-80' : ''}`} alt={post.title} />
+                                <img loading="lazy" decoding="async" src={post.coverImage} className={`w-full h-[60%] object-cover transition-transform duration-700 group-hover:scale-105 ${post.imageEffect === 'duotone' || post.imageEffect === 'both' ? 'img-duotone opacity-80' : ''}`} alt={post.title} />
                                 {(post.imageEffect === 'ascii' || post.imageEffect === 'both') && <div className="effect-ascii-overlay mix-blend-color-dodge opacity-60"></div>}
                                 <div className="absolute inset-0 bg-gradient-to-b from-transparent via-[#111]/90 to-[#111] h-full w-full"></div>
                              </div>
@@ -3304,7 +4845,7 @@ export default function App() {
                        {filteredBlogs.map((p, si) => ({ ...p, __i: si })).map(post => (
                           <div key={post.id} onClick={() => openModal(post, 'blog')} style={{ '--d': post.__i }} className="bg-[#111] p-6 md:p-8 border-[2px] border-[#333] cursor-pointer group hover:-translate-y-2 hover:border-[#ff5722] transition-all duration-[380ms] ease-[cubic-bezier(0.16,1,0.3,1)] flex flex-col anim-rise stagger-child">
                              <div className="relative w-full aspect-[4/3] bg-[#ff5722] mb-8 overflow-hidden border-[2px] border-[#333]">
-                                 <img src={post.coverImage} className={`w-full h-full object-cover transition-transform duration-700 group-hover:scale-105 ${post.imageEffect === 'duotone' || post.imageEffect === 'both' ? 'mix-blend-multiply grayscale contrast-[1.2]' : ''}`} alt={post.title} />
+                                 <img loading="lazy" decoding="async" src={post.coverImage} className={`w-full h-full object-cover transition-transform duration-700 group-hover:scale-105 ${post.imageEffect === 'duotone' || post.imageEffect === 'both' ? 'mix-blend-multiply grayscale contrast-[1.2]' : ''}`} alt={post.title} />
                                  {(post.imageEffect === 'ascii' || post.imageEffect === 'both') && <div className="effect-ascii-overlay mix-blend-color-dodge opacity-80"></div>}
                              </div>
                              
@@ -3377,7 +4918,7 @@ export default function App() {
                 {socials.map((social, i) => (
                   <a key={social.id} href={social.url} target="_blank" rel="noopener noreferrer" className="bg-white p-4 border-[2px] border-[#111] shadow-[6px_6px_0px_#111] slide-card cursor-pointer w-48 text-center group block anim-rise stagger-child" style={{ '--d': i }}>
                     <div className="w-full h-32 bg-[#f4f4f0] border-[2px] border-[#111] mb-4 overflow-hidden flex items-center justify-center">
-                      {social.image ? <img src={social.image} alt={social.name} className="w-full h-full object-cover grayscale img-reveal" /> : <span className="font-mono text-[#111] text-xs font-bold">MISSING_IMG</span>}
+                      {social.image ? <img loading="lazy" decoding="async" src={social.image} alt={social.name} className="w-full h-full object-cover grayscale img-reveal" /> : <span className="font-mono text-[#111] text-xs font-bold">MISSING_IMG</span>}
                     </div>
                     <span className="font-mono font-bold text-sm uppercase tracking-widest text-[#111] bg-[#dfff00] px-2 py-1">{social.name}</span>
                   </a>
@@ -3467,7 +5008,7 @@ export default function App() {
                                 <div key={idx} className="relative group border-[2px] border-[#111] p-2 bg-white w-48">
                                   <button type="button" onClick={() => { const n = [...editingItem.galleryBlocks]; n.splice(idx, 1); setEditingItem({...editingItem, galleryBlocks: n}); }} className="absolute -top-3 -right-3 bg-[#ff5722] text-white border-[2px] border-[#111] p-1 opacity-0 group-hover:opacity-100 z-10 hover:scale-110"><Trash2 size={14}/></button>
                                   {block.image ? (
-                                    <img src={block.image} className="w-full h-32 object-cover border-[2px] border-[#111] mb-2" alt="block"/>
+                                    <img loading="lazy" decoding="async" src={block.image} className="w-full h-32 object-cover border-[2px] border-[#111] mb-2" alt="block"/>
                                   ) : (
                                     <label className="w-full h-32 flex flex-col items-center justify-center bg-[#f4f4f0] border-[2px] border-[#111] border-dashed mb-2 cursor-pointer hover:bg-[#dfff00]">
                                       <Upload size={20} className="mb-2"/> <span className="text-[10px]">ADD IMAGE</span>
@@ -3719,7 +5260,7 @@ export default function App() {
                     </div>
                     {editingItem.image && (
                       <div className="w-40 p-3 bg-[#f4f4f0] border-[2px] border-[#111] anim-fade">
-                        <img src={editingItem.image} alt="preview" className="w-full h-28 object-cover border-[2px] border-[#111] grayscale" />
+                        <img loading="lazy" decoding="async" src={editingItem.image} alt="preview" className="w-full h-28 object-cover border-[2px] border-[#111] grayscale" />
                         <p className="font-mono text-[9px] uppercase tracking-widest text-center mt-2">Live preview</p>
                       </div>
                     )}
@@ -3892,7 +5433,7 @@ export default function App() {
                         <p className="font-mono text-sm text-gray-600">Fills every surface that used to show blueprint gridlines — galleria stage, project sheets, journal body, sandbox — plus the page behind the window.</p>
                       </div>
                       <div className="flex gap-2">
-                        {[['topo','Contours'],['grid','Gridlines'],['image','Image']].map(([m, label]) => (
+                        {[['topo','Contours'],['ascii','ASCII'],['grid','Gridlines'],['image','Image']].map(([m, label]) => (
                           <button key={m} onClick={() => setBackdrop({ mode: m })}
                                   className={`font-mono text-[10px] font-bold uppercase tracking-widest px-4 py-2.5 border-[2px] border-[#111] slide-press ${backdropCfg.mode === m ? 'bg-[#111] text-[#dfff00]' : 'bg-white'}`}>
                             {label}
@@ -3983,6 +5524,59 @@ export default function App() {
                                   <input type="color" value={backdropCfg.ringColor} onChange={e => setBackdrop({ ringColor: e.target.value })} className="w-12 h-10 border-[2px] border-[#111] p-0 cursor-pointer" />
                                 </div>
                              </div>
+                           </>
+                         )}
+
+                         {/* ===== ASCII MODE ===== */}
+                         {backdropCfg.mode === 'ascii' && (
+                           <>
+                             <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                                <div>
+                                  <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Glyph Colour</label>
+                                  <div className="flex gap-2">
+                                    <input type="color" value={backdropCfg.lineColor} onChange={e => setBackdrop({ lineColor: e.target.value })} className="w-12 h-11 border-[2px] border-[#111] p-0 cursor-pointer" />
+                                    <input value={backdropCfg.lineColor} onChange={e => setBackdrop({ lineColor: e.target.value })} className="flex-1 min-w-0 p-2.5 border-[2px] border-[#111] font-mono text-xs outline-none focus:bg-[#dfff00]" />
+                                  </div>
+                                </div>
+                                <div>
+                                  <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Opacity ({Math.round(backdropCfg.lineOpacity * 100)}%)</label>
+                                  <input type="range" min="0.02" max="1" step="0.02" value={backdropCfg.lineOpacity} onChange={e => setBackdrop({ lineOpacity: parseFloat(e.target.value) })} className="w-full accent-[#ff5722] h-11" />
+                                </div>
+                                <div>
+                                  <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Glyph Size ({backdropCfg.asciiSize}px)</label>
+                                  <input type="range" min="8" max="40" value={backdropCfg.asciiSize} onChange={e => setBackdrop({ asciiSize: parseInt(e.target.value) })} className="w-full accent-[#ff5722] h-11" />
+                                </div>
+                                <div>
+                                  <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Seed</label>
+                                  <div className="flex gap-2">
+                                    <input type="number" value={backdropCfg.seed} onChange={e => setBackdrop({ seed: parseInt(e.target.value) || 0 })} className="flex-1 min-w-0 p-2.5 border-[2px] border-[#111] font-mono text-xs outline-none focus:bg-[#dfff00]" />
+                                    <button onClick={() => setBackdrop({ seed: Math.floor(Math.random() * 999) })} title="New field" className="p-2.5 bg-white border-[2px] border-[#111] hover:bg-[#dfff00] transition-colors"><RotateCcw size={14}/></button>
+                                  </div>
+                                </div>
+                             </div>
+                             <div>
+                               <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Character Ramp — sparse to dense</label>
+                               <input value={backdropCfg.asciiRamp} onChange={e => setBackdrop({ asciiRamp: e.target.value })} className="w-full p-3 border-[2px] border-[#111] font-mono text-sm outline-none focus:bg-[#dfff00]" />
+                               <p className="font-mono text-[8px] uppercase tracking-[0.15em] text-gray-400 mt-1">Leading spaces stay blank. Try ".:-=+*#%@" or "01" or "░▒▓█"</p>
+                             </div>
+                             <div className="grid sm:grid-cols-3 gap-4">
+                                <div>
+                                  <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Field Scale ({backdropCfg.scale}×)</label>
+                                  <input type="range" min="0.2" max="3" step="0.1" value={backdropCfg.scale} onChange={e => setBackdrop({ scale: parseFloat(e.target.value) })} className="w-full accent-[#ff5722] h-11" />
+                                </div>
+                                <div>
+                                  <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Drift X ({backdropCfg.driftX})</label>
+                                  <input type="range" min="-3" max="3" step="0.1" value={backdropCfg.driftX} onChange={e => setBackdrop({ driftX: parseFloat(e.target.value) })} className="w-full accent-[#ff5722] h-11" />
+                                </div>
+                                <div>
+                                  <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Morph ({backdropCfg.morph})</label>
+                                  <input type="range" min="0" max="2" step="0.05" value={backdropCfg.morph} onChange={e => setBackdrop({ morph: parseFloat(e.target.value) })} className="w-full accent-[#ff5722] h-11" />
+                                </div>
+                             </div>
+                             <label className={`inline-flex items-center gap-2 px-4 py-2.5 border-[2px] border-[#111] font-mono text-[10px] font-bold uppercase tracking-widest cursor-pointer slide-press ${backdropCfg.animate ? 'bg-[#dfff00]' : 'bg-white'}`}>
+                               <input type="checkbox" className="hidden" checked={!!backdropCfg.animate} onChange={e => setBackdrop({ animate: e.target.checked })} />
+                               {backdropCfg.animate ? <Check size={14}/> : <X size={14}/>} Animate
+                             </label>
                            </>
                          )}
 
@@ -4421,7 +6015,7 @@ export default function App() {
                     {(aboutData.myspace || []).map((friend, idx) => (
                       <div key={friend.id} draggable onDragStart={() => dragItem.current = idx} onDragEnter={() => dragOverItem.current = idx} onDragEnd={() => handleSortAboutList('myspace')} onDragOver={(e) => e.preventDefault()} className="bg-[#f4f4f0] p-4 border-[2px] border-[#111] flex gap-4 items-center hover:bg-white transition-colors shadow-[4px_4px_0px_rgba(17,17,17,0.2)]">
                         <div className="cursor-grab text-[#111] p-1 border-[2px] border-[#111] bg-white"><GripVertical size={20}/></div>
-                        <img src={friend.image || 'https://placehold.co/100x100'} className="w-16 h-16 border-[2px] border-[#111] object-cover grayscale" alt="prev"/>
+                        <img loading="lazy" decoding="async" src={friend.image || 'https://placehold.co/100x100'} className="w-16 h-16 border-[2px] border-[#111] object-cover grayscale" alt="prev"/>
                         <div className="flex-1 space-y-2">
                           <input value={friend.name} onChange={(e) => { const n = [...aboutData.myspace]; n[idx].name = e.target.value; setAboutData({...aboutData, myspace: n}); }} className="w-full p-2 border-[2px] border-[#111] font-mono font-bold text-sm outline-none focus:bg-[#dfff00]" placeholder="Name" />
                           <div className="flex gap-2">
@@ -4442,7 +6036,7 @@ export default function App() {
                     {(aboutData.interests || []).map((interest, idx) => (
                       <div key={interest.id} draggable onDragStart={() => dragItem.current = idx} onDragEnter={() => dragOverItem.current = idx} onDragEnd={() => handleSortAboutList('interests')} onDragOver={(e) => e.preventDefault()} className="bg-[#f4f4f0] p-6 border-[2px] border-[#111] flex flex-col md:flex-row gap-6 shadow-[4px_4px_0px_rgba(17,17,17,0.2)]">
                         <div className="cursor-grab text-[#111] p-2 border-[2px] border-[#111] bg-white h-fit"><GripVertical size={24}/></div>
-                        <img src={interest.image || 'https://placehold.co/300x200'} className="w-full md:w-48 h-32 object-cover border-[2px] border-[#111]" alt="prev"/>
+                        <img loading="lazy" decoding="async" src={interest.image || 'https://placehold.co/300x200'} className="w-full md:w-48 h-32 object-cover border-[2px] border-[#111]" alt="prev"/>
                         <div className="flex-1 space-y-3 font-mono">
                           <input value={interest.title} onChange={(e) => { const n = [...aboutData.interests]; n[idx].title = e.target.value; setAboutData({...aboutData, interests: n}); }} className="w-full p-3 border-[2px] border-[#111] font-bold outline-none focus:bg-[#dfff00]" placeholder="Interest Title" />
                           <div className="flex gap-2">
@@ -4511,7 +6105,7 @@ export default function App() {
                     >
                        <div className="absolute top-1 left-1 bg-[#111] text-[#dfff00] p-1 border-[2px] border-[#111] cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity z-10"><GripVertical size={16}/></div>
                        <button onClick={() => setGalleriaData(galleriaData.filter(g => g.id !== item.id))} className="absolute top-1 right-1 bg-[#ff5722] text-white p-1 border-[2px] border-[#111] opacity-0 group-hover:opacity-100 transition-opacity z-10 hover:bg-[#111]"><Trash2 size={16}/></button>
-                       <img src={item.image} className="w-full aspect-square object-cover border-[2px] border-[#111] mb-2 grayscale group-hover:grayscale-0 transition-all" alt="gal_prev"/>
+                       <img loading="lazy" decoding="async" src={item.image} className="w-full aspect-square object-cover border-[2px] border-[#111] mb-2 grayscale group-hover:grayscale-0 transition-all" alt="gal_prev"/>
                        <input value={item.date} onChange={(e) => { const n = [...galleriaData]; n[idx].date = e.target.value; setGalleriaData(n); }} className="w-full text-[10px] p-2 border-[2px] border-[#111] text-center font-mono font-bold outline-none focus:bg-[#dfff00]" placeholder="LABEL"/>
                        
                        {/* === NEW: ATTACH MEMO CHECKBOX === */}
@@ -4548,7 +6142,7 @@ export default function App() {
                         </div>
                         <div className="w-10 h-10 border-[2px] border-[#111] shrink-0" style={{ backgroundColor: pl.color || '#333' }} />
                         {pl.image
-                          ? <img src={pl.image} alt="" className="w-10 h-10 object-cover border-[2px] border-[#111] grayscale shrink-0" />
+                          ? <img loading="lazy" decoding="async" src={pl.image} alt="" className="w-10 h-10 object-cover border-[2px] border-[#111] grayscale shrink-0" />
                           : <div className="w-10 h-10 border-[2px] border-dashed border-[#111]/40 shrink-0 flex items-center justify-center"><Music size={14} className="text-gray-400"/></div>}
                         <div className="min-w-0">
                           <p className="font-bold text-sm truncate">{pl.title || 'UNTITLED_PLAYLIST'}</p>
@@ -4632,7 +6226,7 @@ export default function App() {
                         </div>
                         <span className="font-mono text-[10px] text-gray-400 w-6 shrink-0">{String(idx + 1).padStart(2, '0')}</span>
                         {thumb
-                          ? <img src={thumb} alt="" className="w-12 h-12 object-cover border-[2px] border-[#111] grayscale shrink-0" />
+                          ? <img loading="lazy" decoding="async" src={thumb} alt="" className="w-12 h-12 object-cover border-[2px] border-[#111] grayscale shrink-0" />
                           : <div className="w-12 h-12 border-[2px] border-dashed border-[#111]/40 shrink-0 flex items-center justify-center text-[8px] text-gray-400">NONE</div>}
                         <div className="min-w-0">
                           <p className="font-bold text-sm truncate">{label(item)}</p>
@@ -4671,7 +6265,59 @@ export default function App() {
               <div className="space-y-10">
 
                 {/* ---------- LIVE PREVIEW (drag decals) ---------- */}
+                {/* ---------- WHICH VIEWER OPENS ---------- */}
                 <div className="bg-white p-6 md:p-8 border-[2px] border-[#111] shadow-[8px_8px_0px_#111] anim-rise">
+                  <div className="border-b-[2px] border-[#111] pb-4 mb-6">
+                    <h3 className="font-serif text-3xl mb-1">Click Behaviour</h3>
+                    <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-gray-500">What opens when a galleria plate is clicked.</p>
+                  </div>
+                  <div className="grid sm:grid-cols-2 gap-4">
+                    {GALLERIA_STYLES.map(st => (
+                      <button key={st.id} onClick={() => setLB({ style: st.id })}
+                              className={`text-left p-5 border-[2px] border-[#111] slide-press transition-colors ${lightboxConfig.style === st.id ? 'bg-[#111] text-[#dfff00]' : 'bg-[#f4f4f0] hover:bg-[#dfff00]'}`}>
+                        <div className="flex items-center justify-between gap-3 mb-2">
+                          <span className="font-mono font-bold text-sm uppercase tracking-widest">{st.label}</span>
+                          {lightboxConfig.style === st.id && <Check size={16}/>}
+                        </div>
+                        <p className="font-mono text-[10px] uppercase tracking-[0.15em] opacity-70">{st.hint}</p>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* ---------- EDITORIAL COPY ---------- */}
+                {lightboxConfig.style === 'editorial' && (
+                  <div className="bg-white p-6 md:p-8 border-[2px] border-[#111] shadow-[8px_8px_0px_#111]">
+                    <h3 className="font-serif text-3xl mb-1">Editorial Spread</h3>
+                    <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-gray-500 mb-6 border-b-[2px] border-[#111] pb-4">
+                      Plate titles, dates and captions come from the Galleria tab. These set the surrounding furniture.
+                    </p>
+                    <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
+                      {[['edMasthead','Masthead'],['edKicker','Kicker'],['edByline','Byline'],['edSectionLabel','Section Label'],['edSectionYears','Section Years'],['edSectionLabel2','Second Section'],['edFallbackTitle','Fallback Plate Title'],['edFooterLinks','Footer Links (comma separated)']].map(([k, label]) => (
+                        <div key={k}>
+                          <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">{label}</label>
+                          <input value={lightboxConfig[k] || ''} onChange={e => setLB({ [k]: e.target.value })} className="w-full p-3 border-[2px] border-[#111] font-mono text-sm outline-none focus:bg-[#dfff00]" />
+                        </div>
+                      ))}
+                      <div className="md:col-span-2 lg:col-span-3">
+                        <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Standfirst (used when a plate has no caption)</label>
+                        <textarea value={lightboxConfig.edStandfirst || ''} rows={3} onChange={e => setLB({ edStandfirst: e.target.value })} className="w-full p-3 border-[2px] border-[#111] font-mono text-sm outline-none focus:bg-[#dfff00] resize-y" />
+                      </div>
+                      {[['edPaper','Paper'],['edInk','Ink'],['edAccent','Accent']].map(([k, label]) => (
+                        <div key={k}>
+                          <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">{label}</label>
+                          <div className="flex gap-2">
+                            <input type="color" value={lightboxConfig[k]} onChange={e => setLB({ [k]: e.target.value })} className="w-12 h-11 border-[2px] border-[#111] p-0 cursor-pointer" />
+                            <input value={lightboxConfig[k]} onChange={e => setLB({ [k]: e.target.value })} className="flex-1 min-w-0 p-2.5 border-[2px] border-[#111] font-mono text-xs outline-none focus:bg-[#dfff00]" />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* ---------- SCRAPBOOK PREVIEW (drag decals) ---------- */}
+                <div className={`bg-white p-6 md:p-8 border-[2px] border-[#111] shadow-[8px_8px_0px_#111] anim-rise ${lightboxConfig.style === 'editorial' ? 'opacity-55' : ''}`}>
                   <div className="flex flex-col md:flex-row md:justify-between md:items-end border-b-[2px] border-[#111] pb-4 mb-6 gap-3">
                     <div>
                       <h3 className="font-serif text-3xl mb-1">Sticker Slam</h3>
@@ -4688,7 +6334,7 @@ export default function App() {
 
                   <div className="relative w-full aspect-[16/9] overflow-hidden border-[2px] border-[#111]"
                        style={{ background: lightboxConfig.accent }}>
-                    <img src={galleriaData[0]?.image || 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=900&q=80'} alt=""
+                    <img loading="lazy" decoding="async" src={galleriaData[0]?.image || 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=900&q=80'} alt=""
                          className="absolute inset-0 w-full h-full object-cover"
                          style={{ filter: lightboxConfig.duotone ? 'grayscale(1) contrast(1.15)' : 'none' }} />
                     {lightboxConfig.duotone && <div className="absolute inset-0" style={{ background: lightboxConfig.accent, mixBlendMode: 'multiply' }} />}
@@ -4907,7 +6553,7 @@ export default function App() {
                             </div>
                             <span className="font-mono text-[10px] text-gray-400 w-6 shrink-0">{String(idx + 1).padStart(2, '0')}</span>
                             {p.image
-                              ? <img src={p.image} alt="" className="w-11 h-11 object-cover border-[2px] border-[#111] grayscale shrink-0" />
+                              ? <img loading="lazy" decoding="async" src={p.image} alt="" className="w-11 h-11 object-cover border-[2px] border-[#111] grayscale shrink-0" />
                               : <div className="w-11 h-11 border-[2px] border-dashed border-[#111]/40 shrink-0 flex items-center justify-center"><ImageIcon size={14} className="text-gray-400"/></div>}
                             <div className="min-w-0 flex-1">
                               <p className="font-mono font-bold text-sm truncate">{p.title}</p>
@@ -5015,6 +6661,468 @@ export default function App() {
               </div>
             )}
 
+            {/* ============================================================
+                SECRET CORNER — the unlisted music player
+                ============================================================ */}
+            {adminTab === 'secret' && (
+              <div className="space-y-10">
+                <div className="bg-white p-6 md:p-8 border-[2px] border-[#111] shadow-[8px_8px_0px_#111] anim-rise">
+                  <div className="flex flex-col md:flex-row md:justify-between md:items-end border-b-[2px] border-[#111] pb-4 mb-6 gap-3">
+                    <div className="min-w-0">
+                      <h3 className="font-serif text-3xl mb-1">{secretCfg.title || "Secret Corner"}</h3>
+                      <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-gray-500">
+                        Unlisted. Opens by typing the passphrase anywhere, or via the faint glyph in a poem.
+                      </p>
+                    </div>
+                    <div className="flex gap-2 shrink-0">
+                      <button onClick={() => setSecretOpen(true)} className="bg-white px-4 py-2.5 border-[2px] border-[#111] font-mono font-bold text-[10px] uppercase tracking-widest flex items-center gap-2 slide-press"><Play size={14}/> Preview</button>
+                      <label className={`flex items-center gap-2 px-4 py-2.5 border-[2px] border-[#111] font-mono text-[10px] font-bold uppercase tracking-widest cursor-pointer slide-press ${secretCfg.enabled ? 'bg-[#dfff00]' : 'bg-white'}`}>
+                        <input type="checkbox" className="hidden" checked={!!secretCfg.enabled} onChange={e => setSecret({ enabled: e.target.checked })} />
+                        {secretCfg.enabled ? <Eye size={14}/> : <EyeOff size={14}/>} {secretCfg.enabled ? 'Live' : 'Off'}
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
+                    {[['title','Title'],['kicker','Kicker'],['footer','Footer Line'],['favLabel','Favourites Button'],['passphrase','Passphrase (type to open)']].map(([k, label]) => (
+                      <div key={k}>
+                        <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">{label}</label>
+                        <input value={secretCfg[k] || ''} onChange={e => setSecret({ [k]: e.target.value })} className="w-full p-3 border-[2px] border-[#111] font-mono text-sm outline-none focus:bg-[#dfff00]" />
+                      </div>
+                    ))}
+                    {[['brass','Brass'],['bgColor','Cabinet'],['textColor','Text'],['mutedColor','Muted Text']].map(([k, label]) => (
+                      <div key={k}>
+                        <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">{label}</label>
+                        <div className="flex gap-2">
+                          <input type="color" value={secretCfg[k]} onChange={e => setSecret({ [k]: e.target.value })} className="w-12 h-11 border-[2px] border-[#111] p-0 cursor-pointer" />
+                          <input value={secretCfg[k]} onChange={e => setSecret({ [k]: e.target.value })} className="flex-1 min-w-0 p-2.5 border-[2px] border-[#111] font-mono text-xs outline-none focus:bg-[#dfff00]" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="mt-6 pt-6 border-t-[2px] border-[#111]">
+                    <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">
+                      Platter Tilt ({secretCfg.platterTilt ?? 56}° — 0 is flat-on, 70 is nearly edge-on)
+                    </label>
+                    <input type="range" min="0" max="72" value={secretCfg.platterTilt ?? 56}
+                           onChange={e => setSecret({ platterTilt: parseInt(e.target.value) })}
+                           className="w-full max-w-md accent-[#ff5722] h-11" />
+                  </div>
+                  <div className="flex flex-wrap gap-4 mt-6 pt-6 border-t-[2px] border-[#111]">
+                    {[['showGlyph','Glyph in poems'],['autoAdvance','Auto-advance']].map(([k, label]) => (
+                      <label key={k} className={`flex items-center gap-2 px-4 py-2.5 border-[2px] border-[#111] font-mono text-[10px] font-bold uppercase tracking-widest cursor-pointer slide-press ${secretCfg[k] ? 'bg-[#dfff00]' : 'bg-white'}`}>
+                        <input type="checkbox" className="hidden" checked={!!secretCfg[k]} onChange={e => setSecret({ [k]: e.target.checked })} />
+                        {secretCfg[k] ? <Check size={14}/> : <X size={14}/>} {label}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                {/* ---------- TRACKS ---------- */}
+                <div className="bg-white p-6 md:p-8 border-[2px] border-[#111] shadow-[8px_8px_0px_#111]">
+                  <div className="flex flex-col md:flex-row md:justify-between md:items-end border-b-[2px] border-[#111] pb-4 mb-6 gap-3">
+                    <div className="min-w-0">
+                      <h3 className="font-serif text-3xl mb-1">Tracks</h3>
+                      <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-gray-500">{secretTracks.length} in the shelf</p>
+                    </div>
+                    <button onClick={addTrack} className="bg-[#111] text-[#dfff00] px-6 py-2.5 border-[2px] border-[#111] font-mono font-bold uppercase tracking-widest flex items-center gap-2 slide-press shrink-0"><Plus size={18}/> Add Track</button>
+                  </div>
+
+                  <div className="bg-[#f4f4f0] border-[2px] border-[#111] p-4 mb-6 font-mono text-[10px] leading-relaxed text-gray-600">
+                    <strong className="uppercase tracking-widest">Audio hosting:</strong> upload writes to your Supabase Storage bucket
+                    <span className="px-1 bg-[#dfff00] border border-[#111] mx-1">media</span>
+                    and stores only the URL. Audio files are far too large to embed the way images were, so if the bucket
+                    isn't set up the upload will fail and you'll need to paste a direct URL instead.
+                  </div>
+
+                  {secretTracks.length === 0 && (
+                    <div className="border-[2px] border-dashed border-[#111]/40 p-10 text-center font-mono text-[10px] uppercase tracking-[0.2em] text-gray-500">Shelf is empty.</div>
+                  )}
+
+                  <div className="space-y-3">
+                    {secretTracks.map((t, i) => {
+                      const pendingDel = confirmDelete && confirmDelete.listType === 'secret_tracks' && confirmDelete.id === t.id;
+                      return (
+                        <div key={t.id} style={{ '--d': i }} className="bg-[#f4f4f0] border-[2px] border-[#111] p-4 anim-rise stagger-child">
+                          <div className="flex items-start gap-3 mb-4">
+                            <div className="flex flex-col shrink-0">
+                              <button disabled={i === 0} onClick={() => moveListItem('secret_tracks', i, -1)} className="px-1.5 py-0.5 border-[2px] border-[#111] bg-white hover:bg-[#dfff00] disabled:opacity-25 text-[10px] leading-none">▲</button>
+                              <button disabled={i === secretTracks.length - 1} onClick={() => moveListItem('secret_tracks', i, 1)} className="px-1.5 py-0.5 border-[2px] border-t-0 border-[#111] bg-white hover:bg-[#dfff00] disabled:opacity-25 text-[10px] leading-none">▼</button>
+                            </div>
+                            <span className="font-mono text-[10px] text-gray-400 w-5 shrink-0 pt-2">{String(i + 1).padStart(2, '0')}</span>
+                            {t.cover
+                              ? <img loading="lazy" decoding="async" src={t.cover} alt="" className="w-12 h-12 object-cover border-[2px] border-[#111] shrink-0" />
+                              : <div className="w-12 h-12 border-[2px] border-dashed border-[#111]/40 shrink-0 flex items-center justify-center"><Disc3 size={16} className="text-gray-400"/></div>}
+                            <div className="min-w-0 flex-1 grid sm:grid-cols-[1fr_1fr_80px] gap-2">
+                              <input value={t.title || ''} placeholder="Title" onChange={e => updateTrack(t.id, { title: e.target.value })} className="w-full min-w-0 p-2.5 border-[2px] border-[#111] font-mono text-sm outline-none focus:bg-[#dfff00]" />
+                              <input value={t.artist || ''} placeholder="Artist" onChange={e => updateTrack(t.id, { artist: e.target.value })} className="w-full min-w-0 p-2.5 border-[2px] border-[#111] font-mono text-sm outline-none focus:bg-[#dfff00]" />
+                              <input value={t.length || ''} placeholder="3:21" onChange={e => updateTrack(t.id, { length: e.target.value })} title="Printed duration" className="w-full min-w-0 p-2.5 border-[2px] border-[#111] font-mono text-sm outline-none focus:bg-[#dfff00]" />
+                            </div>
+                            {pendingDel ? (
+                              <div className="flex gap-1 shrink-0 anim-fade">
+                                <button onClick={() => handleDeleteItem('secret_tracks', t.id)} className="px-3 py-2 bg-[#ff5722] text-white border-[2px] border-[#111] font-bold text-[10px] uppercase">Confirm</button>
+                                <button onClick={() => setConfirmDelete(null)} className="px-3 py-2 bg-white border-[2px] border-[#111] font-bold text-[10px] uppercase">Keep</button>
+                              </div>
+                            ) : (
+                              <button onClick={() => setConfirmDelete({ listType: 'secret_tracks', id: t.id })} className="p-2 bg-[#ff5722] text-white border-[2px] border-[#111] hover:bg-[#111] transition-colors shrink-0"><Trash2 size={16}/></button>
+                            )}
+                          </div>
+
+                          <div className="grid md:grid-cols-2 gap-3">
+                            <div>
+                              <label className="text-[9px] font-mono font-bold uppercase text-gray-500 mb-1 block">Audio URL</label>
+                              <div className="flex">
+                                <input value={t.src || ''} placeholder="https://…" onChange={e => updateTrack(t.id, { src: e.target.value })} className="flex-1 min-w-0 p-2.5 border-[2px] border-[#111] font-mono text-xs outline-none focus:bg-[#dfff00]" />
+                                <label className="cursor-pointer bg-[#111] text-white px-4 flex items-center font-mono font-bold text-xs hover:bg-[#ff5722] transition-colors border-[2px] border-l-0 border-[#111] shrink-0">
+                                  <Upload size={14}/>
+                                  <input type="file" className="hidden" accept="audio/*" onChange={e => handleAudioUpload(e, url => updateTrack(t.id, { src: url }))} />
+                                </label>
+                              </div>
+                            </div>
+                            <div>
+                              <label className="text-[9px] font-mono font-bold uppercase text-gray-500 mb-1 block">Cover Image</label>
+                              <div className="flex">
+                                <input value={t.cover || ''} placeholder="https://…" onChange={e => updateTrack(t.id, { cover: e.target.value })} className="flex-1 min-w-0 p-2.5 border-[2px] border-[#111] font-mono text-xs outline-none focus:bg-[#dfff00]" />
+                                <label className="cursor-pointer bg-[#111] text-white px-4 flex items-center font-mono font-bold text-xs hover:bg-[#ff5722] transition-colors border-[2px] border-l-0 border-[#111] shrink-0">
+                                  <Upload size={14}/>
+                                  <input type="file" className="hidden" accept="image/*" onChange={e => handleImageUpload(e, url => updateTrack(t.id, { cover: url }))} />
+                                </label>
+                              </div>
+                            </div>
+                            <div className="md:col-span-2">
+                              <label className="text-[9px] font-mono font-bold uppercase text-gray-500 mb-1 block">Why you love it (shown under the title)</label>
+                              <textarea value={t.note || ''} rows={2} onChange={e => updateTrack(t.id, { note: e.target.value })} className="w-full p-2.5 border-[2px] border-[#111] font-mono text-xs outline-none focus:bg-[#dfff00] resize-y" />
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ============================================================
+                AMBIENT — orbit, disc, file cabinet
+                ============================================================ */}
+            {adminTab === 'ambient' && (
+              <div className="space-y-10">
+
+                {/* ---------- MODAL SURFACES ---------- */}
+                <div className="bg-white p-6 md:p-8 border-[2px] border-[#111] shadow-[8px_8px_0px_#111] anim-rise">
+                  <div className="flex flex-col md:flex-row md:justify-between md:items-end border-b-[2px] border-[#111] pb-4 mb-6 gap-3">
+                    <div className="min-w-0">
+                      <h3 className="font-serif text-3xl mb-1">Modal Surfaces</h3>
+                      <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-gray-500">
+                        Generated ASCII behind every modal and the documents inside the folder.
+                      </p>
+                    </div>
+                    <label className={`flex items-center gap-2 px-4 py-2.5 border-[2px] border-[#111] font-mono text-[10px] font-bold uppercase tracking-widest cursor-pointer slide-press shrink-0 ${asciiCfg.enabled ? 'bg-[#dfff00]' : 'bg-white'}`}>
+                      <input type="checkbox" className="hidden" checked={!!asciiCfg.enabled} onChange={e => setAscii({ enabled: e.target.checked })} />
+                      {asciiCfg.enabled ? <Eye size={14}/> : <EyeOff size={14}/>} {asciiCfg.enabled ? 'On' : 'Off'}
+                    </label>
+                  </div>
+
+                  <div className="grid lg:grid-cols-[minmax(0,1fr)_280px] gap-8">
+                    <div className="space-y-5">
+                      <div>
+                        <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Character Ramp — sparse to dense</label>
+                        <input value={asciiCfg.ramp} onChange={e => setAscii({ ramp: e.target.value })} className="w-full p-3 border-[2px] border-[#111] font-mono text-sm outline-none focus:bg-[#dfff00]" />
+                        <p className="font-mono text-[8px] uppercase tracking-[0.15em] text-gray-400 mt-1">Leading spaces stay blank. Try ".:-=+*#%@" or "01" or "░▒▓█"</p>
+                      </div>
+
+                      <div className="grid sm:grid-cols-3 gap-4">
+                        <div>
+                          <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Glyph Size ({asciiCfg.size}px)</label>
+                          <input type="range" min="6" max="24" value={asciiCfg.size} onChange={e => setAscii({ size: parseInt(e.target.value) })} className="w-full accent-[#ff5722] h-11" />
+                        </div>
+                        <div>
+                          <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">On Light ({Math.round(asciiCfg.opacityLight * 100)}%)</label>
+                          <input type="range" min="0" max="0.4" step="0.01" value={asciiCfg.opacityLight} onChange={e => setAscii({ opacityLight: parseFloat(e.target.value) })} className="w-full accent-[#ff5722] h-11" />
+                        </div>
+                        <div>
+                          <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">On Dark ({Math.round(asciiCfg.opacityDark * 100)}%)</label>
+                          <input type="range" min="0" max="0.4" step="0.01" value={asciiCfg.opacityDark} onChange={e => setAscii({ opacityDark: parseFloat(e.target.value) })} className="w-full accent-[#ff5722] h-11" />
+                        </div>
+                      </div>
+
+                      <div className="grid sm:grid-cols-3 gap-4 border-t-[2px] border-[#111] pt-5">
+                        {[['inkOnLight','Ink on Light'],['inkOnDark','Ink on Dark']].map(([k, label]) => (
+                          <div key={k}>
+                            <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">{label}</label>
+                            <div className="flex gap-2">
+                              <input type="color" value={asciiCfg[k]} onChange={e => setAscii({ [k]: e.target.value })} className="w-12 h-11 border-[2px] border-[#111] p-0 cursor-pointer" />
+                              <input value={asciiCfg[k]} onChange={e => setAscii({ [k]: e.target.value })} className="flex-1 min-w-0 p-2.5 border-[2px] border-[#111] font-mono text-xs outline-none focus:bg-[#dfff00]" />
+                            </div>
+                          </div>
+                        ))}
+                        <div>
+                          <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Drift Speed ({asciiCfg.speed}×)</label>
+                          <input type="range" min="0.2" max="4" step="0.1" value={asciiCfg.speed} onChange={e => setAscii({ speed: parseFloat(e.target.value) })} className="w-full accent-[#ff5722] h-11" />
+                        </div>
+                      </div>
+
+                      <label className={`inline-flex items-center gap-2 px-4 py-2.5 border-[2px] border-[#111] font-mono text-[10px] font-bold uppercase tracking-widest cursor-pointer slide-press ${asciiCfg.animate ? 'bg-[#dfff00]' : 'bg-white'}`}>
+                        <input type="checkbox" className="hidden" checked={!!asciiCfg.animate} onChange={e => setAscii({ animate: e.target.checked })} />
+                        {asciiCfg.animate ? <Check size={14}/> : <X size={14}/>} Drift (5fps — stepping, not sliding)
+                      </label>
+                    </div>
+
+                    <div className="space-y-3">
+                      <p className="font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-gray-500">Readability check</p>
+                      <div className="relative h-[190px] overflow-hidden border-[2px] border-[#111]" style={{ background: ED.paper }}>
+                        {asciiCfg.enabled && <AsciiTexture seed={5} ramp={asciiCfg.ramp} size={asciiCfg.size} speed={asciiCfg.speed} animate={asciiCfg.animate} color={asciiCfg.inkOnLight} opacity={asciiCfg.opacityLight} mask={asciiCfg.mask} clear={asciiCfg.clear} />}
+                        <div className="relative p-4">
+                          <p className="font-serif italic text-xl mb-2" style={{ color: ED.ink }}>Unverified</p>
+                          <p className="font-serif text-[11.5px] leading-[1.7]" style={{ color: '#1a1a1a' }}>
+                            There are signs of use: annotations, omissions, the pressure of someone else's urgency. No conclusion is evident, but the document resists being closed.
+                          </p>
+                        </div>
+                      </div>
+                      <div className="relative h-[190px] overflow-hidden border-[2px] border-[#111]" style={{ background: '#15100c' }}>
+                        {asciiCfg.enabled && <AsciiTexture seed={9} ramp={asciiCfg.ramp} size={asciiCfg.size} speed={asciiCfg.speed} animate={asciiCfg.animate} color={asciiCfg.inkOnDark} opacity={asciiCfg.opacityDark} mask={asciiCfg.mask} clear={asciiCfg.clear} />}
+                        <div className="relative p-4">
+                          <p className="font-serif italic text-xl mb-2" style={{ color: '#ece0c8' }}>Dark surface</p>
+                          <p className="font-mono text-[10px] leading-[1.8] uppercase tracking-[0.12em]" style={{ color: '#9c8560' }}>
+                            To: Elias Varnell — Apr 11, 1966 — 18 Obscura Lane, Sector A, New Cartesia 0027-A
+                          </p>
+                        </div>
+                      </div>
+                      <p className="font-mono text-[8px] uppercase tracking-[0.15em] text-gray-400">
+                        If you can't read this copy comfortably, drop the opacity or raise the clear area.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* ---------- TEXT ORBIT ---------- */}
+                <div className="bg-white p-6 md:p-8 border-[2px] border-[#111] shadow-[8px_8px_0px_#111] anim-rise">
+                  <div className="flex flex-col md:flex-row md:justify-between md:items-end border-b-[2px] border-[#111] pb-4 mb-6 gap-3">
+                    <div className="min-w-0">
+                      <h3 className="font-serif text-3xl mb-1">Text Orbit</h3>
+                      <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-gray-500">A word circling a figure. Sits under the galleria.</p>
+                    </div>
+                    <label className={`flex items-center gap-2 px-4 py-2.5 border-[2px] border-[#111] font-mono text-[10px] font-bold uppercase tracking-widest cursor-pointer slide-press shrink-0 ${orbitCfg.enabled ? 'bg-[#dfff00]' : 'bg-white'}`}>
+                      <input type="checkbox" className="hidden" checked={!!orbitCfg.enabled} onChange={e => setOrbit({ enabled: e.target.checked })} />
+                      {orbitCfg.enabled ? <Eye size={14}/> : <EyeOff size={14}/>} {orbitCfg.enabled ? 'Live' : 'Off'}
+                    </label>
+                  </div>
+
+                  <div className="grid lg:grid-cols-[minmax(0,1fr)_260px] gap-8">
+                    <div className="space-y-5">
+                      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {[['word','Word'],['heading','Heading'],['kicker','Kicker'],['caption','Caption (optional)']].map(([k, label]) => (
+                          <div key={k}>
+                            <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">{label}</label>
+                            <input value={orbitCfg[k] || ''} onChange={e => setOrbit({ [k]: e.target.value })} className="w-full p-3 border-[2px] border-[#111] font-mono text-sm outline-none focus:bg-[#dfff00]" />
+                          </div>
+                        ))}
+                        <div>
+                          <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Copies ({orbitCfg.count})</label>
+                          <input type="range" min="20" max="320" value={orbitCfg.count} onChange={e => setOrbit({ count: parseInt(e.target.value) })} className="w-full accent-[#ff5722] h-11" />
+                        </div>
+                        <div>
+                          <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Of those, moving ({Math.min(orbitCfg.moving ?? 80, orbitCfg.count)})</label>
+                          <input type="range" min="0" max="160" value={orbitCfg.moving ?? 80} onChange={e => setOrbit({ moving: parseInt(e.target.value) })} className="w-full accent-[#ff5722] h-11" />
+                          <p className="font-mono text-[8px] uppercase tracking-[0.15em] text-gray-400 mt-1">The rest are static — free to add</p>
+                        </div>
+                        <div>
+                          <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Speed ({orbitCfg.speed}×)</label>
+                          <input type="range" min="0.2" max="4" step="0.1" value={orbitCfg.speed} onChange={e => setOrbit({ speed: parseFloat(e.target.value) })} className="w-full accent-[#ff5722] h-11" />
+                        </div>
+                        <div>
+                          <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Figure Blur ({orbitCfg.figureBlur}px)</label>
+                          <input type="range" min="0" max="40" value={orbitCfg.figureBlur} onChange={e => setOrbit({ figureBlur: parseInt(e.target.value) })} className="w-full accent-[#ff5722] h-11" />
+                        </div>
+                      </div>
+
+                      <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 border-t-[2px] border-[#111] pt-5">
+                        {[['bgTop','BG Top'],['bgBottom','BG Bottom'],['wordColor','Word'],['figureColor','Figure']].map(([k, label]) => (
+                          <div key={k}>
+                            <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">{label}</label>
+                            <div className="flex gap-2">
+                              <input type="color" value={orbitCfg[k]} onChange={e => setOrbit({ [k]: e.target.value })} className="w-12 h-11 border-[2px] border-[#111] p-0 cursor-pointer" />
+                              <input value={orbitCfg[k]} onChange={e => setOrbit({ [k]: e.target.value })} className="flex-1 min-w-0 p-2.5 border-[2px] border-[#111] font-mono text-xs outline-none focus:bg-[#dfff00]" />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="border-t-[2px] border-[#111] pt-5">
+                        <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Figure Image (optional — replaces the drawn silhouette)</label>
+                        <div className="flex">
+                          <input value={orbitCfg.image || ''} placeholder="https://… or upload a cut-out" onChange={e => setOrbit({ image: e.target.value })} className="flex-1 min-w-0 p-3 border-[2px] border-[#111] font-mono text-sm outline-none focus:bg-[#dfff00]" />
+                          <label className="cursor-pointer bg-[#111] text-white px-5 flex items-center font-mono font-bold text-xs hover:bg-[#ff5722] transition-colors border-[2px] border-l-0 border-[#111] shrink-0">
+                            <Upload size={14}/>
+                            <input type="file" className="hidden" accept="image/*" onChange={e => handleImageUpload(e, url => setOrbit({ image: url }))} />
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <p className="font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-gray-500 mb-2">Preview</p>
+                      <div className="border-[2px] border-[#111] overflow-hidden"><TextOrbit cfg={orbitCfg} /></div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* ---------- TEXT DISC ---------- */}
+                <div className="bg-white p-6 md:p-8 border-[2px] border-[#111] shadow-[8px_8px_0px_#111]">
+                  <div className="flex flex-col md:flex-row md:justify-between md:items-end border-b-[2px] border-[#111] pb-4 mb-6 gap-3">
+                    <div className="min-w-0">
+                      <h3 className="font-serif text-3xl mb-1">Text Disc</h3>
+                      <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-gray-500">Your words set around spinning rings.</p>
+                    </div>
+                    <label className={`flex items-center gap-2 px-4 py-2.5 border-[2px] border-[#111] font-mono text-[10px] font-bold uppercase tracking-widest cursor-pointer slide-press shrink-0 ${discCfg.enabled ? 'bg-[#dfff00]' : 'bg-white'}`}>
+                      <input type="checkbox" className="hidden" checked={!!discCfg.enabled} onChange={e => setDisc({ enabled: e.target.checked })} />
+                      {discCfg.enabled ? <Eye size={14}/> : <EyeOff size={14}/>} {discCfg.enabled ? 'Live' : 'Off'}
+                    </label>
+                  </div>
+
+                  <div className="grid lg:grid-cols-[minmax(0,1fr)_260px] gap-8">
+                    <div className="space-y-5">
+                      <div>
+                        <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Ring Text — repeats to fill every ring</label>
+                        <textarea value={discCfg.text || ''} rows={5} onChange={e => setDisc({ text: e.target.value })} className="w-full p-3 border-[2px] border-[#111] font-mono text-xs outline-none focus:bg-[#dfff00] resize-y" />
+                      </div>
+                      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {[['heading','Heading'],['kicker','Kicker'],['mark','Corner Mark']].map(([k, label]) => (
+                          <div key={k}>
+                            <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">{label}</label>
+                            <input value={discCfg[k] || ''} onChange={e => setDisc({ [k]: e.target.value })} className="w-full p-3 border-[2px] border-[#111] font-mono text-sm outline-none focus:bg-[#dfff00]" />
+                          </div>
+                        ))}
+                        <div>
+                          <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Rings ({discCfg.rings})</label>
+                          <input type="range" min="3" max="16" value={discCfg.rings} onChange={e => setDisc({ rings: parseInt(e.target.value) })} className="w-full accent-[#ff5722] h-11" />
+                        </div>
+                        <div>
+                          <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Type Size ({discCfg.fontSize}px)</label>
+                          <input type="range" min="6" max="20" value={discCfg.fontSize} onChange={e => setDisc({ fontSize: parseInt(e.target.value) })} className="w-full accent-[#ff5722] h-11" />
+                        </div>
+                        <div>
+                          <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Speed ({discCfg.speed}×)</label>
+                          <input type="range" min="0.2" max="4" step="0.1" value={discCfg.speed} onChange={e => setDisc({ speed: parseFloat(e.target.value) })} className="w-full accent-[#ff5722] h-11" />
+                        </div>
+                      </div>
+                      <div className="grid sm:grid-cols-3 gap-4 border-t-[2px] border-[#111] pt-5">
+                        {[['bg','Background'],['disc','Disc'],['ink','Type']].map(([k, label]) => (
+                          <div key={k}>
+                            <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">{label}</label>
+                            <div className="flex gap-2">
+                              <input type="color" value={discCfg[k]} onChange={e => setDisc({ [k]: e.target.value })} className="w-12 h-11 border-[2px] border-[#111] p-0 cursor-pointer" />
+                              <input value={discCfg[k]} onChange={e => setDisc({ [k]: e.target.value })} className="flex-1 min-w-0 p-2.5 border-[2px] border-[#111] font-mono text-xs outline-none focus:bg-[#dfff00]" />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <p className="font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-gray-500 mb-2">Preview</p>
+                      <div className="border-[2px] border-[#111] overflow-hidden"><TextDisc cfg={{ ...discCfg, uid: 'admin' }} /></div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* ---------- FILE CABINET ---------- */}
+                <div className="bg-white p-6 md:p-8 border-[2px] border-[#111] shadow-[8px_8px_0px_#111]">
+                  <div className="flex flex-col md:flex-row md:justify-between md:items-end border-b-[2px] border-[#111] pb-4 mb-6 gap-3">
+                    <div className="min-w-0">
+                      <h3 className="font-serif text-3xl mb-1">Recovered Files</h3>
+                      <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-gray-500">The drawer under the Systems panel. {cabinetFiles.length} filed.</p>
+                    </div>
+                    <div className="flex gap-2 shrink-0">
+                      <button onClick={addFile} className="bg-[#111] text-[#dfff00] px-5 py-2.5 border-[2px] border-[#111] font-mono font-bold uppercase tracking-widest flex items-center gap-2 slide-press"><Plus size={16}/> File</button>
+                      <label className={`flex items-center gap-2 px-4 py-2.5 border-[2px] border-[#111] font-mono text-[10px] font-bold uppercase tracking-widest cursor-pointer slide-press ${cabinetCfg.enabled ? 'bg-[#dfff00]' : 'bg-white'}`}>
+                        <input type="checkbox" className="hidden" checked={!!cabinetCfg.enabled} onChange={e => setCabinet({ enabled: e.target.checked })} />
+                        {cabinetCfg.enabled ? <Eye size={14}/> : <EyeOff size={14}/>} {cabinetCfg.enabled ? 'Live' : 'Off'}
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                    {[['title','Drawer Title'],['breadcrumb','Breadcrumb'],['date','Date'],['emptyHint','Empty Hint'],['footer','Footer']].map(([k, label]) => (
+                      <div key={k}>
+                        <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">{label}</label>
+                        <input value={cabinetCfg[k] || ''} onChange={e => setCabinet({ [k]: e.target.value })} className="w-full p-3 border-[2px] border-[#111] font-mono text-sm outline-none focus:bg-[#dfff00]" />
+                      </div>
+                    ))}
+                    {[['drawer','Drawer'],['shell','Shell'],['paper','Paper']].map(([k, label]) => (
+                      <div key={k}>
+                        <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">{label}</label>
+                        <div className="flex gap-2">
+                          <input type="color" value={cabinetCfg[k]} onChange={e => setCabinet({ [k]: e.target.value })} className="w-12 h-11 border-[2px] border-[#111] p-0 cursor-pointer" />
+                          <input value={cabinetCfg[k]} onChange={e => setCabinet({ [k]: e.target.value })} className="flex-1 min-w-0 p-2.5 border-[2px] border-[#111] font-mono text-xs outline-none focus:bg-[#dfff00]" />
+                        </div>
+                      </div>
+                    ))}
+                    <div className="sm:col-span-2">
+                      <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Header Note</label>
+                      <textarea value={cabinetCfg.note || ''} rows={3} onChange={e => setCabinet({ note: e.target.value })} className="w-full p-3 border-[2px] border-[#111] font-mono text-xs outline-none focus:bg-[#dfff00] resize-y" />
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    {cabinetFiles.map((f, i) => {
+                      const open = expandedFile === f.id;
+                      const pend = confirmDelete && confirmDelete.listType === 'cabinet_files' && confirmDelete.id === f.id;
+                      return (
+                        <div key={f.id} style={{ '--d': i }} className="border-[2px] border-[#111] anim-rise stagger-child">
+                          <div className="flex flex-wrap items-center gap-3 bg-[#f4f4f0] p-3">
+                            <div className="flex flex-col shrink-0">
+                              <button disabled={i === 0} onClick={() => moveListItem('cabinet_files', i, -1)} className="px-1.5 py-0.5 border-[2px] border-[#111] bg-white hover:bg-[#dfff00] disabled:opacity-25 text-[10px] leading-none">▲</button>
+                              <button disabled={i === cabinetFiles.length - 1} onClick={() => moveListItem('cabinet_files', i, 1)} className="px-1.5 py-0.5 border-[2px] border-t-0 border-[#111] bg-white hover:bg-[#dfff00] disabled:opacity-25 text-[10px] leading-none">▼</button>
+                            </div>
+                            <span className="w-4 h-9 shrink-0" style={{ background: f.tabColor }} />
+                            <div className="min-w-0 flex-1">
+                              <p className="font-mono font-bold text-sm truncate">{f.title}</p>
+                              <p className="font-mono text-[10px] uppercase tracking-widest text-gray-500 truncate">{f.tab} · {f.fileNo}</p>
+                            </div>
+                            <button onClick={() => setExpandedFile(open ? null : f.id)} className="p-2 bg-[#dfff00] border-[2px] border-[#111] hover:bg-[#111] hover:text-white transition-colors shrink-0"><Edit2 size={16}/></button>
+                            {pend ? (
+                              <div className="flex gap-1 shrink-0 anim-fade">
+                                <button onClick={() => handleDeleteItem('cabinet_files', f.id)} className="px-3 py-2 bg-[#ff5722] text-white border-[2px] border-[#111] font-bold text-[10px] uppercase">Confirm</button>
+                                <button onClick={() => setConfirmDelete(null)} className="px-3 py-2 bg-white border-[2px] border-[#111] font-bold text-[10px] uppercase">Keep</button>
+                              </div>
+                            ) : (
+                              <button onClick={() => setConfirmDelete({ listType: 'cabinet_files', id: f.id })} className="p-2 bg-[#ff5722] text-white border-[2px] border-[#111] hover:bg-[#111] transition-colors shrink-0"><Trash2 size={16}/></button>
+                            )}
+                          </div>
+
+                          {open && (
+                            <div className="p-4 md:p-6 bg-white border-t-[2px] border-[#111] space-y-4 anim-fade">
+                              <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                                {[['title','Title'],['tab','Spine Label'],['fileNo','File No.'],['headline','Page Headline'],['date','Date'],['excerptTitle','Excerpt Title'],['signature','Signature']].map(([k, label]) => (
+                                  <div key={k}>
+                                    <label className="text-[10px] font-mono font-bold uppercase text-gray-500 mb-1.5 block">{label}</label>
+                                    <input value={f[k] || ''} onChange={e => updateFile(f.id, { [k]: e.target.value })} className="w-full p-2.5 border-[2px] border-[#111] font-mono text-sm outline-none focus:bg-[#dfff00]" />
+                                  </div>
+                                ))}
+                                {[['tabColor','Spine'],['excerptColor','Excerpt Card'],['receiptColor','Receipt']].map(([k, label]) => (
+                                  <div key={k}>
+                                    <label className="text-[10px] font-mono font-bold uppercase text-gray-500 mb-1.5 block">{label}</label>
+                                    <input type="color" value={f[k] || '#cccccc'} onChange={e => updateFile(f.id, { [k]: e.target.value })} className="w-full h-10 border-[2px] border-[#111] p-0 cursor-pointer" />
+                                  </div>
+                                ))}
+                              </div>
+                              {[['body','Page Body'],['excerptBody','Excerpt Body'],['margin','Margin Note'],['receipt','Receipt Lines'],['note','Header Note']].map(([k, label]) => (
+                                <div key={k}>
+                                  <label className="text-[10px] font-mono font-bold uppercase text-gray-500 mb-1.5 block">{label}</label>
+                                  <textarea value={f[k] || ''} rows={k === 'body' || k === 'excerptBody' ? 3 : 2} onChange={e => updateFile(f.id, { [k]: e.target.value })} className="w-full p-2.5 border-[2px] border-[#111] font-mono text-xs outline-none focus:bg-[#dfff00] resize-y" />
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+
             {adminTab === 'messages' && (
               <div className="bg-white p-8 border-[2px] border-[#111] shadow-[8px_8px_0px_#111]">
                  <div className="flex justify-between items-end border-b-[2px] border-[#111] pb-4 mb-6">
@@ -5031,7 +7139,7 @@ export default function App() {
                        <div key={msg.id} style={{ '--d': mi }} className="bg-[#f4f4f0] p-6 border-[2px] border-[#111] shadow-[4px_4px_0px_rgba(17,17,17,0.2)] anim-rise stagger-child relative group">
                           <p className="text-[10px] text-[#111] mb-4 uppercase font-bold tracking-widest bg-[#dfff00] w-fit px-2 border border-[#111]">{new Date(msg.created_at).toLocaleString()}</p>
                           {msg.message.startsWith('data:image') ? (
-                             <img src={msg.message} alt="drawing" className="w-full border-[2px] border-[#111]" />
+                             <img loading="lazy" decoding="async" src={msg.message} alt="drawing" className="w-full border-[2px] border-[#111]" />
                           ) : (
                              <>
                                <p className="font-mono text-sm leading-relaxed whitespace-pre-wrap">{msg.message}</p>
@@ -5209,6 +7317,169 @@ export default function App() {
           background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E");
           opacity: 0.22;
           mix-blend-mode: overlay;
+        }
+
+        /* ============================================================
+           TEXT OVERFLOW
+           Nothing in the file set a wrapping rule, so any unbroken run —
+           a pasted URL, a long title, a hashtag, CJK without spaces —
+           pushed straight through its container and got clipped by the
+           parent's overflow-hidden.
+
+           break-word (not anywhere) is deliberate: it only breaks a
+           word when that word genuinely cannot fit, so normal prose is
+           untouched and only the pathological cases are wrapped.
+           ============================================================ */
+        p, h1, h2, h3, h4, h5, h6,
+        li, span, td, th, blockquote, label, button, a, div.prose {
+          overflow-wrap: break-word;
+        }
+        textarea, input { overflow-wrap: break-word; }
+
+        /* A flex item defaults to min-width:auto, which refuses to shrink
+           below its content — the usual reason a truncate/ellipsis child
+           overflows its row instead of clipping. */
+        .flex > .truncate,
+        .flex > .min-w-0,
+        .flex-1.truncate { min-width: 0; }
+
+        /* Modals: never let a tall body escape the viewport. */
+        .modal-scroll {
+          max-height: calc(100vh - 2rem);
+          overflow-y: auto;
+          overscroll-behavior: contain;
+        }
+        @media (min-width: 768px) {
+          .modal-scroll { max-height: calc(100vh - 4rem); }
+        }
+
+        /* Preserve author line breaks in user-written copy without
+           letting a single long token blow the box out. */
+        .user-copy {
+          white-space: pre-wrap;
+          overflow-wrap: break-word;
+          word-break: break-word;
+        }
+
+        /* ============================================================
+           EDITORIAL CHROME
+           ============================================================ */
+        :root {
+          --ed-ink: #16150f;
+          --ed-paper: #ece8dc;
+          --ed-orange: #e8552a;
+          --ed-mustard: #f0c53c;
+        }
+
+        /* dotted leader that stretches to fill a row */
+        .ed-leader {
+          height: 1px;
+          min-width: 12px;
+          align-self: center;
+          background-image: radial-gradient(currentColor 0.6px, transparent 0.7px);
+          background-size: 4px 1px;
+          background-repeat: repeat-x;
+          opacity: 0.5;
+        }
+
+        /* halftone wash, as on the orange plate */
+        .ed-halftone {
+          background-image: radial-gradient(rgba(0,0,0,0.22) 0.9px, transparent 1px);
+          background-size: 4px 4px;
+        }
+
+        /* faint drafting grid behind panels */
+        .ed-grid {
+          background-image:
+            linear-gradient(currentColor 1px, transparent 1px),
+            linear-gradient(90deg, currentColor 1px, transparent 1px);
+          background-size: 44px 44px;
+          opacity: 0.045;
+        }
+
+        /* clipped corner on info panels */
+        .ed-notch   { clip-path: polygon(0 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%); }
+        .ed-notch-l { clip-path: polygon(0 0, 100% 0, 100% 100%, 14px 100%, 0 calc(100% - 14px)); }
+
+        /* vertical dot separator, as between the card captions */
+        .ed-dots-v {
+          background-image: radial-gradient(currentColor 0.9px, transparent 1px);
+          background-size: 3px 6px;
+          background-repeat: repeat-y;
+          opacity: 0.55;
+        }
+
+        .ed-rule { border-color: rgba(236,232,220,0.18); }
+        .ed-rule-d { border-color: rgba(22,21,15,0.22); }
+
+        /* index numerals sitting in a card's top-right */
+        .ed-index { font-variant-numeric: tabular-nums; letter-spacing: 0.18em; }
+
+        /* circled arrow button */
+        .ed-arrow {
+          display: inline-flex; align-items: center; justify-content: center;
+          border-radius: 9999px; border: 1px solid currentColor;
+          transition: background 220ms var(--ease-out-expo), color 220ms var(--ease-out-expo), transform 220ms var(--ease-out-expo);
+        }
+        .ed-arrow:hover { transform: translateX(3px); }
+
+        /* --- Editorial galleria ---------------------------------------- */
+        @keyframes edRingIn  { from { opacity: 0; transform: scale(0.86); } to { opacity: 1; transform: none; } }
+        @keyframes edFadeUp  { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+        @keyframes edCardIn  { from { opacity: 0; transform: translateY(40px) rotate(-3deg); } to { opacity: 1; } }
+        .ed-dropcap::first-letter {
+          float: left;
+          font-size: 2.9em;
+          line-height: 0.82;
+          padding: 0.06em 0.14em 0 0;
+          font-family: Georgia, 'Times New Roman', serif;
+        }
+
+        /* ============================================================
+           AMBIENT PIECES — orbit, disc, cabinet
+           All motion is CSS transform only (compositor-friendly) and
+           every keyframe is gated behind an in-view class, so a piece
+           that is scrolled past stops costing anything at all.
+           ============================================================ */
+        @keyframes orbitArm     { from { transform: rotate(var(--start,0deg)); } to { transform: rotate(calc(var(--start,0deg) + 360deg)); } }
+        @keyframes orbitCounter { from { transform: rotate(calc(var(--start,0deg) * -1)); } to { transform: rotate(calc((var(--start,0deg) + 360deg) * -1)); } }
+        .orbit-arm  { width: 0; height: 0; }
+        .orbit-live .orbit-arm  { animation: orbitArm var(--dur, 40s) linear infinite; }
+        .orbit-live .orbit-word { animation: orbitCounter var(--dur, 40s) linear infinite; }
+
+        @keyframes discRot { to { transform: rotate(360deg); } }
+        .disc-layer { animation: discRot var(--dur, 60s) linear infinite; transform-origin: 50% 50%; will-change: transform; }
+
+        .cab-spine {
+          transition: transform 420ms var(--ease-out-expo), filter 260ms ease;
+          animation: cabSpine 460ms var(--ease-out-expo) both;
+          animation-delay: calc(var(--d, 0) * 45ms);
+        }
+        .cab-spine:hover { transform: translateY(-9px) !important; filter: brightness(1.12); }
+        @keyframes cabSpine { from { opacity: 0; transform: translateY(28px); } to { opacity: 1; } }
+        @keyframes cabPage  { from { opacity: 0; transform: translateY(30px) rotate(-0.6deg); } to { opacity: 1; transform: none; } }
+        @keyframes cabCard  { from { opacity: 0; transform: translate(-22px, 34px) rotate(-1.6deg); } to { opacity: 1; transform: none; } }
+        @keyframes cabSlip  { from { opacity: 0; transform: translateY(30px) rotate(4deg) scale(0.94); } to { opacity: 1; transform: rotate(-1.5deg); } }
+        @keyframes cabTab   { from { opacity: 0; transform: translateX(26px); } to { opacity: 1; transform: none; } }
+
+        @media (prefers-reduced-motion: reduce) {
+          .orbit-live .orbit-arm, .orbit-live .orbit-word, .disc-layer { animation: none; }
+          .cab-spine, .cab-page, .cab-card, .cab-slip, .cab-tab { animation: none !important; }
+        }
+
+        /* --- Secret corner --------------------------------------------- */
+        @keyframes scSpin { to { transform: rotate(360deg); } }
+        .sc-spin { animation: scSpin 5.4s linear infinite; will-change: transform; }
+        /* changing record: the old disc lifts off, the new one drops on */
+        @keyframes discIn  { 0% { opacity: 0; transform: translateY(-46px) scale(0.9); } 100% { opacity: 1; transform: none; } }
+        @keyframes discOut { 0% { opacity: 1; transform: none; } 100% { opacity: 0; transform: translateY(34px) scale(0.93); } }
+        @keyframes scEq { 0%, 100% { height: 20%; } 50% { height: 100%; } }
+        .sc-eq { animation: scEq var(--eqd, 500ms) ease-in-out infinite; }
+        .sc-row:hover .sc-eq { opacity: 1; }
+        .sc-row:hover { opacity: 1; }
+        .sc-key:active { transform: translateY(1px) scale(0.96); }
+        @media (prefers-reduced-motion: reduce) {
+          .sc-spin, .sc-eq { animation: none; }
         }
 
         /* --- Poem deck ------------------------------------------------- */
@@ -5454,33 +7725,60 @@ export default function App() {
             key={toast.id}
             role="status"
             aria-live="polite"
-            className={`fixed top-8 left-1/2 z-[100] px-8 py-4 border-[4px] shadow-[6px_6px_0px_#000] font-mono font-bold uppercase tracking-widest text-xs md:text-sm flex items-center gap-3 max-w-[90vw] ${
-              toast.type === 'error'   ? 'bg-[#111] text-[#ff5722] border-[#ff5722]' :
-              toast.type === 'success' ? 'bg-[#111] text-[#dfff00] border-[#dfff00]' :
-                                         'bg-[#111] text-[#00ff00] border-[#00ff00]'
-            }`}
-            style={{ animation: `${toast.leaving ? 'toastOut 300ms var(--ease-mech) forwards' : 'toastIn 620ms var(--ease-out-expo) both'}` }}
+            className="fixed top-8 left-1/2 z-[100] pl-4 pr-6 py-3 ed-notch font-mono uppercase tracking-[0.2em] text-[10px] md:text-[11px] flex items-center gap-3 max-w-[90vw] overflow-hidden"
+            style={{
+              background: ED.paper,
+              color: ED.ink,
+              border: `1px solid ${ED.ink}`,
+              animation: `${toast.leaving ? 'toastOut 300ms var(--ease-mech) forwards' : 'toastIn 620ms var(--ease-out-expo) both'}`
+            }}
           >
-            {toast.type === 'error' ? <AlertTriangle size={20}/> : toast.type === 'success' ? <Check size={20}/> : <Terminal size={20}/>}
-            <span>{toast.msg}</span>
+            {asciiCfg.enabled && (
+              /* a short strip rather than a full field — the toast is only a
+                 few lines tall, so a 60x6 grid is all that is ever visible */
+              <AsciiTexture seed={101} ramp={asciiCfg.ramp} size={asciiCfg.size} animate={false}
+                            color={asciiCfg.inkOnLight} opacity={asciiCfg.opacityLight}
+                            cols={60} rows={6} mask={asciiCfg.mask} clear={asciiCfg.clear} />
+            )}
+            <span className="relative z-10 w-7 h-7 shrink-0 flex items-center justify-center"
+                  style={{
+                    background: toast.type === 'error' ? ED.orange : toast.type === 'success' ? ED.mustard : ED.ink,
+                    color: toast.type === 'info' ? ED.paper : ED.ink
+                  }}>
+              {toast.type === 'error' ? <AlertTriangle size={14}/> : toast.type === 'success' ? <Check size={14}/> : <Terminal size={14}/>}
+            </span>
+            <span className="relative z-10 min-w-0 break-words">{toast.msg}</span>
           </div>
         )}
 
-       {/* === GALLERIA STICKER LIGHTBOX === */}
-       <GalleriaLightbox
-          payload={activeGalleriaImage}
-          cfg={lightboxConfig}
-          total={galleriaData.length}
-          onClose={() => setActiveGalleriaImage(null)}
-          onPrev={() => setActiveGalleriaImage(p => {
-            const n = (p.index - 1 + galleriaData.length) % galleriaData.length;
-            return { item: galleriaData[n], index: n };
-          })}
-          onNext={() => setActiveGalleriaImage(p => {
-            const n = (p.index + 1) % galleriaData.length;
-            return { item: galleriaData[n], index: n };
-          })}
-       />
+       {/* === GALLERIA VIEWER (style chosen in Admin > Lightbox) === */}
+       {lightboxConfig.style === 'editorial' ? (
+         <EditorialLightbox
+            payload={activeGalleriaImage}
+            cfg={lightboxConfig}
+            items={galleriaData}
+            onClose={() => setActiveGalleriaImage(null)}
+            onPrev={goPrevPlate}
+            onNext={goNextPlate}
+            onJump={(n) => setActiveGalleriaImage({ item: galleriaData[n], index: n })}
+            ascii={asciiCfg}
+         />
+       ) : (
+         <GalleriaLightbox
+            payload={activeGalleriaImage}
+            cfg={lightboxConfig}
+            total={galleriaData.length}
+            onClose={() => setActiveGalleriaImage(null)}
+            onPrev={goPrevPlate}
+            onNext={goNextPlate}
+            ascii={asciiCfg}
+         />
+       )}
+
+       {/* === ICE'S SECRET CORNER === */}
+       {secretOpen && secretCfg.enabled && (
+         <SecretCorner cfg={secretCfg} tracks={secretTracks} ascii={asciiCfg} onClose={() => setSecretOpen(false)} />
+       )}
 
        {/* === POEM OVERLAY === */}
        <PoemOverlay
@@ -5488,6 +7786,8 @@ export default function App() {
           shuffle={poemShuffle}
           onClose={() => setActivePoem(null)}
           onShuffle={() => setPoemShuffle(s => s + 1)}
+          onSecret={secretCfg.enabled && secretCfg.showGlyph ? () => setSecretOpen(true) : null}
+          ascii={asciiCfg}
        />
 
        {/* === NEW: TICKET GATE OVERLAY === */}
@@ -5495,42 +7795,45 @@ export default function App() {
           <div className="fixed inset-0 z-[70] bg-[#111]/80 backdrop-blur-md flex items-center justify-center p-4"
                style={{ animation: 'backdropIn 300ms ease-out both' }}
                onClick={(e) => { if (e.target === e.currentTarget) { setPendingJournal(null); setVisitorName(''); } }}>
-             <div className="w-[300px] h-[580px] bg-[#ff5722] rounded-[20px] p-4 flex flex-col relative shadow-[16px_16px_0px_rgba(0,0,0,0.5)] border-[2px] border-[#111]"
-                  style={{ animation: 'ticketIn 720ms var(--ease-out-expo) both' }}>
+             <div className="w-[300px] max-h-[calc(100vh-2rem)] overflow-y-auto hide-scrollbar p-4 flex flex-col relative ed-notch"
+                  style={{ background: ED.orange, border: `1px solid ${ED.ink}`, animation: 'ticketIn 720ms var(--ease-out-expo) both' }}>
+                <div className="absolute inset-0 ed-halftone pointer-events-none opacity-60" />
+                {asciiCfg.enabled && <AsciiTexture seed={31} ramp={asciiCfg.ramp} size={asciiCfg.size} speed={asciiCfg.speed} animate={asciiCfg.animate} color={asciiCfg.inkOnLight} opacity={asciiCfg.opacityLight} mask={asciiCfg.mask} clear={asciiCfg.clear} />}
                 
-                <button onClick={() => {setPendingJournal(null); setIsTicketValidating(false); setVisitorName('');}} className="absolute top-2 right-2 text-white hover:text-[#111] z-50 p-2"><X size={20}/></button>
+                <button onClick={() => {setPendingJournal(null); setIsTicketValidating(false); setVisitorName('');}} aria-label="Close" className="ed-arrow absolute top-3 right-3 w-8 h-8 z-50 slide-press" style={{ color: ED.ink }}><X size={14}/></button>
+
+                <div className="relative z-10 mb-3 pr-10"><EdLabel color={`${ED.ink}aa`} right="001">Admit one</EdLabel></div>
 
                 {/* Top Image Box */}
-                <div className="w-full h-[220px] rounded-[16px] overflow-hidden relative border-[2px] border-[#111] bg-white">
-                   <img src={pendingJournal.image} className="w-full h-full object-cover grayscale mix-blend-multiply opacity-80" alt="Ticket Art" />
+                <div className="w-full h-[200px] overflow-hidden relative z-10" style={{ border: `1px solid ${ED.ink}`, background: ED.paper }}>
+                   <img loading="lazy" decoding="async" src={pendingJournal.image} className="w-full h-full object-cover grayscale mix-blend-multiply opacity-80" alt="Ticket Art" />
                    
                    {/* Decorative holes */}
-                   <div className="absolute top-8 -right-4 w-8 h-8 bg-[#f4f4f0] border-[2px] border-[#111] rounded-full"></div>
-                   <div className="absolute -bottom-4 left-1/2 -translate-x-1/2 w-8 h-8 bg-[#f4f4f0] border-[2px] border-[#111] rounded-full"></div>
+                   <EdCorners color={ED.ink} inset={6} size={10} />
                 </div>
 
                 {/* Middle Date/Title */}
-                <div className="mt-8 px-2 flex justify-between items-start font-mono font-bold text-sm text-[#111] border-b-[2px] border-[#111] pb-2 relative">
+                <div className="mt-6 px-1 flex justify-between items-start font-mono font-bold text-sm pb-2 relative z-10" style={{ color: ED.ink, borderBottom: `1px solid ${ED.ink}55` }}>
                    <span>{new Date().getDate().toString().padStart(2, '0')}</span>
                    <div className="flex flex-col items-end">
                       <span>{(new Date().getMonth()+1).toString().padStart(2, '0')}</span>
                       <span className="text-[8px] opacity-70 mt-1">{new Date().getFullYear()}</span>
                    </div>
                 </div>
-                <h2 className="text-6xl font-serif text-[#111] text-center mt-2 tracking-tight">archive</h2>
+                <h2 className="text-5xl font-serif text-center mt-2 tracking-tight relative z-10" style={{ color: ED.ink }}>archive</h2>
 
                 {/* Perforation */}
-                <div className="w-full border-t-[3px] border-dashed border-[#111] my-8 relative">
-                   <div className="absolute -left-6 top-1/2 -translate-y-1/2 w-4 h-6 bg-[#111]/80 rounded-r-full"></div>
-                   <div className="absolute -right-6 top-1/2 -translate-y-1/2 w-4 h-6 bg-[#111]/80 rounded-l-full"></div>
+                <div className="w-full my-6 relative z-10 flex items-center gap-2">
+                   <span className="ed-leader flex-1" style={{ color: ED.ink }} />
+                   <span className="text-[8px] leading-none" style={{ color: ED.ink }}>◆</span>
+                   <span className="ed-leader flex-1" style={{ color: ED.ink }} />
                 </div>
 
                 {/* Bottom Form */}
-                <div className="flex-1 flex flex-col px-2">
+                <div className="flex-1 flex flex-col px-1 relative z-10">
                    <div className="flex justify-between items-center mb-6">
-                      <div className="flex items-center gap-2 font-mono font-bold text-[10px] uppercase text-[#111] tracking-widest"><div className="w-2.5 h-2.5 rounded-full bg-[#111]"></div> TICKET</div>
-                      {/* Fake Barcode */}
-                      <div className="w-16 h-6 bg-[#111]" style={{backgroundImage: 'repeating-linear-gradient(90deg, #ff5722, #ff5722 1px, transparent 1px, transparent 3px)'}}></div>
+                      <div className="flex items-center gap-2 font-mono font-bold text-[9px] uppercase tracking-[0.25em]" style={{ color: ED.ink }}><span className="text-[7px]">◆</span> TICKET</div>
+                      <div className="w-16 h-5" style={{ background: ED.ink, backgroundImage: `repeating-linear-gradient(90deg, ${ED.orange}, ${ED.orange} 1px, transparent 1px, transparent 3px)` }}></div>
                    </div>
                    
                    <form onSubmit={submitJournalAccess} className="mt-auto">
@@ -5541,7 +7844,8 @@ export default function App() {
                          value={visitorName} 
                          onChange={e=>setVisitorName(e.target.value)} 
                          placeholder="ENTER IDENTIFICATION" 
-                         className="w-full bg-transparent border-b-[2px] border-[#111] placeholder:text-[#111]/60 text-[#111] font-mono text-sm font-bold outline-none py-2 mb-6 focus:bg-white/20 transition-colors disabled:opacity-50" 
+                         style={{ borderBottom: `1px solid ${ED.ink}` }}
+                         className="w-full bg-transparent placeholder:opacity-55 font-mono text-sm font-bold outline-none py-2 mb-6 focus:bg-white/20 transition-colors disabled:opacity-50" 
                       />
                       <div className="flex justify-between items-end">
                         <p className="text-[6.5px] font-mono text-[#111] leading-tight w-[55%]">This ticket grants temporary access to the specified memory node. Unauthorized extraction is strictly prohibited.</p>
@@ -5622,6 +7926,11 @@ export default function App() {
               {/* === NEW: JOURNALING TAB OVERLAY === */}
               {activeJournal && (
                 <div className="absolute inset-0 z-[60] bg-[#f0ebd8] flex flex-col overflow-y-auto font-sans hide-scrollbar" style={{ animation: 'sheetIn 620ms var(--ease-out-expo) both' }}>
+                   {asciiCfg.enabled && (
+                     <AsciiTexture seed={71} ramp={asciiCfg.ramp} size={asciiCfg.size} speed={asciiCfg.speed}
+                                   animate={asciiCfg.animate} color={asciiCfg.inkOnLight} opacity={asciiCfg.opacityLight}
+                                   className="fixed" mask={asciiCfg.mask} clear={asciiCfg.clear} />
+                   )}
                    
                    {(() => {
                       const len = journalEntries.length;
@@ -5664,7 +7973,7 @@ export default function App() {
                               
                               {/* THE TICKET BANNER (Dynamic to Journal Entry) */}
                               <div className="w-full h-[220px] md:h-[320px] bg-white rounded-2xl md:rounded-[32px] overflow-hidden relative group cursor-crosshair shadow-[0_20px_40px_rgba(0,0,0,0.1)] mb-12 shrink-0 border-[4px] border-[#111]/5">
-                                 <img src={activeEntry.image} className="absolute inset-0 w-full h-full object-cover transition-transform duration-[1.2s] ease-[cubic-bezier(0.25,1,0.5,1)] group-hover:scale-105" alt="Journal cover" />
+                                 <img loading="lazy" decoding="async" src={activeEntry.image} className="absolute inset-0 w-full h-full object-cover transition-transform duration-[1.2s] ease-[cubic-bezier(0.25,1,0.5,1)] group-hover:scale-105" alt="Journal cover" />
                                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-all duration-700"></div>
                                  
                                  <div className="absolute top-0 left-0 w-[80px] md:w-[120px] h-full bg-[#f8f9fa] border-r-[3px] border-dashed border-[#111]/30 -translate-x-full group-hover:translate-x-0 transition-transform duration-700 ease-[cubic-bezier(0.25,1,0.5,1)] flex flex-col items-center justify-between py-6 shadow-[10px_0_20px_rgba(0,0,0,0.2)]">
@@ -5812,9 +8121,10 @@ export default function App() {
             role="dialog"
             aria-modal="true"
             onClick={(e) => { if (e.target === e.currentTarget) setSelectedItem(null); }}
-            className="fixed inset-0 bg-[#f4f4f0]/80 backdrop-blur-md z-50 flex items-center justify-center p-4 md:p-8"
-            style={{ animation: 'backdropIn 320ms ease-out both' }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 md:p-8"
+            style={{ background: `${ED.ink}e0`, animation: 'backdropIn 320ms ease-out both' }}
           >
+            <div className="fixed inset-0 ed-grid pointer-events-none" style={{ color: ED.paper }} />
             
             {/* === VINYL ALBUM MODAL === */}
             {itemType === 'blog' && selectedItem.type === 'album' ? (
@@ -5869,7 +8179,7 @@ export default function App() {
                                 if (block.type === 'text') return <p key={idx} className="leading-relaxed">{block.content}</p>;
                                 if (block.type === 'quote') return <blockquote key={idx} className="border-l-4 border-[#ff5722] pl-4 py-2 my-4 text-[#111] italic font-serif text-xl">{block.content}</blockquote>;
                                 if (block.type === 'pullquote') return <div key={idx} className="text-2xl md:text-3xl font-serif text-center text-[#0000ff] my-8 leading-tight">"{block.content}"</div>;
-                                if (block.type === 'image') return <img key={idx} src={block.content} alt="review visual" className="w-full border-[2px] border-[#111] shadow-[4px_4px_0px_#111] my-6 grayscale hover:grayscale-0 transition-all" />;
+                                if (block.type === 'image') return <img loading="lazy" decoding="async" key={idx} src={block.content} alt="review visual" className="w-full border-[2px] border-[#111] shadow-[4px_4px_0px_#111] my-6 grayscale hover:grayscale-0 transition-all" />;
                                 return null;
                               })}
                           </div>
@@ -5877,7 +8187,7 @@ export default function App() {
                           <div className="absolute -bottom-8 -right-8 w-28 h-28 md:w-40 md:h-40 bg-[#dfff00] shadow-[8px_8px_0px_#111] rotate-[4deg] p-2 border-[2px] border-[#111] flex flex-col transition-transform duration-[420ms] ease-[cubic-bezier(0.34,1.4,0.5,1)] hover:rotate-0 hover:scale-105 z-30 anim-stamp" style={{ animationDelay: '1.1s' }}>
                              <Pin size={28} fill="#ff5722" className="absolute -top-4 left-1/2 -translate-x-1/2 text-[#111] z-10" />
                              {selectedItem.coverImage ? (
-                                <img src={selectedItem.coverImage} className="w-full h-full object-cover border-[2px] border-[#111]" alt="Album Art" />
+                                <img loading="lazy" decoding="async" src={selectedItem.coverImage} className="w-full h-full object-cover border-[2px] border-[#111]" alt="Album Art" />
                              ) : (
                                 <div className="w-full h-full border-[2px] border-[#111] flex items-center justify-center text-[10px] font-mono font-bold text-center p-2 uppercase">No Asset Provided</div>
                              )}
@@ -5922,7 +8232,10 @@ export default function App() {
             ) : (
 
               /* === ALL OTHER MODALS === */
-              <div className="bg-[#f4f4f0] border-[4px] border-[#111] shadow-[16px_16px_0px_#111] w-full max-w-5xl max-h-[90vh] overflow-y-auto relative anim-sheet hide-scrollbar">
+              <div className="w-full max-w-5xl max-h-[90vh] overflow-y-auto relative anim-sheet hide-scrollbar"
+                   style={{ background: ED.paper, color: ED.ink, border: `1px solid ${ED.ink}` }}>
+                {asciiCfg.enabled && <AsciiTexture seed={41} ramp={asciiCfg.ramp} size={asciiCfg.size} speed={asciiCfg.speed} animate={asciiCfg.animate} color={asciiCfg.inkOnLight} opacity={asciiCfg.opacityLight} mask={asciiCfg.mask} clear={asciiCfg.clear} />}
+                <EdCorners color={ED.ink} inset={12} size={14} />
                 <button aria-label="Close" onClick={() => setSelectedItem(null)} className="absolute top-4 right-4 z-50 bg-[#111] text-white p-3 border-[2px] border-[#111] hover:bg-[#ff5722] transition-colors slide-press"><X size={20} /></button>
                 
                 {itemType === 'project' && (
@@ -5958,7 +8271,7 @@ export default function App() {
                       <iframe src={selectedItem.content} className="w-full h-[70vh] bg-white border-b-[4px] border-[#111]" title={selectedItem.title} />
                     
                     ) : (
-                      selectedItem.image && <img src={selectedItem.image} className="w-full h-96 object-cover border-b-[4px] border-[#111] grayscale" alt="cover" />
+                      selectedItem.image && <img loading="lazy" decoding="async" src={selectedItem.image} className="w-full h-96 object-cover border-b-[4px] border-[#111] grayscale" alt="cover" />
                     )}
                     
                     {selectedItem.type !== 'custom' && selectedItem.type !== 'iframe' && selectedItem.type !== 'gallery' && (
@@ -5997,7 +8310,7 @@ export default function App() {
                             if (block.type === 'text') return <p key={idx}>{block.content}</p>;
                             if (block.type === 'quote') return <blockquote key={idx} className="border-l-[6px] border-[#111] pl-6 py-2 my-8 text-3xl font-serif italic text-gray-600">{block.content}</blockquote>;
                             if (block.type === 'pullquote') return <div key={idx} className="text-3xl md:text-5xl font-serif text-center text-[#ff5722] my-16 px-8 leading-tight uppercase">"{block.content}"</div>;
-                            if (block.type === 'image') return <img key={idx} src={block.content} alt="blog content" className="w-full border-[2px] border-[#111] shadow-[8px_8px_0px_#111] my-12 grayscale hover:grayscale-0 transition-all" />;
+                            if (block.type === 'image') return <img loading="lazy" decoding="async" key={idx} src={block.content} alt="blog content" className="w-full border-[2px] border-[#111] shadow-[8px_8px_0px_#111] my-12 grayscale hover:grayscale-0 transition-all" />;
                             return null;
                          })}
                       </div>
@@ -6010,28 +8323,54 @@ export default function App() {
 
         {/* AUTH MODAL */}
         {showLogin && !isAdmin && (
-          <div className="fixed inset-0 bg-[#f4f4f0]/90 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-               style={{ animation: 'backdropIn 280ms ease-out both' }}
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+               style={{ background: `${ED.ink}e6`, animation: 'backdropIn 280ms ease-out both' }}
                onClick={(e) => { if (e.target === e.currentTarget) setShowLogin(false); }}>
-            <div className="bg-white p-10 border-[4px] border-[#111] shadow-[16px_16px_0px_#111] w-full max-w-md relative anim-sheet">
-              <button onClick={() => setShowLogin(false)} className="absolute top-4 right-4 text-[#111] hover:bg-[#ff5722] hover:text-white p-2 transition-colors border-[2px] border-transparent hover:border-[#111]"><X size={24}/></button>
-              <div className="flex flex-col items-center text-center mb-8">
-                <div className="w-16 h-16 bg-[#111] text-white flex items-center justify-center mb-4 border-[2px] border-[#111] shadow-[4px_4px_0px_#ff5722]"><Lock size={32} /></div>
-                <h2 className="text-3xl font-serif text-[#111] uppercase tracking-widest">Admin Override</h2>
+            <div className="fixed inset-0 ed-grid pointer-events-none" style={{ color: ED.paper }} />
+            <div className="relative w-full max-w-md anim-sheet modal-scroll overflow-hidden"
+                 style={{ background: ED.paper, color: ED.ink, border: `1px solid ${ED.ink}` }}>
+              {asciiCfg.enabled && <AsciiTexture seed={21} ramp={asciiCfg.ramp} size={asciiCfg.size} speed={asciiCfg.speed} animate={asciiCfg.animate} color={asciiCfg.inkOnLight} opacity={asciiCfg.opacityLight} mask={asciiCfg.mask} clear={asciiCfg.clear} />}
+              <EdCorners color={ED.ink} inset={10} size={13} />
+
+              {/* running header */}
+              <div className="flex items-center justify-between gap-3 px-6 pt-5 pb-3">
+                <div className="min-w-0 flex-1"><EdLabel color={`${ED.ink}99`} right="001">Restricted</EdLabel></div>
+                <button onClick={() => setShowLogin(false)} aria-label="Close" className="ed-arrow w-8 h-8 shrink-0 slide-press" style={{ color: ED.ink }}><X size={14}/></button>
               </div>
+
+              <div className="px-8 pb-8 pt-2">
+                <div className="mb-7">
+                  <div className="w-11 h-11 flex items-center justify-center mb-4"
+                       style={{ background: ED.orange, color: ED.paper }}><Lock size={20} /></div>
+                  <h2 className="text-4xl font-serif leading-none mb-1" style={{ color: ED.ink }}>Admin override</h2>
+                  <p className="font-mono text-[9px] uppercase tracking-[0.28em]" style={{ color: `${ED.ink}77` }}>
+                    {supabase ? 'Credentialed access' : 'Local fallback mode'}
+                  </p>
+                </div>
               <form onSubmit={handleLogin} className="space-y-4">
                 {/* In local fallback mode there is no account, so email is optional */}
-                <input type="email" required={!!supabase} autoComplete="username" placeholder={supabase ? "IDENTIFICATION" : "IDENTIFICATION (OPTIONAL — LOCAL MODE)"} value={emailInput} onChange={(e) => setEmailInput(e.target.value)} className="w-full p-4 border-[2px] border-[#111] bg-[#f4f4f0] font-mono text-sm outline-none focus:bg-[#dfff00] transition-colors" />
+                <input type="email" required={!!supabase} autoComplete="username" placeholder={supabase ? "IDENTIFICATION" : "IDENTIFICATION (OPTIONAL)"} value={emailInput} onChange={(e) => setEmailInput(e.target.value)}
+                       className="w-full px-0 py-3 bg-transparent font-mono text-sm outline-none transition-colors placeholder:opacity-45"
+                       style={{ color: ED.ink, borderBottom: `1px solid ${ED.ink}44` }} />
                 <div className="relative">
-                  <input type={showPassword ? 'text' : 'password'} required autoComplete="current-password" placeholder="PASSCODE" value={passwordInput} onChange={(e) => setPasswordInput(e.target.value)} className="w-full p-4 pr-14 border-[2px] border-[#111] bg-[#f4f4f0] font-mono text-sm outline-none focus:bg-[#dfff00] transition-colors" />
-                  <button type="button" aria-label={showPassword ? 'Hide passcode' : 'Show passcode'} onClick={() => setShowPassword(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#111] hover:text-[#ff5722] transition-colors p-1">
-                    {showPassword ? <EyeOff size={18}/> : <Eye size={18}/>}
+                  <input type={showPassword ? 'text' : 'password'} required autoComplete="current-password" placeholder="PASSCODE" value={passwordInput} onChange={(e) => setPasswordInput(e.target.value)}
+                         className="w-full px-0 py-3 pr-10 bg-transparent font-mono text-sm outline-none transition-colors placeholder:opacity-45"
+                         style={{ color: ED.ink, borderBottom: `1px solid ${ED.ink}44` }} />
+                  <button type="button" aria-label={showPassword ? 'Hide passcode' : 'Show passcode'} onClick={() => setShowPassword(v => !v)} className="absolute right-0 top-1/2 -translate-y-1/2 p-1 transition-opacity opacity-55 hover:opacity-100" style={{ color: ED.ink }}>
+                    {showPassword ? <EyeOff size={16}/> : <Eye size={16}/>}
                   </button>
                 </div>
-                <button disabled={isLoading} type="submit" className="w-full bg-[#111] text-[#f4f4f0] font-mono font-bold uppercase tracking-widest p-4 border-[2px] border-[#111] hover:bg-[#0000ff] hover:text-white transition-colors disabled:opacity-50 mt-4 shadow-[4px_4px_0px_#111] hover:translate-y-[2px] hover:shadow-[2px_2px_0px_#111]">
-                  {isLoading ? 'AUTHENTICATING...' : 'INITIALIZE ACCESS'}
+                <button disabled={isLoading} type="submit"
+                        className="w-full font-mono font-bold uppercase tracking-[0.25em] text-[11px] py-4 mt-6 ed-notch slide-press disabled:opacity-50 transition-colors"
+                        style={{ background: ED.ink, color: ED.paper }}>
+                  {isLoading ? 'AUTHENTICATING…' : 'Initialize access'}
                 </button>
               </form>
+
+              <div className="px-8 pb-5">
+                <div className="ed-leader w-full" style={{ color: ED.ink }} />
+              </div>
+              </div>
             </div>
           </div>
         )}
