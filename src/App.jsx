@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useLayoutEffect, useCallback } from 'react';
-import { Pin, X, Lock, Plus, Edit2, Trash2, Save, Image as ImageIcon, Type, LogOut, Upload, Star, Send, Pencil, Activity, LayoutGrid, FileText, Search, Terminal, GripVertical, Quote, AlignLeft, Layers, Check, AlertTriangle, RotateCcw, Music, Disc3, ChevronLeft, ChevronRight, Eye, EyeOff, Copy, Database, Network, Thermometer, Cpu, Radio, Zap, Waves, Gauge, SlidersHorizontal, Power, CircleDot, Cable, Play } from 'lucide-react';
+import { Pin, X, Lock, GitBranch, UserPlus, Plus, Edit2, Trash2, Save, Image as ImageIcon, Type, LogOut, Upload, Star, Send, Pencil, Activity, LayoutGrid, FileText, Search, Terminal, GripVertical, Quote, AlignLeft, Layers, Check, AlertTriangle, RotateCcw, Music, Disc3, ChevronLeft, ChevronRight, Eye, EyeOff, Copy, Database, Network, Thermometer, Cpu, Radio, Zap, Waves, Gauge, SlidersHorizontal, Power, CircleDot, Cable, Play } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
 // --- INITIALIZE SUPABASE ---
@@ -404,8 +404,8 @@ const PatchBay = ({ data, isAdmin, onChange, onToast }) => {
               <div className="flex items-center justify-between px-2 py-2 border-b-[2px] border-[#2e2e2e] bg-[#101010]">
                 <span className="w-2 h-2 rounded-full bg-[#3a3a3a] shadow-[inset_0_1px_1px_rgba(255,255,255,0.25)]" />
                 <div className="text-center min-w-0 px-1">
-                  <p className="font-mono text-[10px] font-bold uppercase tracking-[0.18em] truncate" style={{ color }}>{mod.period}</p>
-                  <p className="font-mono text-[7px] uppercase tracking-[0.22em] text-white/35 truncate">{mod.subtitle}</p>
+                  <p className="font-mono text-[10px] font-bold uppercase tracking-[0.18em] break-words" style={{ color }}>{mod.period}</p>
+                  <p className="font-mono text-[7px] uppercase tracking-[0.22em] text-white/35 break-words">{mod.subtitle}</p>
                 </div>
                 <span className="w-2 h-2 rounded-full bg-[#3a3a3a] shadow-[inset_0_1px_1px_rgba(255,255,255,0.25)]" />
               </div>
@@ -476,7 +476,7 @@ const PatchBay = ({ data, isAdmin, onChange, onToast }) => {
                           {node.title}
                         </p>
                         {(node.mainValue || node.value) && (
-                          <p className="font-mono text-[8px] text-white/35 truncate">{node.mainValue || node.value}{node.subValue ? ` · ${node.subValue}` : ''}</p>
+                          <p className="font-mono text-[8px] text-white/35 break-words">{node.mainValue || node.value}{node.subValue ? ` · ${node.subValue}` : ''}</p>
                         )}
                       </div>
                     </div>
@@ -1936,14 +1936,77 @@ const PoemDeck = ({ deck, poems, onOpen }) => {
    ============================================================ */
 const AsciiTexture = ({
   seed = 1, ramp, size = 11, color = '#111111', opacity = 0.08,
-  animate = false, speed = 1, cols = 110, rows = 64, className = '',
+  animate = false, speed = 1, className = '',
   mask = 'edges', clear = 45
 }) => {
   const ref = useRef(null);
+  // The grid is derived from the element's real size rather than fixed, so
+  // the field always fills its container. A fixed cols/rows produced a
+  // character block of one size that sat in the top-left corner of anything
+  // larger than it.
+  const [grid, setGrid] = useState({ cols: 80, rows: 40, px: size });
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+
+    const MAX_CELLS = 26000;   // ceiling: a 4K panel would otherwise ask for ~100k
+
+    // Measure the font's real advance width rather than assuming one.
+    // Assuming 0.6em when the rendered face is nearer 0.55 under-generates
+    // the grid and leaves a bare strip down the right-hand side.
+    const advanceRatio = (px) => {
+      try {
+        const probe = document.createElement('span');
+        probe.textContent = 'M'.repeat(100);
+        probe.style.cssText =
+          `position:absolute;visibility:hidden;white-space:pre;left:-9999px;top:0;` +
+          `font-family:ui-monospace,SFMono-Regular,Menlo,monospace;` +
+          `font-size:${px}px;letter-spacing:0;line-height:1;`;
+        document.body.appendChild(probe);
+        const wCh = probe.getBoundingClientRect().width / 100;
+        probe.remove();
+        // Guard against a zero/absurd reading (headless, font not ready).
+        if (wCh > px * 0.3 && wCh < px * 1.2) return wCh / px;
+      } catch (_) {}
+      return 0.6;
+    };
+
+    const measure = () => {
+      const r = el.getBoundingClientRect();
+      const w = Math.max(1, r.width || el.offsetWidth || window.innerWidth);
+      const h = Math.max(1, r.height || el.offsetHeight || window.innerHeight);
+
+      let px = Math.max(4, Number(size) || 11);
+      const CH_RATIO = advanceRatio(px);
+      // +2 columns and +1 row of slack: overflow is clipped anyway, and a
+      // slight overshoot is invisible where a shortfall is not.
+      let cols = Math.ceil(w / (px * CH_RATIO)) + 2;
+      let rows = Math.ceil(h / px) + 1;
+
+      // Too many cells for one text node — grow the glyphs instead of
+      // cropping, so coverage stays complete either way. Loops because the
+      // ceil()+1 on each axis can nudge the result back over the cap.
+      let guard = 0;
+      while (cols * rows > MAX_CELLS && guard++ < 6) {
+        px = px * Math.sqrt((cols * rows) / MAX_CELLS) * 1.02;
+        cols = Math.ceil(w / (px * advanceRatio(px))) + 2;
+        rows = Math.ceil(h / px) + 1;
+      }
+      setGrid(g => (g.cols === cols && g.rows === rows && g.px === px) ? g : { cols, rows, px });
+    };
+
+    measure();
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null;
+    ro?.observe(el);
+    window.addEventListener('resize', measure);
+    return () => { ro?.disconnect(); window.removeEventListener('resize', measure); };
+  }, [size]);
 
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
+    const { cols, rows } = grid;
     const chars = (ramp && ramp.length ? ramp : ' .:-=+*#%@');
     const last = chars.length - 1;
     const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
@@ -1952,7 +2015,9 @@ const AsciiTexture = ({
       let out = '';
       for (let j = 0; j < rows; j++) {
         for (let i = 0; i < cols; i++) {
-          const v = _fbm(i * 0.055, j * 0.09, t, 2, seed);
+          // x is scaled by the glyph aspect so the noise reads as round
+          // rather than stretched horizontally.
+          const v = _fbm(i * 0.055 * 0.58, j * 0.055, t, 2, seed);
           out += chars[Math.min(last, Math.max(0, Math.floor(v * chars.length)))];
         }
         out += '\n';
@@ -1975,13 +2040,13 @@ const AsciiTexture = ({
     };
     raf = requestAnimationFrame(loop);
     return () => { stopped = true; cancelAnimationFrame(raf); };
-  }, [seed, ramp, animate, speed, cols, rows]);
+  }, [seed, ramp, animate, speed, grid]);
 
   /* LEGIBILITY MASK
      A character field behind body copy is the fastest way to make text
      unreadable, so by default the texture is masked out of the middle of
      the panel — where the words are — and only survives around the
-     perimeter. `clear` is the percentage of the centre kept completely
+     perimeter. clear is the percentage of the centre kept completely
      free of glyphs. Set mask='full' to texture edge to edge. */
   const maskImage = useMemo(() => {
     if (mask === 'full') return undefined;
@@ -1997,9 +2062,9 @@ const AsciiTexture = ({
          className={`absolute inset-0 pointer-events-none select-none overflow-hidden m-0 ${className}`}
          style={{
            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-           fontSize: `${size}px`,
+           fontSize: `${grid.px}px`,
            lineHeight: 1,
-           letterSpacing: '0.06em',
+           letterSpacing: 0,
            color,
            opacity,
            whiteSpace: 'pre',
@@ -2027,6 +2092,756 @@ const AsciiSurface = ({ cfg, seed = 1, tone = 'dark', children, className = '', 
     <div className="relative">{children}</div>
   </div>
 );
+
+/* ============================================================
+   NOTION-STYLE INLINE PARSER
+   Sticky notes accept the block syntax people already know from
+   Notion. Parsed once per note into React elements — no dangerous
+   HTML injection anywhere, since every node is constructed rather
+   than assigned as innerHTML.
+   ============================================================ */
+const notionInline = (text, key = 'i') => {
+  const out = [];
+  // bold, italic, code, strike, link — matched in one pass so nesting
+  // can't produce overlapping ranges.
+  const re = /(\*\*[^*]+\*\*|\*[^*]+\*|__[^_]+__|_[^_]+_|`[^`]+`|~~[^~]+~~|\[[^\]]+\]\([^)]+\))/g;
+  let last = 0, m, n = 0;
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > last) out.push(text.slice(last, m.index));
+    const t = m[0];
+    const k = `${key}-${n++}`;
+    if (t.startsWith('**') || t.startsWith('__')) out.push(<strong key={k}>{t.slice(2, -2)}</strong>);
+    else if (t.startsWith('`')) out.push(<code key={k} className="px-1 py-0.5 rounded text-[0.9em]" style={{ background: 'rgba(0,0,0,0.07)', fontFamily: 'ui-monospace, Menlo, monospace' }}>{t.slice(1, -1)}</code>);
+    else if (t.startsWith('~~')) out.push(<s key={k}>{t.slice(2, -2)}</s>);
+    else if (t.startsWith('[')) {
+      const mm = /\[([^\]]+)\]\(([^)]+)\)/.exec(t);
+      const href = mm[2];
+      const safe = /^https?:\/\//i.test(href) ? href : '#';
+      out.push(<a key={k} href={safe} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2">{mm[1]}</a>);
+    }
+    else out.push(<em key={k}>{t.slice(1, -1)}</em>);
+    last = m.index + t.length;
+  }
+  if (last < text.length) out.push(text.slice(last));
+  return out;
+};
+
+const NotionText = ({ text = '', className = '' }) => {
+  const blocks = useMemo(() => {
+    const lines = String(text).split('\n');
+    const nodes = [];
+    let list = null, listType = null;
+
+    const flush = () => {
+      if (!list) return;
+      const Tag = listType === 'ol' ? 'ol' : 'ul';
+      nodes.push(
+        <Tag key={`l${nodes.length}`} className={`${listType === 'ol' ? 'list-decimal' : 'list-disc'} pl-5 my-1 space-y-0.5`}>
+          {list}
+        </Tag>
+      );
+      list = null; listType = null;
+    };
+
+    lines.forEach((raw, i) => {
+      const line = raw.replace(/\s+$/, '');
+      if (!line.trim()) { flush(); return; }
+
+      let m;
+      if ((m = /^(#{1,3})\s+(.*)$/.exec(line))) {
+        flush();
+        const lvl = m[1].length;
+        const size = lvl === 1 ? 'text-[15px]' : lvl === 2 ? 'text-[13.5px]' : 'text-[12.5px]';
+        nodes.push(<p key={i} className={`font-bold ${size} mt-1.5 mb-0.5 leading-snug`}>{notionInline(m[2], i)}</p>);
+      } else if (/^(---|\*\*\*)$/.test(line.trim())) {
+        flush();
+        nodes.push(<hr key={i} className="my-2 border-0 border-t" style={{ borderColor: 'rgba(0,0,0,0.18)' }} />);
+      } else if ((m = /^>\s?(.*)$/.exec(line))) {
+        flush();
+        nodes.push(<blockquote key={i} className="pl-2.5 my-1 italic" style={{ borderLeft: '2px solid rgba(0,0,0,0.3)' }}>{notionInline(m[1], i)}</blockquote>);
+      } else if ((m = /^\[([ xX])\]\s+(.*)$/.exec(line))) {
+        flush();
+        const done = m[1].toLowerCase() === 'x';
+        nodes.push(
+          <p key={i} className="flex items-start gap-1.5 my-0.5">
+            <span className="mt-[3px] w-3 h-3 shrink-0 flex items-center justify-center text-[8px] rounded-[3px]"
+                  style={{ border: '1.5px solid rgba(0,0,0,0.45)', background: done ? 'rgba(0,0,0,0.75)' : 'transparent', color: '#fff' }}>
+              {done ? '✓' : ''}
+            </span>
+            <span className={done ? 'line-through opacity-55' : ''}>{notionInline(m[2], i)}</span>
+          </p>
+        );
+      } else if ((m = /^[-*+]\s+(.*)$/.exec(line))) {
+        if (listType !== 'ul') { flush(); listType = 'ul'; list = []; }
+        list.push(<li key={i}>{notionInline(m[1], i)}</li>);
+      } else if ((m = /^\d+[.)]\s+(.*)$/.exec(line))) {
+        if (listType !== 'ol') { flush(); listType = 'ol'; list = []; }
+        list.push(<li key={i}>{notionInline(m[1], i)}</li>);
+      } else {
+        flush();
+        nodes.push(<p key={i} className="my-0.5">{notionInline(line, i)}</p>);
+      }
+    });
+    flush();
+    return nodes;
+  }, [text]);
+
+  return <div className={className}>{blocks}</div>;
+};
+
+/* ============================================================
+   LANDING PAGE
+   The door. Two ways in: the archive proper, or the community
+   center. Warm paper panel over black, with the banded stripes
+   running out from behind the card.
+   ============================================================ */
+const LandingPage = ({ cfg, ascii, onEnterSite, onEnterCommunity }) => {
+  const stripes = cfg.stripes || ['#d9a441', '#c8742b', '#b8422a', '#8f2320'];
+
+  return (
+    <div data-cc-scroll className="fixed inset-0 z-[70] overflow-y-auto hide-scrollbar" style={{ background: cfg.outer || '#0d0b09' }}>
+
+      <div className="relative min-h-full p-3 md:p-5 flex flex-col">
+        <div className="relative flex-1 flex flex-col overflow-hidden rounded-2xl"
+             style={{ background: cfg.paper || '#efece2', animation: 'landIn 760ms var(--ease-out-expo) both' }}>
+
+          {/* The field belongs to the cream panel and nothing else. It is
+              absolutely positioned inside this overflow-hidden box, so it
+              cannot bleed onto the frame or over the cards. Full coverage by
+              default — the headline sits on its own layer above it. */}
+          {ascii?.enabled && cfg.asciiBg !== false && (
+            <AsciiTexture seed={137} ramp={ascii.ramp} size={cfg.asciiSize ?? 11} speed={cfg.asciiSpeed ?? 1.6}
+                          animate
+                          mask={cfg.asciiMask || 'full'} clear={cfg.asciiClear ?? 30}
+                          color={cfg.asciiInkLight || ascii.inkOnLight}
+                          opacity={cfg.asciiOpacityLight ?? 0.34} />
+          )}
+
+          {/* --- top bar --- */}
+          <div className="relative z-20 flex items-center px-5 md:px-7 py-4">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="w-6 h-6 rounded-md shrink-0 flex items-center justify-center font-serif text-sm"
+                    style={{ background: cfg.markBg || '#161310', color: cfg.markInk || '#efece2' }}>
+                {(cfg.wordmark || 'I').charAt(0)}
+              </span>
+              <span className="font-sans font-bold tracking-tight text-lg min-w-0 break-words" style={{ color: '#161310' }}>
+                {cfg.wordmark}
+              </span>
+            </div>
+          </div>
+
+          {/* --- centre --- */}
+          <div className="relative z-10 flex-1 flex flex-col items-center justify-center px-5 py-16 md:py-24">
+            <div className="relative max-w-xl w-full flex flex-col items-center">
+              {/* A soft clearing under the copy: the field stays edge to edge
+                  visually, but fades right where the words are, so strength
+                  and legibility stop competing. */}
+              {ascii?.enabled && cfg.asciiBg !== false && (
+                <span aria-hidden="true" className="absolute pointer-events-none"
+                      style={{
+                        left: '-16%', right: '-16%', top: '-46%', bottom: '-46%',
+                        background: `radial-gradient(56% 50% at 50% 50%, ${cfg.paper || '#efece2'} 0%, ${cfg.paper || '#efece2'}e0 44%, transparent 76%)`
+                      }} />
+              )}
+              <h1 className="relative font-sans font-bold text-3xl md:text-[2.6rem] tracking-tight text-center mb-3 break-words"
+                  style={{ color: cfg.titleInk || '#161310', animation: 'landUp 700ms var(--ease-out-expo) 120ms both' }}>
+                {cfg.title}
+              </h1>
+              <p className="relative font-sans text-sm md:text-[15px] text-center max-w-md leading-relaxed break-words"
+                 style={{ color: cfg.subtitleInk || '#3a352d', animation: 'landUp 700ms var(--ease-out-expo) 200ms both' }}>
+                {cfg.subtitle}
+              </p>
+            </div>
+          </div>
+
+          {/* --- stripe bands + the choice --- */}
+          <div className="relative">
+            {/* bands run edge to edge, interrupted by the card */}
+            <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 flex flex-col pointer-events-none"
+                 style={{ animation: 'landBands 900ms var(--ease-out-expo) 260ms both' }}>
+              {stripes.map((c, i) => (
+                <span key={i} style={{ background: c, height: 'clamp(14px, 2.4vw, 22px)' }} />
+              ))}
+            </div>
+
+            <div className="relative z-10 flex justify-center px-4 pb-2">
+              <div className="w-full max-w-[420px] rounded-[18px] p-1.5 grid sm:grid-cols-2 gap-1.5"
+                   style={{ background: cfg.paper || '#efece2', border: `2.5px solid ${cfg.cardBorder || '#161310'}`,
+                            animation: 'landCard 780ms var(--ease-out-expo) 340ms both' }}>
+                <button onClick={onEnterSite}
+                        className="land-choice text-left rounded-[13px] p-3.5 min-w-0"
+                        style={{ background: cfg.primaryBg || '#161310', color: cfg.primaryInk || '#efece2' }}>
+                  <GitBranch size={17} className="mb-6 opacity-90" />
+                  <p className="font-sans font-semibold text-[12.5px] leading-tight break-words">{cfg.primaryTitle}</p>
+                  <p className="font-sans text-[10.5px] mt-0.5 opacity-55 leading-snug break-words">{cfg.primarySub}</p>
+                </button>
+
+                <button onClick={onEnterCommunity}
+                        className="land-choice text-left rounded-[13px] p-3.5 min-w-0"
+                        style={{ background: cfg.secondaryBg || '#e4e0d3', color: cfg.secondaryInk || '#161310' }}>
+                  <UserPlus size={17} className="mb-6 opacity-70" />
+                  <p className="font-sans font-semibold text-[12.5px] leading-tight break-words">{cfg.secondaryTitle}</p>
+                  <p className="font-sans text-[10.5px] mt-0.5 opacity-55 leading-snug break-words">{cfg.secondarySub}</p>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* --- footnote --- */}
+          <div className="relative z-10 flex items-center justify-center gap-1.5 py-4 px-5">
+            <span className="w-3 h-3 rounded-full shrink-0 flex items-center justify-center text-[8px]"
+                  style={{ border: '1px solid #b5ae9f', color: '#b5ae9f' }}>i</span>
+            <p className="font-sans text-[10.5px] text-center break-words" style={{ color: cfg.subtitleInk || '#3a352d', opacity: 0.72 }}>{cfg.footnote}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/* ============================================================
+   COMMUNITY BOARD
+   Anyone may pin a note, anonymously. Notes accept Notion block
+   syntax and scatter across the board at seeded angles so the
+   arrangement looks hand-pinned but stays stable between visits.
+   ============================================================ */
+const CommunityBoard = ({ cfg, notes, onPost, posting }) => {
+  const hostRef = useRef(null);
+  const live = useInView(hostRef, '120px');
+  const [draft, setDraft] = useState('');
+  const [name, setName] = useState('');
+  const [color, setColor] = useState(0);
+  const [open, setOpen] = useState(false);
+  const [preview, setPreview] = useState(false);
+
+  const palette = cfg.noteColors || ['#f3ede1', '#e8dcc8', '#dfe6da', '#efdcd5', '#e3e0ea'];
+  const max = Math.max(200, Number(cfg.maxLength) || 600);
+
+  const submit = () => {
+    const body = draft.trim();
+    if (!body) return;
+    onPost({ text: body.slice(0, max), author: name.trim().slice(0, 40), color: palette[color % palette.length] });
+    setDraft(''); setName(''); setOpen(false); setPreview(false);
+  };
+
+  return (
+    <section ref={hostRef} className="relative w-full overflow-hidden"
+             style={{ background: cfg.bg || '#d9cfbc', minHeight: '100vh' }}>
+
+      {/* frame */}
+      <div className="absolute inset-3 md:inset-6 pointer-events-none" style={{ border: `1px solid ${cfg.ink || '#2b2620'}33` }} />
+
+      <div className="relative px-5 md:px-12 py-14 md:py-20">
+
+        {/* ---- masthead ---- */}
+        <div className="flex flex-wrap items-start justify-between gap-6 mb-10">
+          <div className={`flex items-start gap-4 min-w-0 ${live ? 'cc-up' : 'opacity-0'}`}>
+            <span className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center font-serif text-[11px]"
+                  style={{ background: cfg.seal || '#b4402f', color: '#fff' }}>{cfg.sealMark || '印'}</span>
+            <p className="font-serif text-lg leading-[1.35] shrink-0 hidden md:block"
+               style={{ color: cfg.ink || '#2b2620', writingMode: 'vertical-rl' }}>{cfg.verticalTitle}</p>
+            <div className="min-w-0">
+              <h2 className="font-serif text-2xl md:text-4xl leading-tight tracking-wide break-words" style={{ color: cfg.ink || '#2b2620' }}>
+                {cfg.title}
+              </h2>
+              <p className="font-mono text-[10px] uppercase tracking-[0.24em] mt-2 break-words" style={{ color: `${cfg.ink || '#2b2620'}99` }}>
+                {cfg.kicker}
+              </p>
+            </div>
+          </div>
+
+          <div className={`flex flex-wrap items-center gap-4 font-mono text-[10px] uppercase tracking-[0.15em] min-w-0 ${live ? 'cc-up' : 'opacity-0'}`}
+               style={{ color: `${cfg.ink || '#2b2620'}88`, animationDelay: '80ms' }}>
+            {(cfg.navLinks || '').split(',').filter(Boolean).map((l, i) => (
+              <span key={i} className="break-words">{l.trim()}/</span>
+            ))}
+          </div>
+        </div>
+
+        {/* ---- intro + pin button ---- */}
+        <div className="grid lg:grid-cols-[minmax(0,300px)_minmax(0,1fr)] gap-8 mb-10">
+          <div className={live ? 'cc-up' : 'opacity-0'} style={{ animationDelay: '140ms' }}>
+            <p className="font-serif text-sm leading-[1.75] cc-dropcap break-words" style={{ color: `${cfg.ink || '#2b2620'}cc` }}>
+              {cfg.blurb}
+            </p>
+            <button onClick={() => setOpen(v => !v)}
+                    className="mt-5 inline-flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.2em] px-4 py-2.5 slide-press"
+                    style={{ background: cfg.ink || '#2b2620', color: cfg.bg || '#d9cfbc' }}>
+              <Plus size={13} /> {open ? 'Close' : (cfg.pinLabel || 'Pin a note')}
+            </button>
+          </div>
+
+          {/* ---- composer ---- */}
+          {open && (
+            <div className="cc-pop p-4 md:p-5 min-w-0" style={{ background: palette[color % palette.length], border: `1px solid ${cfg.ink || '#2b2620'}44`, boxShadow: '0 14px 34px rgba(0,0,0,0.16)' }}>
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+                <p className="font-mono text-[9px] uppercase tracking-[0.24em]" style={{ color: `${cfg.ink}99` }}>
+                  Notion syntax: **bold** *italic* `code` # heading - list [ ] todo &gt; quote
+                </p>
+                <div className="flex gap-1.5 shrink-0">
+                  {palette.map((c, i) => (
+                    <button key={i} onClick={() => setColor(i)} aria-label={`Colour ${i + 1}`}
+                            className="w-5 h-5 rounded-full transition-transform hover:scale-110"
+                            style={{ background: c, outline: color === i ? `2px solid ${cfg.ink}` : `1px solid ${cfg.ink}33`, outlineOffset: 1 }} />
+                  ))}
+                </div>
+              </div>
+
+              {preview ? (
+                <div className="min-h-[120px] font-sans text-[12.5px] leading-[1.6] p-2" style={{ color: cfg.ink }}>
+                  <NotionText text={draft || '_Nothing yet._'} />
+                </div>
+              ) : (
+                <textarea value={draft} onChange={e => setDraft(e.target.value.slice(0, max))} rows={5}
+                          placeholder={cfg.placeholder}
+                          className="w-full bg-transparent outline-none resize-y font-sans text-[12.5px] leading-[1.6] p-2"
+                          style={{ color: cfg.ink, border: `1px dashed ${cfg.ink}33` }} />
+              )}
+
+              <div className="flex flex-wrap items-center gap-2 mt-3">
+                <input value={name} onChange={e => setName(e.target.value)} placeholder="name (optional)"
+                       className="flex-1 min-w-[130px] bg-transparent outline-none font-mono text-[11px] px-2 py-1.5"
+                       style={{ color: cfg.ink, borderBottom: `1px solid ${cfg.ink}33` }} />
+                <span className="font-mono text-[9px] tabular-nums shrink-0" style={{ color: `${cfg.ink}66` }}>{draft.length}/{max}</span>
+                <button onClick={() => setPreview(p => !p)} className="font-mono text-[9px] uppercase tracking-[0.18em] px-3 py-2 shrink-0"
+                        style={{ border: `1px solid ${cfg.ink}44`, color: cfg.ink }}>{preview ? 'Write' : 'Preview'}</button>
+                <button onClick={submit} disabled={!draft.trim() || posting}
+                        className="font-mono text-[9px] uppercase tracking-[0.18em] px-4 py-2 slide-press shrink-0 disabled:opacity-40"
+                        style={{ background: cfg.ink, color: cfg.bg }}>{posting ? 'Pinning…' : 'Pin it'}</button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ---- section markers ---- */}
+        <div className="flex flex-wrap gap-10 md:gap-16 mb-6">
+          {[[cfg.sectionA, cfg.sectionAYears], [cfg.sectionB, cfg.sectionBYears]].map(([label, years], i) => (
+            label ? (
+              <div key={i} className={live ? 'cc-up' : 'opacity-0'} style={{ animationDelay: `${200 + i * 70}ms` }}>
+                <p className="font-mono text-[11px] uppercase tracking-[0.2em] leading-snug whitespace-pre-line break-words" style={{ color: cfg.ink }}>{label}</p>
+                <p className="font-mono text-[11px] tracking-[0.15em] mt-1" style={{ color: `${cfg.ink}aa` }}>{years}</p>
+                <span className="inline-block mt-2 text-sm" style={{ color: cfg.ink }}>→</span>
+              </div>
+            ) : null
+          ))}
+        </div>
+
+        {/* ---- the board ---- */}
+        {notes.length === 0 ? (
+          <p className="font-mono text-[11px] uppercase tracking-[0.2em] py-16 text-center" style={{ color: `${cfg.ink}77` }}>
+            {cfg.emptyText}
+          </p>
+        ) : (
+          <div className="cc-masonry">
+            {notes.map((n, i) => (
+              <article key={n.id ?? i}
+                       className={`cc-note ${live ? 'cc-pop' : 'opacity-0'}`}
+                       style={{
+                         background: n.color || palette[i % palette.length],
+                         '--rot': `${(seededRand(i, 77) - 0.5) * 3.4}deg`,
+                         animationDelay: `${Math.min(i, 14) * 55}ms`,
+                         border: `1px solid ${cfg.ink}22`
+                       }}>
+                <NotionText text={n.text} className="font-sans text-[12.5px] leading-[1.6] break-words" />
+                <div className="flex items-baseline justify-between gap-3 mt-3 pt-2" style={{ borderTop: `1px solid ${cfg.ink}1f` }}>
+                  <span className="font-serif italic text-[11.5px] min-w-0 break-words" style={{ color: `${cfg.ink}bb` }}>
+                    {n.author?.trim() ? n.author : (cfg.anonName || 'anonymous')}
+                  </span>
+                  <span className="font-mono text-[8.5px] uppercase tracking-[0.15em] shrink-0" style={{ color: `${cfg.ink}77` }}>
+                    {n.created_at ? new Date(n.created_at).toLocaleDateString() : ''}
+                  </span>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+};
+
+/* ============================================================
+   SONG OF THE DAY
+   A translucent coloured record, half out of frame, its label
+   carrying the day's track listing.
+   ============================================================ */
+const SongOfDay = ({ cfg }) => {
+  const hostRef = useRef(null);
+  const live = useInView(hostRef, '120px');
+  const vinyl = cfg.vinylColor || '#1f5fd0';
+  const tracks = cfg.tracks || [];
+  const uid = cfg.uid || 'sotd';
+
+  return (
+    <section ref={hostRef} className="relative w-full overflow-hidden flex items-center"
+             style={{ background: cfg.bg || '#0d0d0f', minHeight: '100vh' }}>
+
+      {/* ---- left rail ---- */}
+      <div className={`relative z-20 w-full max-w-[300px] shrink-0 pl-6 md:pl-14 pr-4 ${live ? 'cc-up' : 'opacity-0'}`}>
+        <span className="inline-flex items-center justify-center w-11 h-11 rounded-full mb-7"
+              style={{ background: '#141414', border: '1px solid #ffffff22' }}>
+          <Disc3 size={19} style={{ color: '#fff' }} />
+        </span>
+        <h2 className="font-sans font-bold uppercase leading-[1.15] text-xl md:text-2xl tracking-tight break-words" style={{ color: '#f2f2f2' }}>
+          {cfg.heading}
+        </h2>
+        <p className="font-mono text-[10px] leading-relaxed uppercase tracking-[0.12em] mt-5 break-words" style={{ color: '#ffffff66' }}>
+          {cfg.blurb}
+        </p>
+        {cfg.link && (
+          <a href={/^https?:\/\//i.test(cfg.link) ? cfg.link : undefined} target="_blank" rel="noopener noreferrer"
+             className="inline-flex items-center gap-2 mt-6 font-mono text-[10px] uppercase tracking-[0.2em] px-4 py-2.5 slide-press"
+             style={{ border: '1px solid #ffffff33', color: '#f2f2f2' }}>
+            <Play size={12} /> {cfg.linkLabel || 'Listen'}
+          </a>
+        )}
+      </div>
+
+      {/*
+        THE RECORD
+        Photographic reference has three things a plain radial gradient
+        cannot give you, so each is built explicitly:
+          1. a hard, near-white specular sweep (the photo peaks at ~#becddd,
+             not a lighter tint of the vinyl colour)
+          2. thousands of fine grooves, which is a repeating conic pattern
+             rather than a handful of rings
+          3. the disc running off the right edge, so it reads as a close-up
+        Sized past the viewport and pushed right, exactly like the plate.
+      */}
+      <div className={`absolute top-1/2 -translate-y-1/2 pointer-events-none ${live ? 'cc-vinyl' : 'opacity-0'}`}
+           style={{ right: '-18%', width: 'min(150vh, 1180px)', aspectRatio: '1/1' }}>
+
+        <div className={`relative w-full h-full rounded-full overflow-hidden ${cfg.spin ? 'cc-spin' : ''}`}
+             style={{ boxShadow: `0 0 140px ${vinyl}33` }}>
+
+          {/* A supplied photo wins outright — CSS can approximate a pressed
+              record convincingly but cannot reproduce real refraction. */}
+          {cfg.vinylImage && (
+            <img loading="lazy" decoding="async" src={cfg.vinylImage} alt=""
+                 className="absolute inset-0 w-full h-full object-cover rounded-full" />
+          )}
+
+          {!cfg.vinylImage && <>
+          {/* base body — deep at the rim, brighter toward the upper left */}
+          <div className="absolute inset-0 rounded-full"
+               style={{ background: `radial-gradient(circle at 38% 30%, ${vinyl} 0%, ${vinyl}dd 38%, ${vinyl}99 62%, ${vinyl}55 82%, ${vinyl}22 100%)` }} />
+
+          {/* translucency — light pooling through the disc from behind */}
+          <div className="absolute inset-0 rounded-full"
+               style={{ background: `radial-gradient(circle at 62% 74%, ${vinyl}cc 0%, transparent 46%)`, mixBlendMode: 'screen' }} />
+
+          {/* grooves: fine concentric rings, dense enough to read as vinyl */}
+          <div className="absolute inset-0 rounded-full"
+               style={{
+                 background: 'repeating-radial-gradient(circle at 50% 50%, rgba(255,255,255,0.055) 0 1px, rgba(0,0,0,0.075) 1px 2.5px)',
+                 mixBlendMode: 'overlay'
+               }} />
+
+          {/* land between groove bands */}
+          <div className="absolute inset-0 rounded-full"
+               style={{
+                 background: 'repeating-radial-gradient(circle at 50% 50%, rgba(255,255,255,0.05) 0 14px, rgba(0,0,0,0.05) 14px 30px)',
+                 mixBlendMode: 'soft-light'
+               }} />
+
+          {/* THE SHEEN — hard, near-white, swept across the lower left.
+              This is the single biggest thing missing from a gradient-only
+              record; the reference blows out to almost white here. */}
+          <div className="absolute inset-0 rounded-full"
+               style={{
+                 background: `conic-gradient(from 190deg at 50% 50%,
+                   transparent 0deg, rgba(214,228,246,0.00) 18deg,
+                   rgba(214,228,246,0.55) 34deg, rgba(236,244,255,0.88) 43deg,
+                   rgba(214,228,246,0.50) 52deg, rgba(214,228,246,0.00) 70deg,
+                   transparent 300deg,
+                   rgba(190,210,240,0.22) 330deg, transparent 360deg)`,
+                 filter: 'blur(6px)'
+               }} />
+
+          {/* a second, tighter glint riding the same arc */}
+          <div className="absolute inset-0 rounded-full"
+               style={{
+                 background: `conic-gradient(from 196deg at 50% 50%,
+                   transparent 30deg, rgba(255,255,255,0.75) 41deg, transparent 50deg)`,
+                 filter: 'blur(2px)', mixBlendMode: 'screen'
+               }} />
+
+          {/* rim darkening so the edge turns away from the light */}
+          <div className="absolute inset-0 rounded-full"
+               style={{ background: 'radial-gradient(circle at 50% 50%, transparent 62%, rgba(0,0,0,0.5) 92%, rgba(0,0,0,0.75) 100%)' }} />
+
+          </>}
+
+          {/* outer edge highlight */}
+          <div className="absolute inset-0 rounded-full"
+               style={{ boxShadow: `inset 0 0 0 1px ${vinyl}88, inset 0 0 26px rgba(0,0,0,0.55)` }} />
+        </div>
+
+        {/* ---------- LABEL (does not spin with the disc) ---------- */}
+        <div className="absolute rounded-full overflow-hidden flex flex-col"
+             style={{ inset: '31%', background: cfg.labelBg || '#0a0a12', boxShadow: '0 0 0 1px rgba(255,255,255,0.14), 0 0 34px rgba(0,0,0,0.6)' }}>
+          {cfg.labelImage && (
+            <img loading="lazy" decoding="async" src={cfg.labelImage} alt=""
+                 className="absolute inset-0 w-full h-full object-cover" style={{ opacity: 0.5 }} />
+          )}
+
+          <div className="relative flex-1 flex flex-col px-[8%] pt-[9%] pb-[7%] min-w-0">
+            <p className="font-serif tracking-[0.42em] text-center uppercase leading-none break-words"
+               style={{ color: '#fff', fontSize: 'clamp(9px, 1.5vw, 19px)' }}>{cfg.albumTitle}</p>
+            <p className="font-mono text-center uppercase tracking-[0.3em] mt-[2%] break-words"
+               style={{ color: '#ffffff66', fontSize: 'clamp(4px, 0.62vw, 8px)' }}>{cfg.albumSub}</p>
+
+            <div className="flex items-end justify-between gap-3 mt-[7%]">
+              <span className="font-mono uppercase tracking-[0.08em] whitespace-pre-line shrink-0"
+                    style={{ color: '#ffffff88', fontSize: 'clamp(4px, 0.58vw, 7px)', lineHeight: 1.5 }}>{cfg.catalogue}</span>
+              <span className="font-sans font-bold text-right whitespace-pre-line shrink-0"
+                    style={{ color: '#fff', fontSize: 'clamp(5px, 0.82vw, 11px)', lineHeight: 1.25 }}>{cfg.side}</span>
+            </div>
+
+            <ol className="mt-[5%] flex-1 overflow-hidden">
+              {tracks.slice(0, 6).map((t, i) => (
+                <li key={t.id ?? i} className="flex items-baseline gap-[2.5%] min-w-0 mb-[2.6%]">
+                  <span className="font-sans font-bold tabular-nums shrink-0 text-right"
+                        style={{ color: '#fff', fontSize: 'clamp(4.5px, 0.72vw, 9px)', width: '7%' }}>{i + 1}.</span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block font-sans font-bold uppercase truncate leading-tight"
+                          style={{ color: '#fff', fontSize: 'clamp(4.5px, 0.72vw, 9px)' }}>{t.title}</span>
+                    {t.credit && (
+                      <span className="block font-mono uppercase truncate leading-tight"
+                            style={{ color: '#ffffff4d', fontSize: 'clamp(3px, 0.45vw, 5.5px)' }}>{t.credit}</span>
+                    )}
+                  </span>
+                  <span className="font-sans tabular-nums shrink-0"
+                        style={{ color: '#fff', fontSize: 'clamp(4.5px, 0.72vw, 9px)' }}>{t.length}</span>
+                </li>
+              ))}
+            </ol>
+          </div>
+
+          {/* spindle */}
+          <div className="absolute rounded-full"
+               style={{ inset: '46.5%', background: cfg.bg || '#0d0d0f', boxShadow: '0 0 0 1px rgba(255,255,255,0.2)' }} />
+        </div>
+      </div>
+    </section>
+  );
+};
+
+/* ============================================================
+   VOTING POLL
+   Drag each column to say how you think it should be split, then
+   submit. The figure above each column is the running average of
+   everyone's submissions; while you are dragging it shows your own.
+   ============================================================ */
+const VotePoll = ({ cfg, options, tally, onSubmit, voted }) => {
+  const hostRef = useRef(null);
+  const live = useInView(hostRef, '120px');
+  const [mine, setMine] = useState(null);
+  const [dragging, setDragging] = useState(null);
+
+  const opts = options || [];
+  const editing = mine !== null;
+
+  const averages = useMemo(() => {
+    const out = {};
+    opts.forEach(o => {
+      const t = tally?.[o.id];
+      out[o.id] = t && t.n ? Math.round(t.sum / t.n) : Number(o.seed ?? 0);
+    });
+    return out;
+  }, [opts, tally]);
+
+  const shown = (id) => (editing ? (mine[id] ?? 0) : averages[id] ?? 0);
+  const begin = () => { if (!mine) setMine(Object.fromEntries(opts.map(o => [o.id, averages[o.id] ?? 0]))); };
+
+  const setFromPointer = (id, clientY, el) => {
+    const r = el.getBoundingClientRect();
+    const pct = Math.round(Math.max(0, Math.min(100, ((r.bottom - clientY) / r.height) * 100)));
+    setMine(m => ({ ...(m || {}), [id]: pct }));
+  };
+
+  const down = (e, id) => {
+    if (voted) return;
+    begin();
+    setDragging(id);
+    setFromPointer(id, e.clientY, e.currentTarget);
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch (_) {}
+  };
+  const move = (e, id) => { if (dragging === id) setFromPointer(id, e.clientY, e.currentTarget); };
+  const up = (e) => { setDragging(null); try { e.currentTarget.releasePointerCapture(e.pointerId); } catch (_) {} };
+
+  // Keyboard equivalent — dragging alone would leave this unusable
+  // for anyone not using a mouse.
+  const key = (e, id) => {
+    if (voted) return;
+    const step = e.shiftKey ? 10 : 1;
+    let d = 0;
+    if (e.key === 'ArrowUp' || e.key === 'ArrowRight') d = step;
+    else if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') d = -step;
+    else return;
+    e.preventDefault();
+    begin();
+    setMine(m => {
+      const base = m || Object.fromEntries(opts.map(o => [o.id, averages[o.id] ?? 0]));
+      return { ...base, [id]: Math.max(0, Math.min(100, (base[id] ?? 0) + d)) };
+    });
+  };
+
+  return (
+    <section ref={hostRef} className="relative w-full flex flex-col"
+             style={{ background: cfg.paper || '#efe9dc', minHeight: '100vh' }}>
+
+      <div className={`flex-1 grid md:grid-cols-[minmax(0,300px)_minmax(0,1fr)] ${live ? 'cc-panel' : 'opacity-0'}`}>
+
+        {/* ---- left: the ask ---- */}
+        <div className="relative flex flex-col justify-between p-8 md:p-12 min-w-0">
+          <div />
+          <div className="min-w-0 py-8">
+            <h2 className="font-sans font-bold tracking-tight mb-5 break-words"
+                style={{ color: '#1a1a1a', fontSize: 'clamp(2.6rem, 6vw, 4.4rem)', lineHeight: 0.95 }}>
+              {cfg.heading}
+            </h2>
+            <p className="font-sans text-[12px] md:text-[13px] leading-[1.7] max-w-[280px] break-words" style={{ color: '#6d675d' }}>
+              {voted ? (cfg.thanks || 'Thanks — your vote is in.') : cfg.blurb}
+            </p>
+          </div>
+
+          <button onClick={() => { if (!voted && mine) onSubmit(mine); }}
+                  disabled={voted || !mine}
+                  className="inline-flex items-center gap-3 font-sans slide-press disabled:opacity-40 min-w-0 self-start"
+                  style={{ color: '#1a1a1a' }}>
+            <span className="w-11 h-11 rounded-full flex items-center justify-center shrink-0 text-lg"
+                  style={{ background: cfg.submitColor || '#2f6fdb', color: '#fff' }}>→</span>
+            <span className="break-words text-[15px] md:text-base">
+              {voted ? (cfg.votedLabel || 'Vote submitted') : (cfg.submitLabel || 'Submit vote')}
+            </span>
+          </button>
+        </div>
+
+        {/* ---- right: the columns ---- */}
+        <div className="grid min-w-0" style={{ gridTemplateColumns: `repeat(${Math.max(1, opts.length)}, minmax(0, 1fr))` }}>
+          {opts.map((o, i) => {
+            const v = shown(o.id);
+            return (
+              <div key={o.id}
+                   role="slider"
+                   tabIndex={voted ? -1 : 0}
+                   aria-label={o.label}
+                   aria-valuenow={v} aria-valuemin={0} aria-valuemax={100}
+                   onPointerDown={e => down(e, o.id)}
+                   onPointerMove={e => move(e, o.id)}
+                   onPointerUp={up}
+                   onPointerCancel={up}
+                   onKeyDown={e => key(e, o.id)}
+                   className={`relative flex flex-col min-w-0 select-none outline-none ${voted ? '' : 'cursor-ns-resize focus-visible:ring-2'}`}
+                   style={{ borderLeft: '1px dashed rgba(0,0,0,0.18)', touchAction: 'none' }}>
+
+                <div className="p-3 md:p-5 min-w-0">
+                  <p className="font-sans text-[10px] md:text-[11px] leading-tight break-words mb-1" style={{ color: '#6d675d' }}>{o.label}</p>
+                  <p className="font-sans font-medium tabular-nums" style={{ color: '#1a1a1a', fontSize: 'clamp(1.1rem, 2.2vw, 1.7rem)' }}>{v}%</p>
+                </div>
+
+                <div className="relative flex-1">
+                  <div className="absolute inset-x-0 bottom-0 cc-bar" style={{ height: `${v}%`, background: o.color || '#8a8a8a' }}>
+                    {dragging === o.id && (
+                      <span className="absolute -top-3.5 left-1/2 -translate-x-1/2 w-7 h-7 rounded-full flex items-center justify-center font-mono text-[10px]"
+                            style={{ background: '#111', color: '#fff' }}>↕</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </section>
+  );
+};
+
+/* ============================================================
+   COMMUNITY CENTER
+   The four panels, stacked. Each reveals itself on scroll.
+   ============================================================ */
+const CommunityCenter = ({
+  cfg, board, notes, onPostNote, postingNote,
+  song, poll, pollOptions, pollTally, onVote, hasVoted, onExit
+}) => {
+  const heroRef = useRef(null);
+  const heroSeen = useInView(heroRef, '0px');
+
+  return (
+    <div data-cc-scroll className="fixed inset-0 z-[65] overflow-y-auto hide-scrollbar" style={{ background: cfg.heroBg || '#faf7ed' }}>
+
+      {/* ---- persistent exit ---- */}
+      <button onClick={onExit}
+              className="fixed top-4 left-4 z-[68] flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.2em] px-3 py-2 slide-press"
+              style={{ background: '#161310', color: '#efece2' }}>
+        <ChevronLeft size={13} /> {cfg.exitLabel || 'Back'}
+      </button>
+
+      {/* ================= HERO ================= */}
+      <section ref={heroRef} className="relative w-full overflow-hidden flex flex-col items-center justify-center px-5"
+               style={{ background: cfg.heroBg || '#faf7ed', minHeight: '100vh' }}>
+        <div className="relative z-10 text-center max-w-3xl mx-auto pb-20">
+          <h1 className={`font-serif leading-[1.05] tracking-tight mb-4 break-words ${heroSeen ? 'cc-title' : 'opacity-0'}`}
+              style={{ color: cfg.heroInk || '#12100c', fontSize: 'clamp(2.1rem, 7vw, 4.6rem)' }}>
+            {cfg.heroPre}{' '}
+            <em className="italic">{cfg.heroItalic}</em>{' '}
+            {cfg.heroPost}
+          </h1>
+          <p className={`font-sans text-sm md:text-[15px] leading-[1.6] max-w-md mx-auto break-words ${heroSeen ? 'cc-up' : 'opacity-0'}`}
+             style={{ color: cfg.heroInk || '#12100c', animationDelay: '220ms' }}>
+            {cfg.heroSub}
+          </p>
+        </div>
+
+        {/* the figure — corner set in Admin > Community */}
+        {!!cfg.heroImage && (() => {
+          const pos = cfg.heroImagePos || 'left';
+          const edge = pos === 'center'
+            ? { left: '50%', transform: 'translateX(-50%)' }
+            : pos === 'right'
+              ? { right: 'clamp(3%, 7vw, 12%)' }
+              : { left: 'clamp(3%, 7vw, 12%)' };
+          return (
+            <img loading="lazy" decoding="async" src={cfg.heroImage} alt=""
+                 className={`absolute bottom-0 pointer-events-none select-none ${heroSeen ? 'cc-fig' : 'opacity-0'}`}
+                 style={{ ...edge, height: `clamp(170px, ${cfg.heroImageSize || 34}vh, 460px)`, width: 'auto' }} />
+          );
+        })()}
+
+        <div className={`absolute bottom-6 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1.5 ${heroSeen ? 'cc-up' : 'opacity-0'}`}
+             style={{ animationDelay: '420ms' }}>
+          <span className="font-mono text-[9px] uppercase tracking-[0.3em]" style={{ color: `${cfg.heroInk || '#12100c'}77` }}>
+            {cfg.scrollHint || 'scroll'}
+          </span>
+          <span className="cc-scroll-dot w-[1px] h-7" style={{ background: `${cfg.heroInk || '#12100c'}44` }} />
+        </div>
+      </section>
+
+      {/* ================= BOARD ================= */}
+      {board.enabled && (
+        <CommunityBoard cfg={board} notes={notes} onPost={onPostNote} posting={postingNote} />
+      )}
+
+      {/* ================= SONG OF THE DAY ================= */}
+      {song.enabled && <SongOfDay cfg={song} />}
+
+      {/* ================= POLL ================= */}
+      {poll.enabled && (
+        <VotePoll cfg={poll} options={pollOptions} tally={pollTally} onSubmit={onVote} voted={hasVoted} />
+      )}
+
+      {/* ---- foot ---- */}
+      <footer className="px-6 py-10 flex flex-wrap items-center justify-between gap-4"
+              style={{ background: cfg.footBg || '#12100c' }}>
+        <p className="font-mono text-[9px] uppercase tracking-[0.28em] break-words" style={{ color: '#ffffff55' }}>{cfg.footNote}</p>
+        <button onClick={onExit} className="font-mono text-[9px] uppercase tracking-[0.2em] px-4 py-2 slide-press shrink-0"
+                style={{ border: '1px solid #ffffff33', color: '#fff' }}>{cfg.exitLabel || 'Back'}</button>
+      </footer>
+    </div>
+  );
+};
 
 /* ============================================================
    EDITORIAL CHROME
@@ -2351,7 +3166,7 @@ const SecretCorner = ({ cfg, tracks, onClose, ascii }) => {
                   <path d="M13 8.5 4 14.5" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round"/>
                   <circle cx="3" cy="15.4" r="2.1" stroke="currentColor" strokeWidth="1.1"/>
                 </svg>
-                <p className="font-serif text-[17px] leading-none truncate" style={{ color: text }}>{cfg.title}</p>
+                <p className="font-serif text-[17px] leading-tight min-w-0 break-words" style={{ color: text }}>{cfg.title}</p>
               </div>
               <button onClick={() => setFavOnly(v => !v)}
                       className="font-mono text-[10px] tracking-[0.12em] shrink-0 transition-colors"
@@ -2378,7 +3193,7 @@ const SecretCorner = ({ cfg, tracks, onClose, ascii }) => {
 
                     <span className="min-w-0 flex-1">
                       <span className="flex items-center gap-1.5">
-                        <span className="font-mono text-[12.5px] truncate transition-colors"
+                        <span className="font-mono text-[12.5px] min-w-0 break-words transition-colors"
                               style={{ color: active ? '#fff6e2' : `${text}cc` }}>{t.title || 'Untitled'}</span>
                         {active && playing && (
                           <span className="flex items-end gap-[2px] h-2.5 shrink-0">
@@ -2926,6 +3741,124 @@ const defaultFiles = [
   }
 ];
 
+// The community-center figure, cut out of her paper background and
+// embedded so the page has no external dependency.
+const CC_FIGURE = "data:image/webp;base64,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";
+
+const defaultLanding = {
+  enabled: true,
+  wordmark: "Ice",
+  asciiBg: true,
+  asciiSpeed: 1.6,
+  asciiSize: 11,
+  asciiOpacityLight: 0.34,  // on the cream panel
+  asciiMask: "full",        // full | edges — 'edges' clears the middle
+  asciiClear: 30,           // only used when asciiMask is 'edges'
+  asciiInkLight: "",        // blank inherits from Ambient
+  title: "Welcome to the archive.",
+  subtitle: "Two doors. One leads to everything I've made and kept; the other to a room where you can leave something of your own.",
+  primaryTitle: "Enter the archive",
+  primarySub: "Projects, galleria, journals",
+  secondaryTitle: "Community center",
+  secondarySub: "Leave a note, vote, listen",
+  footnote: "Nothing here asks you to sign in.",
+  outer: "#0d0b09",
+  paper: "#efece2",
+  markBg: "#161310",
+  markInk: "#efece2",
+  cardBorder: "#161310",
+  primaryBg: "#161310",
+  primaryInk: "#efece2",
+  secondaryBg: "#e4e0d3",
+  secondaryInk: "#161310",
+  stripes: ["#d9a441", "#c8742b", "#b8422a", "#8f2320"]
+};
+
+const defaultCommunity = {
+  heroPre: "The",
+  heroItalic: "community",
+  heroPost: "center",
+  heroSub: "Welcome to the center. Maybe you want a part in my life, but really this is just where I like to mess around and find out.",
+  heroBg: "#faf7ed",
+  heroInk: "#12100c",
+  heroImage: CC_FIGURE,
+  heroImagePos: "right",    // left | right | center
+  heroImageSize: 34,        // % of viewport height
+  scrollHint: "scroll",
+  exitLabel: "Back",
+  footBg: "#12100c",
+  footNote: "The community center // open to anyone"
+};
+
+const defaultBoard = {
+  enabled: true,
+  title: "THE COMMUNITY BOARD",
+  verticalTitle: "掲示板",
+  kicker: "Anonymous // unmoderated // yours",
+  sealMark: "印",
+  blurb: "Pin anything. A thought, a recommendation, a complaint about the weather. Notes take Notion syntax, so you can format them properly.",
+  pinLabel: "Pin a note",
+  placeholder: "# A heading\n\nSomething **worth** saying.\n\n- a list\n- of things\n\n[ ] a box to tick",
+  emptyText: "The board is empty. Be the first.",
+  anonName: "anonymous",
+  navLinks: "Home, About, Board, Contact",
+  sectionA: "NOTES\nAND ASIDES",
+  sectionAYears: "open call",
+  sectionB: "PINNED\nBY VISITORS",
+  sectionBYears: "unmoderated",
+  bg: "#d9cfbc",
+  ink: "#2b2620",
+  seal: "#b4402f",
+  maxLength: 600,
+  noteColors: ["#f3ede1", "#e8dcc8", "#dfe6da", "#efdcd5", "#e3e0ea"]
+};
+
+const defaultSong = {
+  enabled: true,
+  heading: "SONG OF THE DAY",
+  blurb: "Changed whenever something gets stuck in my head. No skipping.",
+  bg: "#0d0d0f",
+  vinylColor: "#1f5fd0",
+  labelBg: "#0a0a12",
+  labelImage: "",
+  vinylImage: "",          // drop in a real render/photo for full realism
+  albumTitle: "INNER BEAUTY",
+  albumSub: "produced // played // pressed",
+  catalogue: "RB1-27450\n33 1/3 RPM",
+  side: "Record 1\nSide 1",
+  link: "",
+  linkLabel: "Listen",
+  spin: true,
+  tracks: [
+    { id: 1, title: "West End Blues", credit: "Recorded 1928 · remastered", length: "3:01" },
+    { id: 2, title: "Cantaloupe Island", credit: "Blue Note · 1964", length: "3:21" },
+    { id: 3, title: "Flamenco Sketches", credit: "Columbia · 1959", length: "3:08" },
+    { id: 4, title: "Sidewinder", credit: "Blue Note · 1963", length: "3:02" }
+  ]
+};
+
+const defaultPoll = {
+  enabled: true,
+  heading: "Vote",
+  blurb: "This is how it currently sits. Think you could do better? Drag each column as you see fit, then submit.",
+  thanks: "Thanks — your vote is counted. The figures above are everyone's average.",
+  submitLabel: "Submit vote",
+  votedLabel: "Vote submitted",
+  bg: "#2e211c",
+  paper: "#efe9dc",
+  accent: "#d9432f",
+  submitColor: "#2f6fdb"
+};
+
+const defaultPollOptions = [
+  { id: 1, label: "Men",     color: "#3f6fd0", seed: 10 },
+  { id: 2, label: "Women",   color: "#d9432f", seed: 20 },
+  { id: 3, label: "Places",  color: "#b9b2a4", seed: 5  },
+  { id: 4, label: "Plants",  color: "#8fbf3f", seed: 25 },
+  { id: 5, label: "Animals", color: "#efc63f", seed: 25 },
+  { id: 6, label: "Other",   color: "#6b6459", seed: 15 }
+];
+
 const defaultAscii = {
   enabled: true,
   ramp: " .:-=+*#%@",
@@ -3073,6 +4006,20 @@ const mergeAbout = (saved) => ({ ...defaultAbout, ...(saved || {}), boot: { ...d
 const mergeSystem = (saved) => ({ ...defaultSystem, ...(saved || {}), cables: (saved || {}).cables || defaultSystem.cables });
 const mergeSettings = (saved) => ({ ...defaultSettings, ...(saved || {}), wip: { ...defaultSettings.wip, ...((saved || {}).wip || {}) }, backdrop: { ...defaultSettings.backdrop, ...((saved || {}).backdrop || {}) } });
 const mergeLightbox = (saved) => ({ ...defaultLightbox, ...(saved || {}), stickers: (saved || {}).stickers || defaultLightbox.stickers, metaRows: (saved || {}).metaRows || defaultLightbox.metaRows });
+const mergeLanding = (saved) => ({ ...defaultLanding, ...(saved || {}), stripes: (saved || {}).stripes || defaultLanding.stripes });
+const mergeCommunity = (saved) => {
+  const merged = { ...defaultCommunity, ...(saved || {}) };
+  // A config saved before the figure shipped carries heroImage: "", which
+  // would otherwise beat the built-in default. Blank means "unset", not
+  // "deliberately empty" — clearing it properly is done with the Remove
+  // button in the panel, which writes null.
+  if (merged.heroImage === '' || merged.heroImage === undefined) merged.heroImage = defaultCommunity.heroImage;
+  if (merged.heroImage === null) merged.heroImage = '';
+  return merged;
+};
+const mergeBoard = (saved) => ({ ...defaultBoard, ...(saved || {}), noteColors: (saved || {}).noteColors || defaultBoard.noteColors });
+const mergeSong = (saved) => ({ ...defaultSong, ...(saved || {}), tracks: (saved || {}).tracks || defaultSong.tracks });
+const mergePoll = (saved) => ({ ...defaultPoll, ...(saved || {}) });
 const mergeAscii = (saved) => ({ ...defaultAscii, ...(saved || {}) });
 const mergeOrbit = (saved) => ({ ...defaultOrbit, ...(saved || {}) });
 const mergeDisc = (saved) => ({ ...defaultDisc, ...(saved || {}) });
@@ -3111,6 +4058,26 @@ export default function App() {
   const [secretTracks, setSecretTracks] = useState(defaultSecretTracks);
   const [secretOpen, setSecretOpen] = useState(false);
   const [asciiCfg, setAsciiCfg] = useState(defaultAscii);
+
+  /* ---- landing + community center ---- */
+  // 'landing' | 'site' | 'community'. Persisted for the session only, so a
+  // refresh returns to the door but an in-page reload does not.
+  const [route, setRoute] = useState(() => {
+    try { return sessionStorage.getItem('cc_route') || 'landing'; } catch { return 'landing'; }
+  });
+  const [landingCfg, setLandingCfg] = useState(defaultLanding);
+  const [communityCfg, setCommunityCfg] = useState(defaultCommunity);
+  const [boardCfg, setBoardCfg] = useState(defaultBoard);
+  const [songCfg, setSongCfg] = useState(defaultSong);
+  const [pollCfg, setPollCfg] = useState(defaultPoll);
+  const [pollOptions, setPollOptions] = useState(defaultPollOptions);
+  const [boardNotes, setBoardNotes] = useState([]);
+  const [postingNote, setPostingNote] = useState(false);
+  const [ccEdit, setCcEdit] = useState(false);
+  const [pollTally, setPollTally] = useState({});
+  const [hasVoted, setHasVoted] = useState(() => {
+    try { return !!localStorage.getItem('cc_voted'); } catch { return false; }
+  });
   const [orbitCfg, setOrbitCfg] = useState(defaultOrbit);
   const [discCfg, setDiscCfg] = useState(defaultDisc);
   const [cabinetCfg, setCabinetCfg] = useState(defaultCabinet);
@@ -3282,6 +4249,12 @@ export default function App() {
             if (parsed.secret) setSecretCfg(mergeSecret(parsed.secret));
             if (parsed.secret_tracks) setSecretTracks(parsed.secret_tracks);
             if (parsed.ascii) setAsciiCfg(mergeAscii(parsed.ascii));
+            if (parsed.landing) setLandingCfg(mergeLanding(parsed.landing));
+            if (parsed.community) setCommunityCfg(mergeCommunity(parsed.community));
+            if (parsed.board) setBoardCfg(mergeBoard(parsed.board));
+            if (parsed.song) setSongCfg(mergeSong(parsed.song));
+            if (parsed.poll) setPollCfg(mergePoll(parsed.poll));
+            if (parsed.poll_options) setPollOptions(parsed.poll_options);
             if (parsed.orbit) setOrbitCfg(mergeOrbit(parsed.orbit));
             if (parsed.disc) setDiscCfg(mergeDisc(parsed.disc));
             if (parsed.cabinet) setCabinetCfg(mergeCabinet(parsed.cabinet));
@@ -3323,6 +4296,12 @@ export default function App() {
           const sc = siteData.find(d => d.section === 'secret');
           const st = siteData.find(d => d.section === 'secret_tracks');
           const ax = siteData.find(d => d.section === 'ascii');
+          const ld = siteData.find(d => d.section === 'landing');
+          const cm = siteData.find(d => d.section === 'community');
+          const bd = siteData.find(d => d.section === 'board');
+          const sg = siteData.find(d => d.section === 'song');
+          const po = siteData.find(d => d.section === 'poll');
+          const pop = siteData.find(d => d.section === 'poll_options');
           const ob = siteData.find(d => d.section === 'orbit');
           const dc = siteData.find(d => d.section === 'disc');
           const cb = siteData.find(d => d.section === 'cabinet');
@@ -3343,6 +4322,12 @@ export default function App() {
           if (sc) setSecretCfg(mergeSecret(sc.data));
           if (st) setSecretTracks(st.data);
           if (ax) setAsciiCfg(mergeAscii(ax.data));
+          if (ld) setLandingCfg(mergeLanding(ld.data));
+          if (cm) setCommunityCfg(mergeCommunity(cm.data));
+          if (bd) setBoardCfg(mergeBoard(bd.data));
+          if (sg) setSongCfg(mergeSong(sg.data));
+          if (po) setPollCfg(mergePoll(po.data));
+          if (pop) setPollOptions(pop.data);
           if (ob) setOrbitCfg(mergeOrbit(ob.data));
           if (dc) setDiscCfg(mergeDisc(dc.data));
           if (cb) setCabinetCfg(mergeCabinet(cb.data));
@@ -3576,6 +4561,12 @@ export default function App() {
         secret: secretCfg,
         secret_tracks: secretTracks,
         ascii: asciiCfg,
+        landing: landingCfg,
+        community: communityCfg,
+        board: boardCfg,
+        song: songCfg,
+        poll: pollCfg,
+        poll_options: pollOptions,
         orbit: orbitCfg,
         disc: discCfg,
         cabinet: cabinetCfg,
@@ -3604,6 +4595,12 @@ export default function App() {
       { section: 'secret', data: secretCfg },
       { section: 'secret_tracks', data: secretTracks },
       { section: 'ascii', data: asciiCfg },
+      { section: 'landing', data: landingCfg },
+      { section: 'community', data: communityCfg },
+      { section: 'board', data: boardCfg },
+      { section: 'song', data: songCfg },
+      { section: 'poll', data: pollCfg },
+      { section: 'poll_options', data: pollOptions },
       { section: 'orbit', data: orbitCfg },
       { section: 'disc', data: discCfg },
       { section: 'cabinet', data: cabinetCfg },
@@ -3646,6 +4643,7 @@ export default function App() {
     poems: [poems, setPoems],
     secret_tracks: [secretTracks, setSecretTracks],
     cabinet_files: [cabinetFiles, setCabinetFiles],
+    poll_options: [pollOptions, setPollOptions],
   };
 
   const moveListItem = (listType, index, dir) => {
@@ -3750,6 +4748,165 @@ export default function App() {
     input.value = '';
   };
 
+  /* ==================================================================
+     COMMUNITY DATA — notes and votes
+     These are written by visitors, not by the admin, so they live in
+     their own tables rather than the site_data blob. If Supabase isn't
+     configured they fall back to localStorage, which keeps the feature
+     working locally even though it is then per-browser.
+     ================================================================== */
+  const NOTES_KEY = 'cc_notes_local';
+  const VOTES_KEY = 'cc_votes_local';
+  const fetchedCommunity = useRef(false);
+
+  const readLocal = (k) => { try { return JSON.parse(localStorage.getItem(k) || '[]'); } catch { return []; } };
+  const writeLocal = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
+
+  const tallyFrom = useCallback((rows) => {
+    const out = {};
+    (rows || []).forEach(r => {
+      const id = r.option_id;
+      if (id === undefined || id === null) return;
+      if (!out[id]) out[id] = { sum: 0, n: 0 };
+      out[id].sum += Number(r.value) || 0;
+      out[id].n += 1;
+    });
+    return out;
+  }, []);
+
+  const loadCommunity = useCallback(async () => {
+    if (fetchedCommunity.current) return;
+    fetchedCommunity.current = true;
+
+    if (!supabase) {
+      setBoardNotes(readLocal(NOTES_KEY));
+      setPollTally(tallyFrom(readLocal(VOTES_KEY)));
+      return;
+    }
+    try {
+      const [notesRes, votesRes] = await Promise.all([
+        supabase.from('community_notes').select('*').order('created_at', { ascending: false }).limit(200),
+        supabase.from('community_votes').select('option_id,value')
+      ]);
+      setBoardNotes(notesRes?.data || readLocal(NOTES_KEY));
+      setPollTally(tallyFrom(votesRes?.data || readLocal(VOTES_KEY)));
+    } catch (e) {
+      // Tables may not exist yet — fall back rather than breaking the page.
+      console.warn('community tables unavailable, using local storage', e?.message || e);
+      setBoardNotes(readLocal(NOTES_KEY));
+      setPollTally(tallyFrom(readLocal(VOTES_KEY)));
+    }
+  }, [tallyFrom]);
+
+  useEffect(() => { if (route === 'community') loadCommunity(); }, [route, loadCommunity]);
+
+  const postNote = async ({ text, author, color }) => {
+    if (!text?.trim()) return;
+    setPostingNote(true);
+    const row = {
+      id: `local-${Date.now()}`,
+      text: text.trim(),
+      author: (author || '').trim(),
+      color,
+      created_at: new Date().toISOString()
+    };
+    // Optimistic: the note appears immediately, then reconciles.
+    setBoardNotes(prev => [row, ...prev]);
+
+    if (supabase) {
+      try {
+        const { data, error } = await supabase.from('community_notes')
+          .insert([{ text: row.text, author: row.author, color: row.color }]).select();
+        if (error) throw error;
+        if (data?.[0]) setBoardNotes(prev => [data[0], ...prev.filter(n => n.id !== row.id)]);
+        showToast('Pinned to the board.', 'success');
+        setPostingNote(false);
+        return;
+      } catch (e) {
+        console.warn('note insert failed, keeping locally', e?.message || e);
+      }
+    }
+    const local = [row, ...readLocal(NOTES_KEY)].slice(0, 200);
+    writeLocal(NOTES_KEY, local);
+    showToast('Pinned locally.', 'success');
+    setPostingNote(false);
+  };
+
+  const castVote = async (distribution) => {
+    const rows = Object.entries(distribution || {}).map(([option_id, value]) => ({
+      option_id: isNaN(Number(option_id)) ? option_id : Number(option_id),
+      value: Math.max(0, Math.min(100, Number(value) || 0))
+    }));
+    if (!rows.length) return;
+
+    // Reflect the new vote in the running average straight away.
+    setPollTally(prev => {
+      const next = { ...prev };
+      rows.forEach(r => {
+        const cur = next[r.option_id] || { sum: 0, n: 0 };
+        next[r.option_id] = { sum: cur.sum + r.value, n: cur.n + 1 };
+      });
+      return next;
+    });
+    setHasVoted(true);
+    try { localStorage.setItem('cc_voted', '1'); } catch {}
+
+    if (supabase) {
+      try {
+        const { error } = await supabase.from('community_votes').insert(rows);
+        if (error) throw error;
+        showToast('Vote counted.', 'success');
+        return;
+      } catch (e) {
+        console.warn('vote insert failed, keeping locally', e?.message || e);
+      }
+    }
+    writeLocal(VOTES_KEY, [...readLocal(VOTES_KEY), ...rows]);
+    showToast('Vote saved locally.', 'success');
+  };
+
+  const goRoute = (r) => {
+    setRoute(r);
+    try { sessionStorage.setItem('cc_route', r); } catch {}
+    // The landing and community views are their own scroll containers, so
+    // reset both the window and (after paint) the overlay itself.
+    try { window.scrollTo(0, 0); } catch {}
+    requestAnimationFrame(() => {
+      document.querySelector('[data-cc-scroll]')?.scrollTo?.({ top: 0 });
+    });
+  };
+
+  /* ---------- COMMUNITY WRITERS (admin) ---------- */
+  const setLanding = (patch) => setLandingCfg(c => ({ ...c, ...patch }));
+  const setCommunity = (patch) => setCommunityCfg(c => ({ ...c, ...patch }));
+  const setBoard = (patch) => setBoardCfg(c => ({ ...c, ...patch }));
+  const setSong = (patch) => setSongCfg(c => ({ ...c, ...patch }));
+  const setPoll = (patch) => setPollCfg(c => ({ ...c, ...patch }));
+  const updateSongTrack = (id, patch) => setSongCfg(c => ({ ...c, tracks: (c.tracks || []).map(t => t.id === id ? { ...t, ...patch } : t) }));
+  const addSongTrack = () => setSongCfg(c => ({ ...c, tracks: [...(c.tracks || []), { id: Date.now(), title: '', credit: '', length: '' }] }));
+  const removeSongTrack = (id) => setSongCfg(c => ({ ...c, tracks: (c.tracks || []).filter(t => t.id !== id) }));
+  const updatePollOption = (id, patch) => setPollOptions(os => os.map(o => o.id === id ? { ...o, ...patch } : o));
+  const addPollOption = () => setPollOptions(os => [...os, { id: Date.now(), label: 'New option', color: '#8a8a8a', seed: 0 }]);
+
+  const deleteNote = async (id) => {
+    setBoardNotes(prev => prev.filter(n => n.id !== id));
+    if (supabase && !String(id).startsWith('local-')) {
+      try { await supabase.from('community_notes').delete().eq('id', id); } catch (e) { console.warn(e); }
+    }
+    writeLocal(NOTES_KEY, readLocal(NOTES_KEY).filter(n => n.id !== id));
+  };
+
+  const resetVotes = async () => {
+    setPollTally({});
+    setHasVoted(false);
+    try { localStorage.removeItem('cc_voted'); } catch {}
+    writeLocal(VOTES_KEY, []);
+    if (supabase) {
+      try { await supabase.from('community_votes').delete().neq('option_id', '___none___'); } catch (e) { console.warn(e); }
+    }
+    showToast('Votes cleared.', 'success');
+  };
+
   /* ---------- AMBIENT WRITERS ---------- */
   const setAscii = (patch) => setAsciiCfg(c => ({ ...c, ...patch }));
   const setOrbit = (patch) => setOrbitCfg(c => ({ ...c, ...patch }));
@@ -3823,6 +4980,7 @@ export default function App() {
     if (listType === 'poems') setPoems(poems.filter(p => p.id !== id));
     if (listType === 'secret_tracks') setSecretTracks(secretTracks.filter(t => t.id !== id));
     if (listType === 'cabinet_files') setCabinetFiles(cabinetFiles.filter(f => f.id !== id));
+    if (listType === 'poll_options') setPollOptions(pollOptions.filter(o => o.id !== id));
   }
 
   const updateModalGalleryImage = (id, newPos) => {
@@ -4007,7 +5165,7 @@ export default function App() {
   useEffect(() => {
     if (!hydrated.current) { hydrated.current = !isLoading; return; }
     setIsDirty(true);
-  }, [aboutData, projects, blogs, socials, galleriaData, systemData, siteSettings, journalEntries, playlists, lightboxConfig, poemDeck, poems, secretCfg, secretTracks, asciiCfg, orbitCfg, discCfg, cabinetCfg, cabinetFiles, isLoading]);
+  }, [aboutData, projects, blogs, socials, galleriaData, systemData, siteSettings, journalEntries, playlists, lightboxConfig, poemDeck, poems, secretCfg, secretTracks, asciiCfg, landingCfg, communityCfg, boardCfg, songCfg, pollCfg, pollOptions, orbitCfg, discCfg, cabinetCfg, cabinetFiles, isLoading]);
 
   // Warn before losing unsaved admin work
   useEffect(() => {
@@ -4042,10 +5200,10 @@ export default function App() {
 
   // --- Lock body scroll whenever an overlay owns the screen ---
   useEffect(() => {
-    const locked = !!(selectedItem || showLogin || pendingJournal || activeJournal || activeGalleriaImage || activePoem || secretOpen);
+    const locked = !!(selectedItem || showLogin || pendingJournal || activeJournal || activeGalleriaImage || activePoem || secretOpen || route === 'landing' || route === 'community');
     document.body.style.overflow = locked ? 'hidden' : '';
     return () => { document.body.style.overflow = ''; };
-  }, [selectedItem, showLogin, pendingJournal, activeJournal, activeGalleriaImage, activePoem, secretOpen]);
+  }, [selectedItem, showLogin, pendingJournal, activeJournal, activeGalleriaImage, activePoem, secretOpen, route]);
 
   useEffect(() => { setAdminSearch(""); setConfirmDelete(null); }, [adminTab]);
 
@@ -4203,7 +5361,7 @@ export default function App() {
                   {bootPostLines.slice(0, postIndex).map((line, i) => (
                     <div key={i} className="flex gap-3 anim-fade" style={{ color: bootAccent }}>
                       <span className="text-white/25 shrink-0">{String(i + 1).padStart(2, '0')}</span>
-                      <span className="truncate">{line}</span>
+                      <span className="min-w-0 break-words">{line}</span>
                     </div>
                   ))}
                   {postIndex >= bootPostLines.length && (
@@ -4346,20 +5504,23 @@ export default function App() {
                       const items = obs.items || [];
                       return (
                         <div key={obs.id ?? index} className="border-[2px] border-[#111] bg-[#0b0b0b] shadow-[6px_6px_0px_#111] overflow-hidden slide-card anim-rise stagger-child" style={{ '--d': index }}>
-                          <div className="flex justify-between items-center px-4 py-2 bg-[#111] border-b-[2px] border-[#222] gap-3">
-                            <span className="font-mono text-[10px] uppercase tracking-[0.2em] truncate" style={{ color: bootAccent }}>
+                          <div className="flex justify-between items-start px-4 py-2 bg-[#111] border-b-[2px] border-[#222] gap-3">
+                            <span className="font-mono text-[10px] uppercase tracking-[0.2em] min-w-0 break-all" style={{ color: bootAccent }}>
                               {archive}/{slug}/
                             </span>
-                            <span className="font-mono text-[9px] text-white/35 whitespace-nowrap">{items.length} items</span>
+                            <span className="font-mono text-[9px] text-white/35 whitespace-nowrap shrink-0">{items.length} items</span>
                           </div>
-                          <div className="p-3 md:p-4 font-mono text-[10px] md:text-[11px] overflow-x-auto">
-                            <p className="text-white/30 mb-2 whitespace-nowrap">total {items.length * 4}</p>
+                          <div className="p-3 md:p-4 font-mono text-[10px] md:text-[11px]">
+                            <p className="text-white/30 mb-2">total {items.length * 4}</p>
                             {items.map((item, i) => (
-                              <div key={i} className="flex gap-3 items-baseline whitespace-nowrap hover:bg-white/5 px-1 -mx-1 transition-colors group">
-                                <span className="text-white/25 hidden sm:inline">-rw-r--r--</span>
-                                <span className="text-white/25 hidden md:inline w-8 text-right">{4 + i}k</span>
+                              /* The permission/size/index columns stay fixed and the title
+                                 takes the remaining width and wraps — long track names used
+                                 to be clipped to an ellipsis with no way to read them. */
+                              <div key={i} className="flex gap-3 items-baseline hover:bg-white/5 px-1 -mx-1 transition-colors group">
+                                <span className="text-white/25 hidden sm:inline shrink-0">-rw-r--r--</span>
+                                <span className="text-white/25 hidden md:inline w-8 text-right shrink-0">{4 + i}k</span>
                                 <span className="text-white/40 w-6 text-right shrink-0">{String(i + 1).padStart(2, '0')}</span>
-                                <span className="text-white/90 truncate group-hover:text-[#dfff00] transition-colors">{item}</span>
+                                <span className="text-white/90 min-w-0 flex-1 break-words group-hover:text-[#dfff00] transition-colors">{item}</span>
                               </div>
                             ))}
                             {items.length === 0 && <span className="text-white/30">empty directory</span>}
@@ -4600,7 +5761,7 @@ export default function App() {
                 {orbitCfg.enabled && (
                   <div className="anim-rise min-w-0">
                     <div className="flex justify-between items-end border-b-[2px] border-[#111] pb-3 mb-4 gap-3">
-                      <h3 className="text-2xl md:text-3xl font-serif text-[#111] tracking-tight min-w-0 truncate">{orbitCfg.heading}</h3>
+                      <h3 className="text-2xl md:text-3xl font-serif text-[#111] tracking-tight min-w-0 break-words">{orbitCfg.heading}</h3>
                       <span className="font-mono text-[9px] uppercase tracking-[0.2em] text-gray-500 shrink-0">{orbitCfg.kicker}</span>
                     </div>
                     <div className="border-[2px] border-[#111] shadow-[8px_8px_0px_#111] overflow-hidden">
@@ -4611,7 +5772,7 @@ export default function App() {
                 {discCfg.enabled && (
                   <div className="anim-rise min-w-0">
                     <div className="flex justify-between items-end border-b-[2px] border-[#111] pb-3 mb-4 gap-3">
-                      <h3 className="text-2xl md:text-3xl font-serif text-[#111] tracking-tight min-w-0 truncate">{discCfg.heading}</h3>
+                      <h3 className="text-2xl md:text-3xl font-serif text-[#111] tracking-tight min-w-0 break-words">{discCfg.heading}</h3>
                       <span className="font-mono text-[9px] uppercase tracking-[0.2em] text-gray-500 shrink-0">{discCfg.kicker}</span>
                     </div>
                     <div className="border-[2px] border-[#111] shadow-[8px_8px_0px_#111] overflow-hidden">
@@ -4647,12 +5808,14 @@ export default function App() {
                          <div className="px-8 pb-8 pt-0 flex-1 flex flex-col relative z-10">
                             {/* Title & Genre Tag */}
                             <div className="flex justify-between items-center mb-4 gap-4">
-                               <h3 className="font-sans font-bold text-2xl tracking-tight truncate">{pl.title}</h3>
+                               <h3 className="font-sans font-bold text-2xl tracking-tight min-w-0 break-words">{pl.title}</h3>
                                {pl.genre && <span className="font-sans text-[11px] font-bold tracking-wider bg-black/40 px-3 py-1.5 rounded-full shrink-0">{pl.genre}</span>}
                             </div>
                             
                             {/* Description */}
-                            <p className="font-sans text-sm text-white/70 leading-relaxed mb-6 flex-1 line-clamp-3">{pl.description}</p>
+                            {/* Not clamped: the playlist card has no detail view, so
+                                anything hidden here would be unreachable entirely. */}
+                            <p className="font-sans text-sm text-white/70 leading-relaxed mb-6 flex-1 break-words">{pl.description}</p>
                             
                             {/* Tags */}
                             <div className="flex flex-wrap gap-2 mb-8">
@@ -4800,7 +5963,7 @@ export default function App() {
                               {filteredBlogs.filter(b => b.type === 'album').map((a, ai) => ({ ...a, __i: ai })).map(album => (
                                   <div key={album.id} onClick={() => openModal(album, 'blog')} className="spine h-12 bg-white border border-[#333] cursor-pointer hover:bg-[#dfff00] flex items-center px-4 relative group anim-right stagger-child" style={{ '--d': album.__i }}>
                                      <div className="w-2 h-full bg-[#e5e5e5] absolute left-0 top-0 border-r border-[#ccc]"></div>
-                                     <span className="font-mono text-xs font-bold uppercase tracking-widest text-[#111] truncate w-full pl-3 group-hover:text-[#ff5722] transition-colors">{album.title}</span>
+                                     <span title={album.title} className="font-mono text-xs font-bold uppercase tracking-widest text-[#111] truncate w-full pl-3 group-hover:text-[#ff5722] transition-colors">{album.title}</span>
                                      <div className="absolute right-0 top-0 h-full w-10 bg-[#111] opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-10 border-l border-black/20" 
                                           style={{ backgroundImage: 'repeating-linear-gradient(90deg, #111, #111 2px, #333 3px, #111 4px)' }}>
                                      </div>
@@ -6556,7 +7719,7 @@ export default function App() {
                               ? <img loading="lazy" decoding="async" src={p.image} alt="" className="w-11 h-11 object-cover border-[2px] border-[#111] grayscale shrink-0" />
                               : <div className="w-11 h-11 border-[2px] border-dashed border-[#111]/40 shrink-0 flex items-center justify-center"><ImageIcon size={14} className="text-gray-400"/></div>}
                             <div className="min-w-0 flex-1">
-                              <p className="font-mono font-bold text-sm truncate">{p.title}</p>
+                              <p title={p.title} className="font-mono font-bold text-sm truncate">{p.title}</p>
                               <p className="font-mono text-[10px] uppercase tracking-widest text-gray-500">{(p.lines || []).length} lines · {p.randomStagger ? 'random stagger' : 'pinned offsets'}</p>
                             </div>
                             <button onClick={() => { setPoemShuffle(s => s + 1); setActivePoem(p); }} title="Preview" className="p-2 bg-white border-[2px] border-[#111] hover:bg-[#0000ff] hover:text-white transition-colors"><Play size={16}/></button>
@@ -7077,7 +8240,7 @@ export default function App() {
                             </div>
                             <span className="w-4 h-9 shrink-0" style={{ background: f.tabColor }} />
                             <div className="min-w-0 flex-1">
-                              <p className="font-mono font-bold text-sm truncate">{f.title}</p>
+                              <p title={f.title} className="font-mono font-bold text-sm truncate">{f.title}</p>
                               <p className="font-mono text-[10px] uppercase tracking-widest text-gray-500 truncate">{f.tab} · {f.fileNo}</p>
                             </div>
                             <button onClick={() => setExpandedFile(open ? null : f.id)} className="p-2 bg-[#dfff00] border-[2px] border-[#111] hover:bg-[#111] hover:text-white transition-colors shrink-0"><Edit2 size={16}/></button>
@@ -7467,6 +8630,63 @@ export default function App() {
           .cab-spine, .cab-page, .cab-card, .cab-slip, .cab-tab { animation: none !important; }
         }
 
+        /* ============================================================
+           LANDING + COMMUNITY CENTER
+           ============================================================ */
+        @keyframes ccDrawer { from { transform: translateX(100%); } to { transform: none; } }
+        @keyframes landIn    { from { opacity: 0; transform: scale(0.985); } to { opacity: 1; transform: none; } }
+        @keyframes landUp    { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+        @keyframes landBands { from { opacity: 0; clip-path: inset(0 50% 0 50%); } to { opacity: 1; clip-path: inset(0 0 0 0); } }
+        @keyframes landCard  { from { opacity: 0; transform: translateY(22px) scale(0.97); } to { opacity: 1; transform: none; } }
+        .land-choice { transition: transform 260ms var(--ease-out-expo), filter 260ms ease; }
+        .land-choice:hover  { transform: translateY(-3px); filter: brightness(1.08); }
+        .land-choice:active { transform: translateY(0); transition-duration: 90ms; }
+
+        @keyframes ccUp    { from { opacity: 0; transform: translateY(26px); } to { opacity: 1; transform: none; } }
+        @keyframes ccTitle { from { opacity: 0; transform: translateY(30px); letter-spacing: 0.06em; } to { opacity: 1; transform: none; letter-spacing: -0.01em; } }
+        @keyframes ccPop   { from { opacity: 0; transform: translateY(24px) rotate(0deg) scale(0.96); } to { opacity: 1; transform: rotate(var(--rot, 0deg)); } }
+        @keyframes ccPanel { from { opacity: 0; transform: translateY(40px) scale(0.98); } to { opacity: 1; transform: none; } }
+        @keyframes ccFig   { from { opacity: 0; transform: translateY(30px) rotate(-3deg); } to { opacity: 1; transform: none; } }
+        @keyframes ccVinyl { from { opacity: 0; transform: translateX(70px) rotate(-14deg); } to { opacity: 1; transform: none; } }
+        @keyframes ccDot   { 0%, 100% { transform: scaleY(0.35); transform-origin: top; opacity: 0.4; } 50% { transform: scaleY(1); opacity: 1; } }
+
+        .cc-up    { animation: ccUp 760ms var(--ease-out-expo) both; }
+        .cc-title { animation: ccTitle 900ms var(--ease-out-expo) both; }
+        .cc-pop   { animation: ccPop 640ms var(--ease-out-expo) both; }
+        .cc-panel { animation: ccPanel 820ms var(--ease-out-expo) both; }
+        .cc-fig   { animation: ccFig 1000ms var(--ease-out-expo) 300ms both; }
+        .cc-vinyl { animation: ccVinyl 1100ms var(--ease-out-expo) both; }
+        .cc-spin  { animation: scSpin 14s linear infinite; }
+        .cc-scroll-dot { animation: ccDot 1.9s ease-in-out infinite; }
+        .cc-bar   { transition: height 140ms linear; }
+
+        /* the board: a real masonry column flow, so notes of different
+           lengths pack without leaving holes and nothing overlaps */
+        .cc-masonry { column-count: 1; column-gap: 16px; }
+        @media (min-width: 640px)  { .cc-masonry { column-count: 2; } }
+        @media (min-width: 1024px) { .cc-masonry { column-count: 3; } }
+        @media (min-width: 1440px) { .cc-masonry { column-count: 4; } }
+        .cc-note {
+          break-inside: avoid;
+          -webkit-column-break-inside: avoid;
+          display: block;
+          margin-bottom: 16px;
+          padding: 14px 15px;
+          transform: rotate(var(--rot, 0deg));
+          box-shadow: 0 8px 22px rgba(0,0,0,0.13);
+          transition: transform 300ms var(--ease-out-expo), box-shadow 300ms ease;
+        }
+        .cc-note:hover { transform: rotate(0deg) translateY(-3px); box-shadow: 0 14px 30px rgba(0,0,0,0.2); }
+
+        .cc-dropcap::first-letter {
+          float: left; font-size: 2.7em; line-height: 0.84;
+          padding: 0.05em 0.12em 0 0; font-family: Georgia, 'Times New Roman', serif;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .cc-up, .cc-title, .cc-pop, .cc-panel, .cc-fig, .cc-vinyl, .cc-spin, .cc-scroll-dot { animation: none !important; opacity: 1 !important; }
+        }
+
         /* --- Secret corner --------------------------------------------- */
         @keyframes scSpin { to { transform: rotate(360deg); } }
         .sc-spin { animation: scSpin 5.4s linear infinite; will-change: transform; }
@@ -7713,6 +8933,496 @@ export default function App() {
         }
       `}} />
 
+      {/* ================= THE DOOR ================= */}
+      {route === 'landing' && landingCfg.enabled && (
+        <LandingPage
+          cfg={landingCfg}
+          ascii={asciiCfg}
+          onEnterSite={() => goRoute('site')}
+          onEnterCommunity={() => goRoute('community')}
+        />
+      )}
+
+      {/* ================= COMMUNITY CENTER ================= */}
+      {route === 'community' && isAdmin && (
+        <>
+          {/* Edits happen here rather than in the main admin panel, so you
+              can see the page change behind the drawer as you type. */}
+          <button onClick={() => setCcEdit(v => !v)}
+                  className="fixed bottom-5 right-5 z-[80] flex items-center gap-2 px-5 py-3 font-mono text-[10px] font-bold uppercase tracking-[0.2em] slide-press"
+                  style={{ background: ccEdit ? '#ff5722' : '#161310', color: '#fff', boxShadow: '0 10px 30px rgba(0,0,0,0.4)' }}>
+            {ccEdit ? <X size={14}/> : <Edit2 size={14}/>} {ccEdit ? 'Close' : 'Edit page'}
+          </button>
+
+          {ccEdit && (
+            <div className="fixed inset-y-0 right-0 z-[79] w-full max-w-[560px] overflow-y-auto hide-scrollbar"
+                 style={{ background: '#e8e8e3', borderLeft: '2px solid #111', boxShadow: '-18px 0 50px rgba(0,0,0,0.35)', animation: 'ccDrawer 420ms var(--ease-out-expo) both' }}>
+              <div className="sticky top-0 z-10 flex items-center justify-between gap-3 px-5 py-4 border-b-[2px] border-[#111]" style={{ background: '#111' }}>
+                <div className="min-w-0">
+                  <p className="font-mono text-[9px] uppercase tracking-[0.28em] text-[#dfff00]">Editing</p>
+                  <p className="font-serif text-xl text-white leading-tight truncate">The community center</p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button onClick={() => saveAllToCloud(null)} disabled={!isDirty || isSaving}
+                          className="px-4 py-2 font-mono text-[10px] font-bold uppercase tracking-widest slide-press disabled:opacity-40"
+                          style={{ background: isDirty ? '#dfff00' : '#333', color: isDirty ? '#111' : '#888' }}>
+                    {isSaving ? 'Saving…' : isDirty ? 'Deploy' : 'Saved'}
+                  </button>
+                  <button onClick={() => setCcEdit(false)} className="p-2 text-white/70 hover:text-white"><X size={18}/></button>
+                </div>
+              </div>
+              <div className="p-4 md:p-5 space-y-8 pb-24">
+
+              {/* ---------- LANDING ---------- */}
+              <div className="bg-white p-6 md:p-8 border-[2px] border-[#111] shadow-[8px_8px_0px_#111] anim-rise">
+                <div className="flex flex-col md:flex-row md:justify-between md:items-end border-b-[2px] border-[#111] pb-4 mb-6 gap-3">
+                  <div className="min-w-0">
+                    <h3 className="font-serif text-3xl mb-1">The Door</h3>
+                    <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-gray-500">First screen. Left card enters the archive, right card the community center.</p>
+                  </div>
+                  <div className="flex gap-2 shrink-0">
+                    <button onClick={() => { setCcEdit(false); goRoute('landing'); }} className="bg-white px-4 py-2.5 border-[2px] border-[#111] font-mono font-bold text-[10px] uppercase tracking-widest slide-press">Preview</button>
+                    <label className={`flex items-center gap-2 px-4 py-2.5 border-[2px] border-[#111] font-mono text-[10px] font-bold uppercase tracking-widest cursor-pointer slide-press ${landingCfg.enabled ? 'bg-[#dfff00]' : 'bg-white'}`}>
+                      <input type="checkbox" className="hidden" checked={!!landingCfg.enabled} onChange={e => setLanding({ enabled: e.target.checked })} />
+                      {landingCfg.enabled ? <Eye size={14}/> : <EyeOff size={14}/>} {landingCfg.enabled ? 'On' : 'Skipped'}
+                    </label>
+                  </div>
+                </div>
+
+                <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {[['wordmark','Wordmark'],['title','Headline'],['primaryTitle','Left Card Title'],['primarySub','Left Card Sub'],['secondaryTitle','Right Card Title'],['secondarySub','Right Card Sub'],['footnote','Footnote']].map(([k, label]) => (
+                    <div key={k}>
+                      <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">{label}</label>
+                      <input value={landingCfg[k] || ''} onChange={e => setLanding({ [k]: e.target.value })} className="w-full p-3 border-[2px] border-[#111] font-mono text-sm outline-none focus:bg-[#dfff00]" />
+                    </div>
+                  ))}
+                  <div className="sm:col-span-2 lg:col-span-3">
+                    <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Subtitle</label>
+                    <textarea value={landingCfg.subtitle || ''} rows={2} onChange={e => setLanding({ subtitle: e.target.value })} className="w-full p-3 border-[2px] border-[#111] font-mono text-sm outline-none focus:bg-[#dfff00] resize-y" />
+                  </div>
+                </div>
+
+                <div className="grid sm:grid-cols-3 lg:grid-cols-4 gap-4 mt-6 pt-6 border-t-[2px] border-[#111]">
+                  {[['outer','Outer'],['paper','Panel'],['titleInk','Headline'],['subtitleInk','Subtitle'],['primaryBg','Left Card'],['secondaryBg','Right Card'],['markBg','Mark'],['cardBorder','Card Border']].map(([k, label]) => (
+                    <div key={k}>
+                      <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">{label}</label>
+                      <input type="color" value={landingCfg[k]} onChange={e => setLanding({ [k]: e.target.value })} className="w-full h-11 border-[2px] border-[#111] p-0 cursor-pointer" />
+                    </div>
+                  ))}
+                </div>
+
+                <div className="mt-6 pt-6 border-t-[2px] border-[#111]">
+                  <div className="flex flex-wrap items-end gap-4 mb-5">
+                    <label className={`flex items-center gap-2 px-4 py-2.5 border-[2px] border-[#111] font-mono text-[10px] font-bold uppercase tracking-widest cursor-pointer slide-press ${landingCfg.asciiBg !== false ? 'bg-[#dfff00]' : 'bg-white'}`}>
+                      <input type="checkbox" className="hidden" checked={landingCfg.asciiBg !== false} onChange={e => setLanding({ asciiBg: e.target.checked })} />
+                      {landingCfg.asciiBg !== false ? <Check size={14}/> : <X size={14}/>} Animated ASCII
+                    </label>
+                    <p className="font-mono text-[9px] uppercase tracking-[0.15em] text-gray-400 flex-1 min-w-[180px] leading-relaxed">
+                      Sits on the cream panel only. Ramp comes from Ambient → Modal Surfaces.
+                    </p>
+                  </div>
+
+                  <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div>
+                      <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Strength ({Math.round((landingCfg.asciiOpacityLight ?? 0.34) * 100)}%)</label>
+                      <input type="range" min="0" max="1" step="0.02" value={landingCfg.asciiOpacityLight ?? 0.34}
+                             onChange={e => setLanding({ asciiOpacityLight: parseFloat(e.target.value) })}
+                             className="w-full accent-[#ff5722] h-11" />
+                    </div>
+                    <div>
+                      <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Glyph Size ({landingCfg.asciiSize ?? 11}px)</label>
+                      <input type="range" min="5" max="24" value={landingCfg.asciiSize ?? 11}
+                             onChange={e => setLanding({ asciiSize: parseInt(e.target.value) })}
+                             className="w-full accent-[#ff5722] h-11" />
+                    </div>
+                    <div>
+                      <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Drift Speed ({landingCfg.asciiSpeed ?? 1.6}×)</label>
+                      <input type="range" min="0.3" max="5" step="0.1" value={landingCfg.asciiSpeed ?? 1.6}
+                             onChange={e => setLanding({ asciiSpeed: parseFloat(e.target.value) })}
+                             className="w-full accent-[#ff5722] h-11" />
+                    </div>
+                    <div>
+                      <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Glyph Colour</label>
+                      <div className="flex gap-2">
+                        <input type="color" value={landingCfg.asciiInkLight || asciiCfg.inkOnLight} onChange={e => setLanding({ asciiInkLight: e.target.value })} className="w-12 h-11 border-[2px] border-[#111] p-0 cursor-pointer" />
+                        <button onClick={() => setLanding({ asciiInkLight: '' })} className="flex-1 min-w-0 font-mono text-[9px] font-bold uppercase tracking-widest px-2 border-[2px] border-[#111] bg-white slide-press">Inherit</button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-end gap-4 mt-4">
+                    <div>
+                      <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Coverage</label>
+                      <div className="flex gap-2">
+                        {[['full','Edge to edge'],['edges','Clear centre']].map(([m, label]) => (
+                          <button key={m} onClick={() => setLanding({ asciiMask: m })}
+                                  className={`font-mono text-[10px] font-bold uppercase tracking-widest px-4 py-2.5 border-[2px] border-[#111] slide-press ${(landingCfg.asciiMask || 'full') === m ? 'bg-[#111] text-[#dfff00]' : 'bg-white'}`}>
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    {(landingCfg.asciiMask || 'full') === 'edges' && (
+                      <div className="min-w-[170px] flex-1">
+                        <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Clear Centre ({landingCfg.asciiClear ?? 30}%)</label>
+                        <input type="range" min="0" max="70" value={landingCfg.asciiClear ?? 30}
+                               onChange={e => setLanding({ asciiClear: parseInt(e.target.value) })}
+                               className="w-full accent-[#ff5722] h-11" />
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="mt-6 pt-6 border-t-[2px] border-[#111]">
+                  <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Stripe Bands</label>
+                  <div className="flex flex-wrap gap-2">
+                    {(landingCfg.stripes || []).map((c, i) => (
+                      <div key={i} className="flex items-center gap-1">
+                        <input type="color" value={c} onChange={e => {
+                          const next = [...landingCfg.stripes]; next[i] = e.target.value; setLanding({ stripes: next });
+                        }} className="w-14 h-11 border-[2px] border-[#111] p-0 cursor-pointer" />
+                        <button onClick={() => setLanding({ stripes: landingCfg.stripes.filter((_, j) => j !== i) })}
+                                className="p-2 bg-[#ff5722] text-white border-[2px] border-[#111]"><Trash2 size={12}/></button>
+                      </div>
+                    ))}
+                    <button onClick={() => setLanding({ stripes: [...(landingCfg.stripes || []), '#b8422a'] })}
+                            className="px-4 h-11 bg-[#111] text-[#dfff00] border-[2px] border-[#111] font-mono font-bold text-[10px] uppercase tracking-widest slide-press">+ Band</button>
+                  </div>
+                </div>
+              </div>
+
+              {/* ---------- HERO ---------- */}
+              <div className="bg-white p-6 md:p-8 border-[2px] border-[#111] shadow-[8px_8px_0px_#111]">
+                <div className="flex flex-col md:flex-row md:justify-between md:items-end border-b-[2px] border-[#111] pb-4 mb-6 gap-3">
+                  <div className="min-w-0">
+                    <h3 className="font-serif text-3xl mb-1">Center — Opening</h3>
+                    <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-gray-500">The title splits into three parts so the middle word can be italic.</p>
+                  </div>
+                  <button onClick={() => setCcEdit(false)} className="bg-white px-4 py-2.5 border-[2px] border-[#111] font-mono font-bold text-[10px] uppercase tracking-widest slide-press shrink-0">Preview</button>
+                </div>
+                <div className="grid sm:grid-cols-3 gap-4">
+                  {[['heroPre','Title — first'],['heroItalic','Title — italic'],['heroPost','Title — last'],['scrollHint','Scroll Hint'],['exitLabel','Back Label'],['footNote','Footer Note']].map(([k, label]) => (
+                    <div key={k}>
+                      <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">{label}</label>
+                      <input value={communityCfg[k] || ''} onChange={e => setCommunity({ [k]: e.target.value })} className="w-full p-3 border-[2px] border-[#111] font-mono text-sm outline-none focus:bg-[#dfff00]" />
+                    </div>
+                  ))}
+                  <div className="sm:col-span-3">
+                    <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Subtitle</label>
+                    <textarea value={communityCfg.heroSub || ''} rows={2} onChange={e => setCommunity({ heroSub: e.target.value })} className="w-full p-3 border-[2px] border-[#111] font-mono text-sm outline-none focus:bg-[#dfff00] resize-y" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Figure Corner</label>
+                    <div className="flex gap-2">
+                      {['left','center','right'].map(p => (
+                        <button key={p} onClick={() => setCommunity({ heroImagePos: p })}
+                                className={`flex-1 font-mono text-[10px] font-bold uppercase tracking-widest px-2 py-3 border-[2px] border-[#111] slide-press ${(communityCfg.heroImagePos || 'left') === p ? 'bg-[#111] text-[#dfff00]' : 'bg-white'}`}>
+                          {p}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Figure Size ({communityCfg.heroImageSize || 34}vh)</label>
+                    <input type="range" min="14" max="70" value={communityCfg.heroImageSize || 34}
+                           onChange={e => setCommunity({ heroImageSize: parseInt(e.target.value) })}
+                           className="w-full accent-[#ff5722] h-11" />
+                  </div>
+                  <div className="sm:col-span-3">
+                    <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Figure Image</label>
+                    <div className="flex items-start gap-3">
+                      {communityCfg.heroImage
+                        ? <img src={communityCfg.heroImage} alt="" className="w-16 h-20 object-contain shrink-0 border-[2px] border-[#111] bg-white" />
+                        : <div className="w-16 h-20 shrink-0 border-[2px] border-dashed border-[#111]/40 flex items-center justify-center"><ImageIcon size={16} className="text-gray-400"/></div>}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex">
+                          <input value={communityCfg.heroImage?.startsWith('data:') ? '(embedded illustration)' : (communityCfg.heroImage || '')}
+                                 readOnly={communityCfg.heroImage?.startsWith('data:')}
+                                 placeholder="https://… or upload a cut-out PNG"
+                                 onChange={e => setCommunity({ heroImage: e.target.value })}
+                                 className="flex-1 min-w-0 p-3 border-[2px] border-[#111] font-mono text-xs outline-none focus:bg-[#dfff00]" />
+                          <label className="cursor-pointer bg-[#111] text-white px-4 flex items-center border-[2px] border-l-0 border-[#111] shrink-0 hover:bg-[#ff5722] transition-colors">
+                            <Upload size={14}/><input type="file" className="hidden" accept="image/*" onChange={e => handleImageUpload(e, url => setCommunity({ heroImage: url }))} />
+                          </label>
+                        </div>
+                        <div className="flex flex-wrap gap-2 mt-2">
+                          <button onClick={() => setCommunity({ heroImage: defaultCommunity.heroImage })}
+                                  className="font-mono text-[9px] font-bold uppercase tracking-widest px-3 py-2 bg-white border-[2px] border-[#111] slide-press">Restore default</button>
+                          <button onClick={() => setCommunity({ heroImage: null })}
+                                  className="font-mono text-[9px] font-bold uppercase tracking-widest px-3 py-2 bg-white border-[2px] border-[#111] slide-press">Remove</button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  {[['heroBg','Background'],['heroInk','Ink']].map(([k, label]) => (
+                    <div key={k}>
+                      <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">{label}</label>
+                      <input type="color" value={communityCfg[k]} onChange={e => setCommunity({ [k]: e.target.value })} className="w-full h-11 border-[2px] border-[#111] p-0 cursor-pointer" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* ---------- BOARD ---------- */}
+              <div className="bg-white p-6 md:p-8 border-[2px] border-[#111] shadow-[8px_8px_0px_#111]">
+                <div className="flex flex-col md:flex-row md:justify-between md:items-end border-b-[2px] border-[#111] pb-4 mb-6 gap-3">
+                  <div className="min-w-0">
+                    <h3 className="font-serif text-3xl mb-1">Community Board</h3>
+                    <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-gray-500">{boardNotes.length} notes pinned · anyone can post, no account</p>
+                  </div>
+                  <label className={`flex items-center gap-2 px-4 py-2.5 border-[2px] border-[#111] font-mono text-[10px] font-bold uppercase tracking-widest cursor-pointer slide-press shrink-0 ${boardCfg.enabled ? 'bg-[#dfff00]' : 'bg-white'}`}>
+                    <input type="checkbox" className="hidden" checked={!!boardCfg.enabled} onChange={e => setBoard({ enabled: e.target.checked })} />
+                    {boardCfg.enabled ? <Eye size={14}/> : <EyeOff size={14}/>} {boardCfg.enabled ? 'On' : 'Off'}
+                  </label>
+                </div>
+
+                <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {[['title','Board Title'],['verticalTitle','Vertical Title'],['sealMark','Seal Glyph'],['kicker','Kicker'],['pinLabel','Pin Button'],['anonName','Anonymous Name'],['navLinks','Nav Links (comma separated)'],['sectionA','Marker A'],['sectionAYears','Marker A Sub'],['sectionB','Marker B'],['sectionBYears','Marker B Sub'],['emptyText','Empty Message']].map(([k, label]) => (
+                    <div key={k}>
+                      <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">{label}</label>
+                      <input value={boardCfg[k] || ''} onChange={e => setBoard({ [k]: e.target.value })} className="w-full p-3 border-[2px] border-[#111] font-mono text-sm outline-none focus:bg-[#dfff00]" />
+                    </div>
+                  ))}
+                  <div className="sm:col-span-2">
+                    <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Blurb</label>
+                    <textarea value={boardCfg.blurb || ''} rows={3} onChange={e => setBoard({ blurb: e.target.value })} className="w-full p-3 border-[2px] border-[#111] font-mono text-sm outline-none focus:bg-[#dfff00] resize-y" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Max Note Length ({boardCfg.maxLength})</label>
+                    <input type="range" min="200" max="2000" step="50" value={boardCfg.maxLength} onChange={e => setBoard({ maxLength: parseInt(e.target.value) })} className="w-full accent-[#ff5722] h-11" />
+                  </div>
+                  <div className="sm:col-span-2 lg:col-span-3">
+                    <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Composer Placeholder</label>
+                    <textarea value={boardCfg.placeholder || ''} rows={3} onChange={e => setBoard({ placeholder: e.target.value })} className="w-full p-3 border-[2px] border-[#111] font-mono text-xs outline-none focus:bg-[#dfff00] resize-y" />
+                  </div>
+                  {[['bg','Board'],['ink','Ink'],['seal','Seal']].map(([k, label]) => (
+                    <div key={k}>
+                      <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">{label}</label>
+                      <input type="color" value={boardCfg[k]} onChange={e => setBoard({ [k]: e.target.value })} className="w-full h-11 border-[2px] border-[#111] p-0 cursor-pointer" />
+                    </div>
+                  ))}
+                </div>
+
+                <div className="mt-6 pt-6 border-t-[2px] border-[#111]">
+                  <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Note Colours</label>
+                  <div className="flex flex-wrap gap-2">
+                    {(boardCfg.noteColors || []).map((c, i) => (
+                      <div key={i} className="flex items-center gap-1">
+                        <input type="color" value={c} onChange={e => { const n = [...boardCfg.noteColors]; n[i] = e.target.value; setBoard({ noteColors: n }); }} className="w-14 h-11 border-[2px] border-[#111] p-0 cursor-pointer" />
+                        <button onClick={() => setBoard({ noteColors: boardCfg.noteColors.filter((_, j) => j !== i) })} className="p-2 bg-[#ff5722] text-white border-[2px] border-[#111]"><Trash2 size={12}/></button>
+                      </div>
+                    ))}
+                    <button onClick={() => setBoard({ noteColors: [...(boardCfg.noteColors || []), '#f3ede1'] })} className="px-4 h-11 bg-[#111] text-[#dfff00] border-[2px] border-[#111] font-mono font-bold text-[10px] uppercase tracking-widest slide-press">+ Colour</button>
+                  </div>
+                </div>
+
+                {/* moderation */}
+                <div className="mt-6 pt-6 border-t-[2px] border-[#111]">
+                  <p className="font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-gray-500 mb-3">Pinned notes — remove anything you don't want up</p>
+                  {boardNotes.length === 0 ? (
+                    <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-gray-400 py-6 text-center border-[2px] border-dashed border-[#111]/30">Nothing pinned yet</p>
+                  ) : (
+                    <div className="space-y-2 max-h-[420px] overflow-y-auto">
+                      {boardNotes.map(n => (
+                        <div key={n.id} className="flex items-start gap-3 p-3 bg-[#f4f4f0] border-[2px] border-[#111]">
+                          <span className="w-4 h-10 shrink-0" style={{ background: n.color || '#e8dcc8' }} />
+                          <div className="min-w-0 flex-1">
+                            <p className="font-mono text-[11px] leading-snug break-words whitespace-pre-wrap">{String(n.text).slice(0, 220)}{String(n.text).length > 220 ? '…' : ''}</p>
+                            <p className="font-mono text-[9px] uppercase tracking-widest text-gray-500 mt-1 break-words">
+                              {n.author?.trim() || boardCfg.anonName} · {n.created_at ? new Date(n.created_at).toLocaleString() : 'just now'}
+                            </p>
+                          </div>
+                          <button onClick={() => deleteNote(n.id)} className="p-2 bg-[#ff5722] text-white border-[2px] border-[#111] hover:bg-[#111] transition-colors shrink-0"><Trash2 size={14}/></button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* ---------- SONG OF THE DAY ---------- */}
+              <div className="bg-white p-6 md:p-8 border-[2px] border-[#111] shadow-[8px_8px_0px_#111]">
+                <div className="flex flex-col md:flex-row md:justify-between md:items-end border-b-[2px] border-[#111] pb-4 mb-6 gap-3">
+                  <div className="min-w-0">
+                    <h3 className="font-serif text-3xl mb-1">Song of the Day</h3>
+                    <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-gray-500">The record label carries the listing. Yours to change.</p>
+                  </div>
+                  <label className={`flex items-center gap-2 px-4 py-2.5 border-[2px] border-[#111] font-mono text-[10px] font-bold uppercase tracking-widest cursor-pointer slide-press shrink-0 ${songCfg.enabled ? 'bg-[#dfff00]' : 'bg-white'}`}>
+                    <input type="checkbox" className="hidden" checked={!!songCfg.enabled} onChange={e => setSong({ enabled: e.target.checked })} />
+                    {songCfg.enabled ? <Eye size={14}/> : <EyeOff size={14}/>} {songCfg.enabled ? 'On' : 'Off'}
+                  </label>
+                </div>
+
+                <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {[['heading','Section Heading'],['albumTitle','Label Title'],['albumSub','Label Sub'],['catalogue','Catalogue (line breaks ok)'],['side','Side (line breaks ok)'],['linkLabel','Link Label'],['link','Link URL']].map(([k, label]) => (
+                    <div key={k}>
+                      <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">{label}</label>
+                      <input value={songCfg[k] || ''} onChange={e => setSong({ [k]: e.target.value })} className="w-full p-3 border-[2px] border-[#111] font-mono text-sm outline-none focus:bg-[#dfff00]" />
+                    </div>
+                  ))}
+                  <div className="sm:col-span-2">
+                    <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Blurb</label>
+                    <textarea value={songCfg.blurb || ''} rows={2} onChange={e => setSong({ blurb: e.target.value })} className="w-full p-3 border-[2px] border-[#111] font-mono text-sm outline-none focus:bg-[#dfff00] resize-y" />
+                  </div>
+                  <div className="sm:col-span-2 lg:col-span-3 p-4 bg-[#f4f4f0] border-[2px] border-[#111]">
+                    <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Record Photo — overrides the drawn record entirely</label>
+                    <div className="flex">
+                      <input value={songCfg.vinylImage || ''} placeholder="Leave empty to use the generated record"
+                             onChange={e => setSong({ vinylImage: e.target.value })}
+                             className="flex-1 min-w-0 p-3 border-[2px] border-[#111] font-mono text-xs outline-none focus:bg-[#dfff00]" />
+                      <label className="cursor-pointer bg-[#111] text-white px-4 flex items-center border-[2px] border-l-0 border-[#111] shrink-0 hover:bg-[#ff5722] transition-colors">
+                        <Upload size={14}/><input type="file" className="hidden" accept="image/*" onChange={e => handleImageUpload(e, url => setSong({ vinylImage: url }))} />
+                      </label>
+                    </div>
+                    <p className="font-mono text-[9px] uppercase tracking-[0.12em] text-gray-500 mt-2 leading-relaxed">
+                      Use a square, transparent-cornered PNG of a record. The label, spin and glow still work on top of it.
+                    </p>
+                  </div>
+                  <div>
+                    <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Label Art (optional)</label>
+                    <div className="flex">
+                      <input value={songCfg.labelImage || ''} onChange={e => setSong({ labelImage: e.target.value })} className="flex-1 min-w-0 p-3 border-[2px] border-[#111] font-mono text-xs outline-none focus:bg-[#dfff00]" />
+                      <label className="cursor-pointer bg-[#111] text-white px-4 flex items-center border-[2px] border-l-0 border-[#111] shrink-0 hover:bg-[#ff5722] transition-colors">
+                        <Upload size={14}/><input type="file" className="hidden" accept="image/*" onChange={e => handleImageUpload(e, url => setSong({ labelImage: url }))} />
+                      </label>
+                    </div>
+                  </div>
+                  {[['vinylColor','Vinyl'],['bg','Background'],['labelBg','Label']].map(([k, label]) => (
+                    <div key={k}>
+                      <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">{label}</label>
+                      <div className="flex gap-2">
+                        <input type="color" value={songCfg[k]} onChange={e => setSong({ [k]: e.target.value })} className="w-12 h-11 border-[2px] border-[#111] p-0 cursor-pointer" />
+                        <input value={songCfg[k]} onChange={e => setSong({ [k]: e.target.value })} className="flex-1 min-w-0 p-2.5 border-[2px] border-[#111] font-mono text-xs outline-none focus:bg-[#dfff00]" />
+                      </div>
+                    </div>
+                  ))}
+                  <label className={`flex items-center gap-2 px-4 py-2.5 border-[2px] border-[#111] font-mono text-[10px] font-bold uppercase tracking-widest cursor-pointer slide-press self-end ${songCfg.spin ? 'bg-[#dfff00]' : 'bg-white'}`}>
+                    <input type="checkbox" className="hidden" checked={!!songCfg.spin} onChange={e => setSong({ spin: e.target.checked })} />
+                    {songCfg.spin ? <Check size={14}/> : <X size={14}/>} Spin the record
+                  </label>
+                </div>
+
+                <div className="mt-6 pt-6 border-t-[2px] border-[#111]">
+                  <div className="flex items-center justify-between gap-3 mb-3">
+                    <p className="font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-gray-500">Track listing — first 6 print on the label</p>
+                    <button onClick={addSongTrack} className="bg-[#111] text-[#dfff00] px-4 py-2 border-[2px] border-[#111] font-mono font-bold text-[10px] uppercase tracking-widest slide-press shrink-0">+ Track</button>
+                  </div>
+                  <div className="space-y-2">
+                    {(songCfg.tracks || []).map((t, i) => (
+                      <div key={t.id} className="flex flex-wrap items-center gap-2 p-2 bg-[#f4f4f0] border-[2px] border-[#111]">
+                        <span className="font-mono text-[10px] w-5 text-center shrink-0">{i + 1}</span>
+                        <input value={t.title || ''} placeholder="Title" onChange={e => updateSongTrack(t.id, { title: e.target.value })} className="flex-1 min-w-[130px] p-2 border-[2px] border-[#111] font-mono text-xs outline-none focus:bg-[#dfff00]" />
+                        <input value={t.credit || ''} placeholder="Credit" onChange={e => updateSongTrack(t.id, { credit: e.target.value })} className="flex-1 min-w-[130px] p-2 border-[2px] border-[#111] font-mono text-xs outline-none focus:bg-[#dfff00]" />
+                        <input value={t.length || ''} placeholder="3:21" onChange={e => updateSongTrack(t.id, { length: e.target.value })} className="w-[70px] p-2 border-[2px] border-[#111] font-mono text-xs outline-none focus:bg-[#dfff00]" />
+                        <button onClick={() => removeSongTrack(t.id)} className="p-2 bg-[#ff5722] text-white border-[2px] border-[#111] shrink-0"><Trash2 size={14}/></button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* ---------- POLL ---------- */}
+              <div className="bg-white p-6 md:p-8 border-[2px] border-[#111] shadow-[8px_8px_0px_#111]">
+                <div className="flex flex-col md:flex-row md:justify-between md:items-end border-b-[2px] border-[#111] pb-4 mb-6 gap-3">
+                  <div className="min-w-0">
+                    <h3 className="font-serif text-3xl mb-1">Voting Poll</h3>
+                    <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-gray-500">Visitors drag the columns and submit. Figures shown are everyone's average.</p>
+                  </div>
+                  <div className="flex gap-2 shrink-0">
+                    <button onClick={resetVotes} className="bg-white px-4 py-2.5 border-[2px] border-[#111] font-mono font-bold text-[10px] uppercase tracking-widest slide-press flex items-center gap-2"><RotateCcw size={13}/> Clear votes</button>
+                    <label className={`flex items-center gap-2 px-4 py-2.5 border-[2px] border-[#111] font-mono text-[10px] font-bold uppercase tracking-widest cursor-pointer slide-press ${pollCfg.enabled ? 'bg-[#dfff00]' : 'bg-white'}`}>
+                      <input type="checkbox" className="hidden" checked={!!pollCfg.enabled} onChange={e => setPoll({ enabled: e.target.checked })} />
+                      {pollCfg.enabled ? <Eye size={14}/> : <EyeOff size={14}/>} {pollCfg.enabled ? 'On' : 'Off'}
+                    </label>
+                  </div>
+                </div>
+
+                <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {[['heading','Heading'],['submitLabel','Submit Label'],['votedLabel','After Voting']].map(([k, label]) => (
+                    <div key={k}>
+                      <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">{label}</label>
+                      <input value={pollCfg[k] || ''} onChange={e => setPoll({ [k]: e.target.value })} className="w-full p-3 border-[2px] border-[#111] font-mono text-sm outline-none focus:bg-[#dfff00]" />
+                    </div>
+                  ))}
+                  <div className="sm:col-span-2">
+                    <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Question / Blurb</label>
+                    <textarea value={pollCfg.blurb || ''} rows={3} onChange={e => setPoll({ blurb: e.target.value })} className="w-full p-3 border-[2px] border-[#111] font-mono text-sm outline-none focus:bg-[#dfff00] resize-y" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">Thanks Message</label>
+                    <textarea value={pollCfg.thanks || ''} rows={3} onChange={e => setPoll({ thanks: e.target.value })} className="w-full p-3 border-[2px] border-[#111] font-mono text-sm outline-none focus:bg-[#dfff00] resize-y" />
+                  </div>
+                  {[['bg','Backdrop'],['paper','Panel'],['accent','Corner Mark'],['submitColor','Submit']].map(([k, label]) => (
+                    <div key={k}>
+                      <label className="text-xs font-mono font-bold uppercase text-gray-500 mb-2 block">{label}</label>
+                      <input type="color" value={pollCfg[k]} onChange={e => setPoll({ [k]: e.target.value })} className="w-full h-11 border-[2px] border-[#111] p-0 cursor-pointer" />
+                    </div>
+                  ))}
+                </div>
+
+                <div className="mt-6 pt-6 border-t-[2px] border-[#111]">
+                  <div className="flex items-center justify-between gap-3 mb-3">
+                    <p className="font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-gray-500">Options — these become the columns</p>
+                    <button onClick={addPollOption} className="bg-[#111] text-[#dfff00] px-4 py-2 border-[2px] border-[#111] font-mono font-bold text-[10px] uppercase tracking-widest slide-press shrink-0">+ Option</button>
+                  </div>
+                  <div className="space-y-2">
+                    {pollOptions.map((o, i) => {
+                      const t = pollTally[o.id];
+                      const avg = t && t.n ? Math.round(t.sum / t.n) : (o.seed ?? 0);
+                      const pend = confirmDelete && confirmDelete.listType === 'poll_options' && confirmDelete.id === o.id;
+                      return (
+                        <div key={o.id} className="flex flex-wrap items-center gap-2 p-2 bg-[#f4f4f0] border-[2px] border-[#111]">
+                          <div className="flex flex-col shrink-0">
+                            <button disabled={i === 0} onClick={() => moveListItem('poll_options', i, -1)} className="px-1.5 py-0.5 border-[2px] border-[#111] bg-white hover:bg-[#dfff00] disabled:opacity-25 text-[10px] leading-none">▲</button>
+                            <button disabled={i === pollOptions.length - 1} onClick={() => moveListItem('poll_options', i, 1)} className="px-1.5 py-0.5 border-[2px] border-t-0 border-[#111] bg-white hover:bg-[#dfff00] disabled:opacity-25 text-[10px] leading-none">▼</button>
+                          </div>
+                          <input type="color" value={o.color} onChange={e => updatePollOption(o.id, { color: e.target.value })} className="w-11 h-10 border-[2px] border-[#111] p-0 cursor-pointer shrink-0" />
+                          <input value={o.label || ''} placeholder="Label" onChange={e => updatePollOption(o.id, { label: e.target.value })} className="flex-1 min-w-[130px] p-2 border-[2px] border-[#111] font-mono text-xs outline-none focus:bg-[#dfff00]" />
+                          <div className="flex items-center gap-1 shrink-0">
+                            <span className="font-mono text-[9px] uppercase text-gray-500">start</span>
+                            <input type="number" min="0" max="100" value={o.seed ?? 0} onChange={e => updatePollOption(o.id, { seed: Math.max(0, Math.min(100, parseInt(e.target.value) || 0)) })} className="w-[62px] p-2 border-[2px] border-[#111] font-mono text-xs outline-none focus:bg-[#dfff00]" />
+                          </div>
+                          <span className="font-mono text-[10px] px-2 py-1 bg-[#dfff00] border-[2px] border-[#111] shrink-0 tabular-nums">
+                            {avg}% · {t?.n || 0} votes
+                          </span>
+                          {pend ? (
+                            <div className="flex gap-1 shrink-0">
+                              <button onClick={() => handleDeleteItem('poll_options', o.id)} className="px-3 py-2 bg-[#ff5722] text-white border-[2px] border-[#111] font-bold text-[10px] uppercase">Confirm</button>
+                              <button onClick={() => setConfirmDelete(null)} className="px-3 py-2 bg-white border-[2px] border-[#111] font-bold text-[10px] uppercase">Keep</button>
+                            </div>
+                          ) : (
+                            <button onClick={() => setConfirmDelete({ listType: 'poll_options', id: o.id })} className="p-2 bg-[#ff5722] text-white border-[2px] border-[#111] shrink-0"><Trash2 size={14}/></button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {route === 'community' && (
+        <CommunityCenter
+          cfg={communityCfg}
+          board={boardCfg}
+          notes={boardNotes}
+          onPostNote={postNote}
+          postingNote={postingNote}
+          song={songCfg}
+          poll={pollCfg}
+          pollOptions={pollOptions}
+          pollTally={pollTally}
+          onVote={castVote}
+          hasVoted={hasVoted}
+          onExit={() => goRoute('landing')}
+        />
+      )}
+
       <div className="min-h-screen bg-[#e8e8e3] p-4 md:p-8 flex items-center justify-center relative isolate transition-all duration-1000"
            style={backdropVars}>
 
@@ -7738,7 +9448,7 @@ export default function App() {
                  few lines tall, so a 60x6 grid is all that is ever visible */
               <AsciiTexture seed={101} ramp={asciiCfg.ramp} size={asciiCfg.size} animate={false}
                             color={asciiCfg.inkOnLight} opacity={asciiCfg.opacityLight}
-                            cols={60} rows={6} mask={asciiCfg.mask} clear={asciiCfg.clear} />
+                            mask="full" />
             )}
             <span className="relative z-10 w-7 h-7 shrink-0 flex items-center justify-center"
                   style={{
@@ -7889,6 +9599,15 @@ export default function App() {
                
                {/* The Pill Buttons (Added pb-3 so the shadow doesn't get clipped by overflow) */}
                <div className="absolute bottom-[28px] right-2 md:right-8 flex gap-3 overflow-x-auto hide-scrollbar max-w-[calc(100vw-120px)] md:max-w-none pl-4 pb-3 pt-2">
+                  {/* back to the door */}
+                  <button onClick={() => goRoute('landing')} title="Back to the entrance"
+                          className="relative px-4 py-2 rounded-full border-[2px] border-[#111] font-mono text-[10px] md:text-xs font-bold uppercase tracking-widest shadow-[2px_2px_0px_#111] slide-press flex-shrink-0 bg-white text-[#111] hover:bg-[#dfff00] flex items-center gap-1.5">
+                    <ChevronLeft size={12} /> Door
+                  </button>
+                  <button onClick={() => goRoute('community')} title="Community center"
+                          className="relative px-4 py-2 rounded-full border-[2px] border-[#111] font-mono text-[10px] md:text-xs font-bold uppercase tracking-widest shadow-[2px_2px_0px_#111] slide-press flex-shrink-0 bg-white text-[#111] hover:bg-[#dfff00]">
+                    Center
+                  </button>
                   {tabs.map((tab) => (
                     <button key={tab.id} onClick={() => setActiveTab(tab.id)}
                             aria-current={activeTab === tab.id ? 'page' : undefined}
